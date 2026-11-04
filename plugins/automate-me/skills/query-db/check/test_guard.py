@@ -106,14 +106,17 @@ class Local:
     def psql(self, user, sql=None, file=None):
         args = [self.psql_bin, "-h", self.tmp, "-p", str(self.port), "-U", user, "-d", "postgres",
                 "-X", "-At", "-v", "ON_ERROR_STOP=1"]
-        args += ["-f", file] if file else ["-c", sql]
-        return self.run(*args)
+        if file:  # piped on stdin: the server user may not be able to read the checkout's path
+            return self.run(*args, "-f", "-", input=open(file).read())
+        return self.run(*args, "-c", sql)
 
     def conn(self, conninfo, sql=None, file=None, env=None):
         """psql on a libpq conninfo, the way the skill runs a psql_service or psql_env connection."""
         args = [self.psql_bin, conninfo, "-X", "-At", "-v", "ON_ERROR_STOP=1"]
-        args += ["-f", file] if file else ["-c", sql]
-        return self.run(*args, env=dict(os.environ, **(env or {})))
+        env = dict(os.environ, **(env or {}))
+        if file:
+            return self.run(*args, "-f", "-", input=open(file).read(), env=env)
+        return self.run(*args, "-c", sql, env=env)
 
     def stop(self):
         self.run(self.pg_ctl, "-D", self.data, "-m", "immediate", "stop")
