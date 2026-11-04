@@ -1,0 +1,10 @@
+{
+  "name": "automate-me",
+  "version": "0.16.0",
+  "description": "Review a PRD for gaps and PM questions, draft an EDD with blast radius and evidence, verify a change in the running app, then review the PRs that implement it.",
+  "author": {
+    "name": "Sean Bahrami"
+  },
+  "repository": "https://github.com/seanplusone/automate-me-stack",
+  "license": "MIT"
+}

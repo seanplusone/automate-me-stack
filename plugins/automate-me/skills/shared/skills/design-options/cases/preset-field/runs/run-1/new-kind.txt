@@ -1,0 +1,21 @@
+ARCH A1: offer a fixed Low / Medium / High choice in the form builder that starts on Medium | PRECEDENT builder/presets/YesNoPreset.php:3 | STANDARD NONE | USE reuse | WHY This is an ordinary select with three options and a default filled in, which is exactly what a Preset is for (builder/presets/Preset.php:3-4), and SelectField already accepts a default (src/Fields/SelectField.php:11), so it is a PriorityPreset with $baseField = SelectField and settings() returning the options and default, listed under 'presets' in the palette.
+ARCH A2: show a priority choice with the priority style | PRECEDENT NONE | STANDARD NONE | USE new | WHY No renderer or field emits any style or class today (searches for class=, style, css found nothing), so a select needs some way to carry a style.
+OPTION A2.1: a new 'priority' field kind with its own PriorityRenderer that copies SelectRenderer and adds class="priority", registered in src/Render/registry.php and the palette (the change's own shape) | RED FLAGS two ways to do one task (a second select renderer beside src/Render/SelectRenderer.php:3), information leakage (the option-loop and escaping logic now lives in two renderers), hand-synced list (field type, registry entry and palette entry must be edited together for each styled select) | INTERFACE a new field type 'priority' that callers and the runtime must know about
+OPTION A2.2: one optional style setting on the ordinary select: SelectField carries it into the definition and SelectRenderer puts it on the select element, and the preset from A1 fills it in as part of its settings | RED FLAGS none | INTERFACE one optional key on the existing select config; the runtime still only sees a 'select' and never learns that priority exists
+SHAPE A1: FAILS | step 3: the need is a configured instance of the existing select kind, but the change adds a second kind (PriorityField plus a 'priority' type) beside it; the steps pick USE reuse, a PriorityPreset mirroring YesNoPreset. Step 5 also fails: PriorityField bypasses the base invariant that keeps presets out of repeating groups, so a priority field can now be placed inside a repeater | builder/presets/YesNoPreset.php:3, builder/presets/Preset.php:14
+SHAPE A2: FAILS | step 4: the change's shape is option A2.1, which carries the two-ways-to-do-one-task, leakage and hand-synced-list flags; the steps pick A2.2, an optional style setting on the existing select that the preset fills in | src/Render/SelectRenderer.php:7
+SEARCHES:
+find repo for a rules file or blast-radius reference (*rule*, CLAUDE.md, blast-radius.md): none found, no .claude/ directory; no project Standards or Capability index to read
+read siblings: src/Fields/Field.php, TextField.php, SelectField.php, RepeaterField.php, src/Render/SelectRenderer.php, src/Render/registry.php, builder/palette.php, builder/presets/Preset.php, builder/presets/YesNoPreset.php
+grep -rn 'options'
+grep -rn 'default'
+grep -rn 'Preset'
+grep -rn 'baseField'
+grep -rn 'settings()'
+grep -rn 'excludedAncestors'
+grep -rn 'RepeaterField::$type\|children'
+grep -rn 'class='
+grep -rn 'style'
+grep -rn 'css'
+grep -rn 'priority'
+find repo -name '*.css'

@@ -1,0 +1,34 @@
+ARCH A1: Store each outgoing order change as a row and deliver it to CRM from a job within a minute | SERVES R1, R2, GAP 1, GAP 2, GAP 3, GAP 4 | PRECEDENT src/Notifications/WebhookOutbox.php:7, src/Jobs/DeliverWebhooks.php:18 | STANDARD .claude/rules/jobs.md | USE reuse | WHY jobs.md says outgoing messages are stored as rows and a job delivers them in id order, and the outbox already holds target, payload, status, attempts and last error.
+ARCH A2: Decide which app saves and deletes create an outgoing change | SERVES R1, R4, R5, GAP 6, GAP 9 | PRECEDENT src/Traits/Auditable.php:12 | STANDARD NONE | USE new | WHY Mirroring the saved hook would also fire on pull writes (BR9, CS14) and send CRM values back, so the capture point is a Decision in the EDD.
+OPTION A2.1: A saved and deleting hook on Order writes the outbox row, and the pull turns sending off while it writes | RED FLAGS information leakage, the pull must know the send rule | INTERFACE save() and delete() as today, plus a way for the pull to save without sending
+OPTION A2.2: The update and destroy actions in OrdersController write the outbox row after the save or delete succeeds | RED FLAGS shallow module, every future user write path must add the same call | INTERFACE one call that queues this order's change for CRM
+ARCH A3: Send only changes saved by admins, and keep other saves in the app | SERVES R5, GAP 9 | PRECEDENT NONE | STANDARD NONE | USE new | WHY No code checks for an admin, and the only user data in use is the current user id (src/Traits/Auditable.php:16).
+OPTION A3.1: The code that writes the outbox row asks whether the saving user is an admin and writes no row otherwise | RED FLAGS none | INTERFACE one yes or no question about the current user, asked only where rows are written
+OPTION A3.2: Every save writes a row with the user's role, and the delivery job skips rows from non-admins | RED FLAGS information leakage, the role is read at save and the rule is applied at delivery; unsent rows pile up in the outbox | INTERFACE the delivery job reads a role field on each row
+ARCH A4: Remove an order from CRM when a user deletes it in the app | SERVES R4, GAP 8 | PRECEDENT src/Notifications/WebhookOutbox.php:7 | STANDARD .claude/rules/jobs.md | USE reuse | WHY A delete is one more outgoing message, so it uses the same outbox and job as A1, and GAP 8 is still pending with the PM.
+ARCH A5: Let an admin start a one-time send of a customer's orders in batches, without overwriting CRM | SERVES R6, GAP 10, GAP 11 | PRECEDENT src/Console/ImportCsv.php:9 | STANDARD .claude/rules/jobs.md | USE new | WHY ImportCsv shows how an operator starts bulk work, but no code batches, throttles or resumes.
+OPTION A5.1: A command writes one outbox row per order that CRM does not already hold, and the A1 job drains them in id order | RED FLAGS the job loads all pending rows for every customer in one query (CS16), so delivery needs paging for several thousand rows | INTERFACE one admin command that takes a customer id
+OPTION A5.2: A dedicated job pages through a customer's orders and posts batches to CRM directly | RED FLAGS two ways to do one task, a second sender beside the outbox; split ownership of send status | INTERFACE one job per customer with its own progress record
+ARCH A6: Keep pulling CRM edits into the app without undoing app edits or echoing app sends | SERVES R3, GAP 5, GAP 6, GAP 7, GAP 15 | PRECEDENT src/Sync/CrmPull.php:12 | STANDARD .claude/rules/jobs.md | USE reuse | WHY The pull already writes CRM values by crm_id, and its conflict rule waits on GAP 5 and GAP 15 because the app stores no edit time today.
+ARCH A7: Tell the user when a change does not reach CRM | SERVES R7, GAP 12, GAP 14 | PRECEDENT src/Jobs/DeliverWebhooks.php:23 | STANDARD NONE | USE new | WHY The outbox stores a failure in last_error, but nothing shows it to a user, and GAP 12 is pending, so the display is a Decision in the EDD.
+OPTION A7.1: The order page shows the status of its latest outgoing change, with a retry action | RED FLAGS none, but outbox rows carry no order id today | INTERFACE the page reads one status for its latest outgoing change
+OPTION A7.2: The delivery job notifies the user who saved when it marks a row failed | RED FLAGS information leakage, the failure is kept in last_error and again in the notice; the row must also carry a user id | INTERFACE the delivery job calls a notifier with the user and the error
+ARCH A8: Keep reports reading app data, which match CRM once delivery finishes | SERVES R8, GAP 13 | PRECEDENT src/Reports/OrderReport.php:11 | STANDARD NONE | USE reuse | WHY ANSWER GAP 13 accepts a short delay, and the report already counts from the app database that A1 and A6 keep in step with CRM.
+ARCH A9: Know each customer's CRM address for outgoing changes | SERVES R1, R4 | PRECEDENT NONE | STANDARD NONE | USE new | WHY The pull gets its records from a caller outside this repo, and no code stores a CRM address.
+OPTION A9.1: Store a CRM address per customer and copy it into target_url when a row is written | RED FLAGS none, though pending rows keep an old address if the setting changes | INTERFACE rows carry target_url, as the outbox does today
+OPTION A9.2: The delivery job looks up the customer's CRM address at send time | RED FLAGS two ways to do one task, target_url on the row is ignored for CRM rows | INTERFACE the delivery job asks customer settings for the address
+SEARCHES: read repo/.claude/blast-radius.md (capability index: none recorded)
+SEARCHES: read repo/.claude/rules/jobs.md
+SEARCHES: read every file under repo/src
+SEARCHES: grep -rniE "outbox|queue|job|dispatch|admin|role|Auth::|crm_id|bulk|chunk|batch|status" src
+SEARCHES: grep -rniE "isAdmin|admin|role" src
+SEARCHES: grep -rniE "Auth::" src
+SEARCHES: grep -rniE "WebhookOutbox" src
+SEARCHES: grep -rniE "target_url" src
+SEARCHES: grep -rniE "chunk|batch|limit|throttle|sleep" src
+SEARCHES: grep -rniE "signature" src
+SEARCHES: grep -rniE "static::saved|static::deleting|static::saving" src
+SEARCHES: grep -rniE "catch|abort|error|message|flash" src
+SEARCHES: grep -rniE "updated_at|edited_at|timestamp" src
+SEARCHES: grep -rniE "config|setting|url" src
+SEARCHES: grep -rniE "crm" src

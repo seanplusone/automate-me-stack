@@ -1,0 +1,17 @@
+{
+  "name": "prd-basics",
+  "type": "prd-questions",
+  "applies_to": "every PRD",
+  "group": "Purpose and scope",
+  "questions": [
+    "What customer problem does this solve?",
+    "Which customers asked for this?",
+    "What do those customers do today instead?",
+    "How will we know it worked?",
+    "What must be in the first release?",
+    "What can wait for a later release?",
+    "What data must never leave the app?",
+    "About how many records does a typical customer have?",
+    "Where can we try this before customers use it?"
+  ]
+}

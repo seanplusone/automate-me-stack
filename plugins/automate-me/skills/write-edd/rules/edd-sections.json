@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "source": "Mirrors the house layout of an existing team EDD. Change this file to match another team.",
+  "header": [
+    "Epic",
+    "PRD",
+    "Status",
+    "App"
+  ],
+  "sections": [
+    "Summary",
+    "Architecture",
+    "Data model",
+    "Backend",
+    "Frontend",
+    "Testing",
+    "Known hazards",
+    "Decisions blocking build start",
+    "Delivery slicing"
+  ],
+  "tables": {
+    "Known hazards": [
+      "#",
+      "Hazard",
+      "Evidence",
+      "Level",
+      "Mitigation"
+    ],
+    "Decisions blocking build start": [
+      "#",
+      "Decision",
+      "Options",
+      "Owner",
+      "Default"
+    ]
+  },
+  "evidence_patterns": [
+    "[A-Za-z0-9_./-]+\\.[a-z]+:[0-9]+",
+    "\\bBR[0-9]+\\b",
+    "\\bCS[0-9]+\\b",
+    "\\bPROBE[0-9]+\\b",
+    "\\bSPIKE[0-9]+\\b"
+  ],
+  "diagrams": {
+    "section": "Architecture",
+    "kinds": [
+      "flowchart",
+      "sequenceDiagram"
+    ]
+  },
+  "min_level": 2,
+  "level_needs_run": {
+    "4": [
+      "PROBE",
+      "SPIKE"
+    ],
+    "5": [
+      "PROBE",
+      "SPIKE"
+    ]
+  }
+}

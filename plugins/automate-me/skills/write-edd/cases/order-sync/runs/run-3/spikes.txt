@@ -1,0 +1,2 @@
+SPIKE1: When CRM rejects an update, does its reply say so in a way the job can read, or does it answer OK? | FOR A1, D5, D9 | WHY If CRM answers OK on a rejected change, the job marks the row sent and the two places differ with no error shown.
+SPIKE2: How many updates per minute does CRM accept before it refuses, and what does a refusal look like? | FOR E2, D7 | WHY The page size for the first send and the retry wait are set from this limit.

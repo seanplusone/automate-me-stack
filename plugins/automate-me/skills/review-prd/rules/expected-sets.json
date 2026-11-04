@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "sets": [
+    {
+      "name": "crud",
+      "type": "tag-coverage",
+      "applies_to": "each kind of data the PRD says users or systems change",
+      "expected": ["create", "read", "update", "delete"],
+      "scenario": "No point covers {op}. Does the feature {op} this data?"
+    },
+    {
+      "name": "feature-lifecycle",
+      "type": "prd-questions",
+      "applies_to": "every PRD",
+      "questions": [
+        "How is the feature turned on?",
+        "Who turns it on?",
+        "Is it per customer or for everyone?",
+        "What happens when it is turned off?"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+# verify-web config for the demo app. Start the app first:
+#   DEMO_TREE="main $(git rev-parse HEAD)" python3 app.py --port $DEMO_PORT --pid-file run/app.pid
+# then run the doctor from this folder with DEMO_PORT set.
+apps:
+  - name: demo
+    base_url: http://127.0.0.1:${DEMO_PORT}
+    test_data: true
+
+login_path: /login
+
+users_env: ${DEMO_USERS_ENV}
+personas:
+  admin:
+    username_env: ADMIN_USERNAME
+    password_env: ADMIN_PASSWORD
+  readonly:
+    username_env: READONLY_USERNAME
+    password_env: READONLY_PASSWORD
+
+health:
+  - name: login page
+    url: /login
+    expect_status: 200
+  - name: orders needs sign-in
+    url: /orders
+    expect_status: 302
+
+workers:
+  - name: app
+    pid_file: run/app.pid
+    source_dirs: [.]
+    source_ext: [.py]
+
+serving_tree:
+  page_command: curl -s {base_url}/__version
+
+restarts:
+  - for: worker app
+    command: kill "$(cat run/app.pid)" && nohup python3 app.py --port "$DEMO_PORT" --pid-file run/app.pid >run/app.log 2>&1 &
+
+pr_mode:
+  start_command: python3 app.py --port {port} --data-dir run/pr-data
+  ready_path: /login
+
+evidence_dir: ~/.claude/verify-evidence/web

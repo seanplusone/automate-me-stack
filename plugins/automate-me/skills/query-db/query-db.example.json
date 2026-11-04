@@ -1,0 +1,40 @@
+{
+  "$comment": "Run /automate-me:setup, or copy this file to .claude/query-db.json in your project and edit it. Check it with query-db/check/check_config.py. Name where each secret lives, never the secret.",
+  "databases": {
+    "app": {
+      "engine": "postgres",
+      "description": "main app database: orders, customers, accounts",
+      "environments": {
+        "staging": {
+          "default": true,
+          "connect": { "mcp": "app-staging-ro" },
+          "write_connect": { "psql_service": "app_staging_rw" }
+        },
+        "prod": {
+          "prod": true,
+          "connect": { "psql_service": "app_prod_ro" }
+        }
+      },
+      "tenant_column": "account_id",
+      "tenant_also": ["store_id"],
+      "large_tables": ["events", "audit_log"],
+      "allow_writes_on": ["staging"]
+    },
+    "analytics": {
+      "engine": "postgres",
+      "description": "reporting warehouse, loaded nightly from app",
+      "environments": {
+        "staging": {
+          "default": true,
+          "connect": { "psql_env": "ANALYTICS_STAGING_URL" }
+        },
+        "prod": {
+          "prod": true,
+          "read_replica": true,
+          "connect": { "command": "demo-shop-db-url analytics-prod" }
+        }
+      },
+      "large_tables": ["page_views", "order_facts"]
+    }
+  }
+}

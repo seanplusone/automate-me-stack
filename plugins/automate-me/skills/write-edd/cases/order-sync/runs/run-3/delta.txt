@@ -1,0 +1,20 @@
+DELTA D1: app | CURRENT CS4 | CHANGE After an order update is saved, queue one outgoing row for CRM that carries the order's CRM id, status and notes. Where the row is written is Decision 1 | BECAUSE R1 | UNDER A2
+DELTA D2: app | CURRENT CS7 | CHANGE After an order delete succeeds, queue a delete message for CRM | BECAUSE R4 | UNDER A4
+DELTA D3: Between | CURRENT CS15 | CHANGE Outgoing rows for CRM carry only status and notes in the payload | BECAUSE ANSWER GAP 3 | UNDER A1
+DELTA D4: Between | CURRENT CS16 | CHANGE Run the delivery job for each customer every minute, so a queued row is first sent within a minute of the save | BECAUSE ANSWER GAP 1 | UNDER A1
+DELTA D5: Between | CURRENT CS18 | CHANGE A reply that is not OK leaves the row pending until its attempts reach 3, then marks it failed and keeps the reply as the error | BECAUSE GAP 2 | UNDER A1
+DELTA D6: app | CURRENT CS4 | CHANGE Only saves made by an admin are sent to CRM. Saves by other users stay in the app | BECAUSE ANSWER GAP 9 | UNDER A3
+DELTA D7: Between | CURRENT NONE | CHANGE Add an admin-started command that takes a customer id and queues one row per order CRM does not already hold | BECAUSE ANSWER GAP 11 | UNDER A5
+DELTA D8: Between | CURRENT CS13 | CHANGE The pull skips any order that has a pending outgoing row, so it cannot overwrite an edit that was not sent yet | BECAUSE GAP 6 | UNDER A6
+DELTA D9: app | CURRENT CS18 | CHANGE Show the user a message when a change fails to reach CRM. What shows, and to whom, is Decision 4 | BECAUSE R7 | UNDER A7
+DELTA D10: Between | CURRENT NONE | CHANGE Store each customer's CRM address and use it as the target of outgoing rows | BECAUSE R1 | UNDER A9
+DELTA D11: Result | CURRENT CS11 | CHANGE No change to the report code. It keeps counting app data, which matches CRM once the rows for CRM are sent | BECAUSE ANSWER GAP 13 | UNDER A8
+ENABLE E1: Make the delivery job load only the running customer's rows. Outgoing rows must set their own customer id | ENABLES R1 | NEEDED BECAUSE CS16 | UNDER A1
+ENABLE E2: Limit how many pending rows the delivery job loads per run | ENABLES R6 | NEEDED BECAUSE CS16 | UNDER A5
+ENABLE E3: Add the order id to outgoing rows | ENABLES R3 | NEEDED BECAUSE CS15 | UNDER A6
+ENABLE E4: Add the saving user's id to outgoing rows | ENABLES R7 | NEEDED BECAUSE CS15 | UNDER A7
+NOTICED N1: src/Jobs/DeliverWebhooks.php:30 | failed() writes the exception message to last_error on every pending row for every customer.
+NOTICED N2: src/Jobs/DeliverWebhooks.php:12 | backoff lists 900 seconds, but 3 tries use only the 60 and 300 second waits.
+NOTICED N3: src/Models/LineItem.php:17 | The photo delete hook never runs when an order delete removes line items in bulk (BR2).
+NOTICED N4: src/Traits/Auditable.php:12 | Only a saved hook exists, so deletes are not audited (BR4).
+NOTICED N5: src/Console/ImportCsv.php:14 | The CSV import inserts rows with no customer id (BR10).

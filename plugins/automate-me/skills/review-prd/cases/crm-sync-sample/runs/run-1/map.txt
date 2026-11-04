@@ -1,0 +1,39 @@
+GOAL: Customers update a ticket in our app and the change shows up in the CRM, so both always match.
+
+BRANCH: the CRM
+  U1: I think the CRM will tell us whether an update worked, but I have not confirmed it.
+
+BRANCH: app
+  R7: If something goes wrong, show an error message to the user.
+
+BRANCH: Between
+  R1: When a user saves a ticket in the app, the change is sent to the CRM right away.
+  R2: Users should see the change in the CRM in real time.
+  R3: If someone edits a ticket in the CRM, the app keeps showing the newest version. The existing pull should already handle this.
+  R4: A user can delete a ticket in the app, and it is removed from the CRM.
+  R5: Only admins can send changes to the CRM.
+  R6: A customer can have several thousand tickets. The first time we turn this on, we send all of them.
+  U3: Is our current pull instant or on a schedule? I assumed instant.
+
+BRANCH: Result
+  R8: Reports in the app should always match the CRM.
+
+UNPLACED:
+  U2: I do not know what happens if two people edit the same ticket.
+  U4: Launch target is the end of next month, for our first three customers.
+
+CONTEXT:
+  PRD: Send Ticket Changes Back to the CRM
+  Author: Product Manager
+  Status: Draft, not yet reviewed by engineering
+  Today, tickets created in the CRM show up in our app.
+  We already pull them in.
+  Customers have asked for the reverse.
+  When they update a ticket in our app, the CRM should show the change too.
+  Right now they have to update both places by hand, and the two often disagree.
+
+OUT OF SCOPE:
+  Photos and attachments
+  The mobile app
+
+COUNTS: points 8, branches 4, unsure 4, unplaced 2

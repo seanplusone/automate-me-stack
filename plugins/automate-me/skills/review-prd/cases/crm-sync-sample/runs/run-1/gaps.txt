@@ -1,0 +1,25 @@
+TAG: R1 | update | When a user saves a ticket in the app, the change is sent to the CRM right away.
+TAG: R2 | read | Users should see the change in the CRM in real time.
+TAG: R3 | read | If someone edits a ticket in the CRM, the app keeps showing the newest version.
+TAG: R4 | delete | A user can delete a ticket in the app, and it is removed from the CRM.
+TAG: R5 | none | Only admins can send changes to the CRM.
+TAG: R6 | update | The first time we turn this on, we send all of them.
+TAG: R7 | none | If something goes wrong, show an error message to the user.
+TAG: R8 | read | Reports in the app should always match the CRM.
+SCENARIO 1: crud | A user creates a new ticket in the app. Is it created in the CRM? | not stated
+GAP 1: R1 | Does "right away" mean sent inside the save request, or queued and sent soon after? Give a time limit. | Unclear wording | the change is sent to the CRM right away.
+GAP 2: R1 | What happens to the change if the CRM is unreachable or rejects it: retry, queue, or drop? | Engineer | not stated
+GAP 3: R1 | Which ticket fields are sent to the CRM? | PM | not stated
+GAP 4: R2 | Reading A: same as R1, the data reaches the CRM at once. Reading B: CRM users see it update live without a refresh. Which one? | Unclear wording | Users should see the change in the CRM in real time.
+GAP 5: R3 | "Newest" by which clock: the edit time in the CRM or in the app? Reading A: CRM edit wins. Reading B: latest timestamp wins. | Unclear wording | the app keeps showing the newest version.
+GAP 6: R3 | Does the existing pull read back changes the app just sent, and could it overwrite or loop? | Engineer | The existing pull should already handle this.
+GAP 7: U3 | Is the current pull instant or on a schedule? The PM assumed instant. | Engineer | Is our current pull instant or on a schedule? I assumed instant.
+GAP 8: R4 | Is a delete in the app permanent in the CRM, or can it be recovered? Who may delete? | PM | A user can delete a ticket in the app, and it is removed from the CRM.
+GAP 9: R5 | Reading A: saves by non-admins stay in the app and are not sent. Reading B: non-admins cannot save changes at all. Reading C: an admin must trigger the send. Which one? | Unclear wording | Only admins can send changes to the CRM.
+GAP 10: R6 | How is the first load of several thousand tickets batched, throttled and resumed? The CRM limits are unverified. | Engineer | A customer can have several thousand tickets.
+GAP 11: R6 | Who starts the first send, and does it overwrite CRM values that differ from the app? | PM | The first time we turn this on, we send all of them.
+GAP 12: R7 | Which failures show a message, what does it say, who sees it, and can the user retry? | PM | If something goes wrong, show an error message to the user.
+GAP 13: R8 | Reading A: reports match the CRM after a short delay. Reading B: reports match at every moment, including during failures. Which one? | Unclear wording | Reports in the app should always match the CRM.
+GAP 14: U1 | Does the CRM report success or failure of an update? The PM has not confirmed it. Unverified. | Engineer | I think the CRM will tell us whether an update worked, but I have not confirmed it.
+GAP 15: U2 | When two people edit the same ticket, which edit wins, or are they merged? | PM | I do not know what happens if two people edit the same ticket.
+COUNTS: points 8, answers 48, scenarios 1, gaps 15

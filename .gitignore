@@ -1,0 +1,6 @@
+*.pyc
+.DS_Store
+.runs/
+__pycache__/
+out/
+plugins/automate-me/skills/write-edd/cases/order-sync/repo/.git/

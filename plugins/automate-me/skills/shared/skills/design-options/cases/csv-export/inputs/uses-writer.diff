@@ -1,0 +1,27 @@
+diff --git a/src/Http/InvoiceExportController.php b/src/Http/InvoiceExportController.php
+new file mode 100644
+index 0000000..8f1f025
+--- /dev/null
++++ b/src/Http/InvoiceExportController.php
+@@ -0,0 +1,12 @@
++<?php
++
++class InvoiceExportController
++{
++    public function export($accountId)
++    {
++        $csv = CsvWriter::download('invoices.csv', ['Number', 'Customer', 'Amount', 'Due']);
++        foreach (Invoice::forAccount($accountId)->cursor() as $invoice) {
++            $csv->row([$invoice->number, $invoice->customer_name, $invoice->amount, $invoice->due_on]);
++        }
++    }
++}
+diff --git a/src/routes.php b/src/routes.php
+index 286e450..c2d4e5a 100644
+--- a/src/routes.php
++++ b/src/routes.php
+@@ -1,3 +1,4 @@
+ <?php
+ 
+ $router->get('/orders/export', 'OrderExportController@export');
++$router->get('/invoices/export', 'InvoiceExportController@export');

@@ -1,0 +1,13 @@
+diff --git a/app.py b/app.py
+--- a/app.py
++++ b/app.py
+@@ -32,6 +32,9 @@
+ async function refund(btn) {
+   const id = btn.dataset.order;
+   const r = await fetch('/orders/' + id + '/refund', {method: 'POST'});
++  // One refund per click: disable the button so a second click cannot refund again.
++  btn.disabled = true;
++  btn.textContent = 'Refunded';
+   const body = await r.json();
+   document.getElementById('msg').textContent = body.message;
+   document.getElementById('status-' + id).textContent = body.status;
