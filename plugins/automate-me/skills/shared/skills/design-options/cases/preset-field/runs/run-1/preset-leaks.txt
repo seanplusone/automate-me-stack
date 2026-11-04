@@ -1,0 +1,15 @@
+NOTE: No project rules file and no .claude/blast-radius.md in repo/, so there are no Standards or Capability index sections to read. STANDARD is NONE throughout. The siblings read were Preset.php, YesNoPreset.php, SelectField.php, Field.php and SelectRenderer.php.
+ARCH A1: offer a three-choice Priority entry (Low/Medium/High, default Medium) in the form builder palette | PRECEDENT builder/presets/YesNoPreset.php:3 | STANDARD NONE | USE reuse | WHY Priority is an ordinary select with its options and default filled in. That makes it another configured Preset over SelectField, like YesNoPreset, listed in builder/palette.php:5, and it inherits the repeater exclusion from the base at builder/presets/Preset.php:14.
+ARCH A2: show a select in the priority visual style | PRECEDENT src/Fields/SelectField.php:11 | STANDARD NONE | USE reuse | WHY Extend the select kind with a generic optional display-style setting, carried into the definition the same way 'default' is and emitted generically by SelectRenderer. PriorityPreset::settings() then fills it in, so the runtime never learns that presets exist (builder/presets/Preset.php:3).
+SHAPE A1: HOLDS | | builder/presets/YesNoPreset.php:3
+SHAPE A2: FAILS | Step 5 (shallowest layer, plus the information-leakage red flag). The diff puts the preset's identity ('preset' => 'priority') into the runtime definition through SelectField, and SelectRenderer branches on the literal 'priority'. That breaks the contract at builder/presets/Preset.php:3 that the runtime only ever sees the base field. It also places one decision in two layers, PriorityPreset::settings() and SelectRenderer, and every future styled preset would need another renderer branch. The steps pick a preset-agnostic style setting on the select field (mirroring 'default' at src/Fields/SelectField.php:11) that PriorityPreset fills in. SelectField and SelectRenderer then pass and emit the style without knowing about presets, and the 'preset' key is never written into the definition. | src/Fields/SelectField.php:12, src/Render/SelectRenderer.php:7 (post-change lines), builder/presets/Preset.php:3
+SEARCHES:
+ls repo/.claude (no rules file, no blast-radius.md)
+grep -rn "class=" repo (no hits: no existing per-field CSS class mechanism)
+grep -rn "style" repo (no hits: no existing display-style setting)
+grep -rn "preset" repo (only builder/palette.php:5: the runtime src/ has no preset awareness before the change)
+grep -rn "Preset" repo (Preset.php:4, YesNoPreset.php:3, palette.php:5: the Preset kind exists)
+grep -rn "extends Preset" repo (YesNoPreset.php:3: sibling preset to mirror)
+grep -rn "isset($config" repo (Field.php:12, SelectField.php:11: precedent for optional config carried into a definition)
+grep -rn "excludedAncestors" repo (Preset.php:14: the repeater invariant already lives in the base)
+grep -rn "priority" repo (no hits before the change)

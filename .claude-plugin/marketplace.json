@@ -1,0 +1,13 @@
+{
+  "name": "automate-me-stack",
+  "owner": { "name": "Sean Bahrami" },
+  "description": "Claude Code skills that take a change from PRD review to design doc to verified PR review, each held to scripted checks.",
+  "plugins": [
+    {
+      "name": "automate-me",
+      "source": "./plugins/automate-me",
+      "description": "Review a PRD for gaps and PM questions, draft an EDD with blast radius and evidence, verify a change in the running app, then review the PRs that implement it.",
+      "version": "0.16.0"
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+diff --git a/builder/palette.php b/builder/palette.php
+index 0d4637d..ea8256c 100644
+--- a/builder/palette.php
++++ b/builder/palette.php
+@@ -2,5 +2,5 @@
+ 
+ return [
+     'fields' => [TextField::class, SelectField::class, RepeaterField::class],
+-    'presets' => [YesNoPreset::class],
++    'presets' => [YesNoPreset::class, PriorityPreset::class],
+ ];
+diff --git a/builder/presets/PriorityPreset.php b/builder/presets/PriorityPreset.php
+new file mode 100644
+index 0000000..6ca3da5
+--- /dev/null
++++ b/builder/presets/PriorityPreset.php
+@@ -0,0 +1,16 @@
++<?php
++
++class PriorityPreset extends Preset
++{
++    public static $label = 'Priority';
++    public static $baseField = SelectField::class;
++
++    public static function settings()
++    {
++        return [
++            'options' => ['low' => 'Low', 'medium' => 'Medium', 'high' => 'High'],
++            'default' => 'medium',
++            'preset' => 'priority',
++        ];
++    }
++}
+diff --git a/src/Fields/SelectField.php b/src/Fields/SelectField.php
+index 1f25be2..5823126 100644
+--- a/src/Fields/SelectField.php
++++ b/src/Fields/SelectField.php
+@@ -9,6 +9,9 @@ class SelectField extends Field
+         $definition = parent::getDefinition($config);
+         $definition['options'] = $config['options'];
+         $definition['default'] = isset($config['default']) ? $config['default'] : null;
++        if (isset($config['preset'])) {
++            $definition['preset'] = $config['preset'];
++        }
+         return $definition;
+     }
+ }
+diff --git a/src/Render/SelectRenderer.php b/src/Render/SelectRenderer.php
+index 141e3e0..82b2525 100644
+--- a/src/Render/SelectRenderer.php
++++ b/src/Render/SelectRenderer.php
+@@ -4,7 +4,8 @@ class SelectRenderer
+ {
+     public function render(array $definition, $value)
+     {
+-        $html = '<select name="' . e($definition['name']) . '">';
++        $class = isset($definition['preset']) && $definition['preset'] === 'priority' ? ' class="priority"' : '';
++        $html = '<select' . $class . ' name="' . e($definition['name']) . '">';
+         foreach ($definition['options'] as $key => $label) {
+             $selected = $key === $value ? ' selected' : '';
+             $html .= '<option value="' . e($key) . '"' . $selected . '>' . e($label) . '</option>';

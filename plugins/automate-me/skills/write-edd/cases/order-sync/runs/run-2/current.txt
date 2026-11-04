@@ -1,0 +1,39 @@
+ROOTS: .
+BRANCH: CRM
+NONE: CRM | No code in this repo sends anything to CRM or reads a CRM reply. Searched crm, Http::post, response, catch, error. The only CRM code is the inbound pull in src/Sync/CrmPull.php.
+BRANCH: app
+STEP CS1: 1 | src/Http/OrdersController.php:11 | "$order = Order::findOrFail($id);" | A user update starts here. The app loads the order by id. It throws if none matches.
+STEP CS2: 2 | src/Traits/TenantScoped.php:12 | "$query->where('tenant_id', Context::tenantId());" | Every order query gets a filter for the current customer, so the load in CS1 only finds that customer's rows.
+STEP CS3: 3 | src/Http/OrdersController.php:12 | "$order->fill($input);" | The app copies the submitted fields onto the order. Only the columns listed in the model's fillable list are accepted.
+STEP CS4: 4 | src/Http/OrdersController.php:13 | "$order->save();" | The app writes the order to the database. No call to CRM is made here, and the controller has no admin check or error handling.
+STEP CS5: 5 | src/Models/Order.php:21 | "$order->score = $order->lineItems()->count() === 0 ? 100 : 100 - $order->lineItems()->count() * 10;" | Before each save, the app sets the score to 100 minus 10 for each line item, so the score is always calculated by the app.
+STEP CS6: 6 | src/Traits/Auditable.php:13 | "AuditLog::create([" | After each save, the app writes an audit row with the model, its id, the current user id and the changed fields.
+STEP CS7: 7 | src/Http/OrdersController.php:19 | "Order::findOrFail($id)->delete();" | A user delete starts here. The app loads the order and deletes it. No call to CRM is made.
+STEP CS8: 8 | src/Models/Order.php:25 | "$order->lineItems()->delete();" | Before an order is deleted, the app deletes its line items.
+STEP CS9: 9 | src/Models/LineItem.php:17 | "Storage::delete($lineItem->photo_path);" | never runs in the delete flow: CS8 deletes line items with a bulk query, which skips this hook, so photos stay in storage
+STEP CS10: 10 | src/Console/ImportCsv.php:14 | "DB::table('orders')->insert([" | The CSV import inserts rows straight into the table. It sets only site name, status and notes. It does not set a customer or CRM id, and it skips the save steps in CS5 and CS6.
+STEP CS11: 11 | src/Reports/OrderReport.php:11 | "return Order::where('status', 'open')->count();" | The report counts open orders in the app database. It never reads from CRM.
+BRANCH: Between
+STEP CS12: 1 | src/Sync/CrmPull.php:11 | "foreach ($records as $record) {" | The pull receives a list of CRM records that the caller passes in and loops over them. Nothing in this repo calls the pull, so how often it runs is not visible.
+STEP CS13: 2 | src/Sync/CrmPull.php:12 | "Order::updateOrCreate(" | updateOrCreate under the tenant scope; the pull never sets the tenant context, so with no or a different context it matches nothing and inserts a duplicate
+STEP CS14: 3 | src/Traits/Auditable.php:13 | "AuditLog::create([" | Each pull write also fires the save steps, so it writes an audit row and recalculates the score (CS5).
+STEP CS15: 4 | src/Notifications/WebhookOutbox.php:9 | "protected $table = 'webhook_outbox';" | Today the app has a stored queue of outgoing web messages with a target address, body, status, attempt count and last error. Nothing in this repo adds rows to it, and no row targets CRM.
+STEP CS16: 5 | src/Jobs/DeliverWebhooks.php:18 | "$rows = WebhookOutbox::where('status', WebhookOutbox::STATUS_PENDING)->orderBy('id')->get();" | loads pending outbox rows by status only, for every customer, oldest first; the tenant context does not filter this model
+STEP CS17: 6 | src/Jobs/DeliverWebhooks.php:20 | "$response = Http::post($row->target_url, $row->payload);" | The job posts each row to its target address, one at a time.
+STEP CS18: 7 | src/Jobs/DeliverWebhooks.php:22 | "$row->status = $response->ok() ? WebhookOutbox::STATUS_SENT : WebhookOutbox::STATUS_FAILED;" | The job marks the row sent or failed, adds 1 to the attempt count, and stores the reply body as the error when it fails.
+STEP CS19: 8 | src/Jobs/DeliverWebhooks.php:11 | "public $tries = 3;" | $tries is 3 with backoff 60, 300, 900; only the 60 and 300 second waits are used
+PM QUESTION: Today every pull from CRM replaces the site name, status, notes and order date in the app with the CRM values. Should an edit made in the app survive the next pull? | CS13
+PM QUESTION: Today the pull never deletes anything. If someone deletes an order in the app and it still exists in CRM, should the next pull bring it back? | CS13
+PM QUESTION: Today the app calculates a score on every save, and the pull does not bring one in. Should the score be sent to CRM? | CS5
+PM QUESTION: Today orders added by the CSV import have no CRM id and skip the normal save steps. Should those orders be sent to CRM? | CS10
+SEARCHES: grep -rniE "CrmPull" src
+SEARCHES: grep -rniE "crm" src
+SEARCHES: grep -rniE "schedule|cron|Kernel" src (no hits, so no caller or timer for the pull)
+SEARCHES: grep -rniE "dispatch|DeliverWebhooks" src (no hits outside the job itself)
+SEARCHES: grep -rniE "WebhookOutbox" src (no code creates rows)
+SEARCHES: grep -rniE "Auth::|isAdmin|admin" src (only the audit user id, no admin check)
+SEARCHES: grep -rniE "catch|abort|error" src (only outbox error fields)
+SEARCHES: grep -rniE "OrderReport" src
+SEARCHES: grep -rniE "Http::post" src
+SEARCHES: read every file under src and .claude/rules/jobs.md
+COUNTS: branches 3, steps 19, none 1, pm questions 4

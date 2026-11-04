@@ -1,0 +1,87 @@
+# verify-web config. Run /automate-me:setup, or copy this to <your project>/.claude/verify-web.yaml
+# and fill it in. Check it with: python3 doctor.py --check-config
+# A .claude/verify-web.json with the same keys also works.
+# doctor.py reads a small YAML subset: mappings, lists, [a, b] lists, quoted or plain strings,
+# numbers, true/false, # comments. ${VAR} reads an environment variable; ~ is your home folder.
+# Relative paths are relative to the project root (the folder that holds .claude/).
+
+# Where the app runs. Runs create data only on an app with test_data: true.
+apps:
+  - name: local
+    base_url: http://localhost:3000
+    test_data: true
+  - name: staging
+    base_url: https://staging.example.com
+    test_data: false          # shared with other people: read and look, never create
+
+# Path of the sign-in page on each app.
+login_path: /login
+
+# Who a run signs in as. Values are env var NAMES in users_env, never the logins themselves.
+# The first persona is the default. See personas.md.
+users_env: ~/.config/verify-web/users.env
+personas:
+  admin:
+    username_env: ADMIN_USERNAME
+    password_env: ADMIN_PASSWORD
+  regular:
+    username_env: REGULAR_USERNAME
+    password_env: REGULAR_PASSWORD
+  readonly:
+    username_env: READONLY_USERNAME
+    password_env: READONLY_PASSWORD
+
+# Real HTTP checks. A container that is Up can still serve 502 on every page.
+# expect_status may be one code or a list, such as [200, 302]. Redirects are not followed.
+# A url starting with / is joined to the first test_data app (or doctor.py --base-url).
+health:
+  - name: login page
+    url: /login
+    expect_status: 200
+  - name: api health
+    url: /api/health
+    expect_status: 200
+  - name: search service
+    url: http://localhost:9200/
+    expect_status: 200
+
+# Optional. Docker containers that must be running.
+containers:
+  - myapp-web-1
+  - myapp-db-1
+
+# Optional. Long-running processes that load code once at start, such as job workers or a dev
+# server without reload. A source file newer than the process start is code it is NOT running,
+# and the doctor fails it as STALE. Give a container or a pid_file, plus the source dirs it loads.
+workers:
+  - name: jobs
+    container: myapp-worker-1
+    source_dirs: [app, lib, config]
+    source_ext: [.py]             # optional; default is every file
+  - name: web
+    pid_file: tmp/pids/server.pid
+    source_dirs: [app]
+
+# Optional. Commands that print "<branch> <sha>" of the tree the page is served from and the tree
+# background jobs run. Different answers mean the page and the job run different code.
+# {base_url} is the app being checked. Your app needs some way to say what it runs, such as a
+# /__version route that prints the git branch and sha it was started from.
+serving_tree:
+  page_command: curl -s {base_url}/__version
+  job_command: docker exec myapp-worker-1 sh -c 'cd /app && echo "$(git branch --show-current) $(git rev-parse HEAD)"'
+
+# Optional. Fixes Claude may run without asking, keyed by the doctor line they fix.
+# Anything not listed here is reported to the user, not repaired.
+restarts:
+  - for: worker jobs
+    command: docker restart myapp-worker-1
+
+# Optional. PR mode starts a second copy of the app from a worktree when this is set.
+# {port} is a free port the skill picks. Leave it out for a shared stack; the skill then asks
+# you to point the app at the worktree.
+pr_mode:
+  start_command: npm run dev -- --port {port}
+  ready_path: /login
+
+# Where evidence goes. Keep it outside the plugin, so an update never deletes it.
+evidence_dir: ~/.claude/verify-evidence/web

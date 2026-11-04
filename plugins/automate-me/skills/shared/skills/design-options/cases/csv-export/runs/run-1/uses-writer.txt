@@ -1,0 +1,13 @@
+ARCH A1: stream an account's invoices to the browser as a CSV download, one row at a time | PRECEDENT src/Support/CsvWriter.php:8 | STANDARD NONE | USE reuse | WHY CsvWriter already owns the CSV headers, the output stream and row encoding, so an invoice export is the same writer configured with a different filename and header row, not a second CSV mechanism.
+ARCH A2: expose the invoice export as an account-scoped GET endpoint | PRECEDENT src/Http/OrderExportController.php:5 | STANDARD NONE | USE mirror | WHY OrderExportController and its route at src/routes.php:3 are the existing export endpoint, and Invoice::forAccount (src/Models/Invoice.php:5) gives the same account scoping and cursor iteration that Order::forAccount gives the order export.
+SHAPE A1: HOLDS | the change calls CsvWriter::download and $csv->row instead of writing its own headers or fputcsv | change.diff src/Http/InvoiceExportController.php:7
+SHAPE A2: HOLDS | the change mirrors OrderExportController's file layout, method name, account scoping and cursor loop, and adds its route beside the orders one | change.diff src/Http/InvoiceExportController.php:5
+SEARCHES: no project rules file and no .claude/blast-radius.md in repo/ (ls -a repo; ls repo/.claude), so no Standards or Capability index; continued without them
+grep -rni 'csv' src
+grep -rni 'fputcsv' src
+grep -rni 'Content-Disposition' src
+grep -rni 'export' src
+grep -rni 'download' src
+grep -rni 'forAccount' src
+grep -rni 'cursor' src
+grep -rni 'router->get' src

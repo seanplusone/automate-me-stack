@@ -1,0 +1,62 @@
+diff --git a/builder/palette.php b/builder/palette.php
+index 0d4637d..59db42a 100644
+--- a/builder/palette.php
++++ b/builder/palette.php
+@@ -1,6 +1,6 @@
+ <?php
+ 
+ return [
+-    'fields' => [TextField::class, SelectField::class, RepeaterField::class],
++    'fields' => [TextField::class, SelectField::class, RepeaterField::class, PriorityField::class],
+     'presets' => [YesNoPreset::class],
+ ];
+diff --git a/src/Fields/PriorityField.php b/src/Fields/PriorityField.php
+new file mode 100644
+index 0000000..0d20313
+--- /dev/null
++++ b/src/Fields/PriorityField.php
+@@ -0,0 +1,14 @@
++<?php
++
++class PriorityField extends Field
++{
++    public static $type = 'priority';
++
++    public static function getDefinition(array $config)
++    {
++        $definition = parent::getDefinition($config);
++        $definition['options'] = ['low' => 'Low', 'medium' => 'Medium', 'high' => 'High'];
++        $definition['default'] = 'medium';
++        return $definition;
++    }
++}
+diff --git a/src/Render/PriorityRenderer.php b/src/Render/PriorityRenderer.php
+new file mode 100644
+index 0000000..e06f2be
+--- /dev/null
++++ b/src/Render/PriorityRenderer.php
+@@ -0,0 +1,14 @@
++<?php
++
++class PriorityRenderer
++{
++    public function render(array $definition, $value)
++    {
++        $html = '<select class="priority" name="' . e($definition['name']) . '">';
++        foreach ($definition['options'] as $key => $label) {
++            $selected = $key === $value ? ' selected' : '';
++            $html .= '<option value="' . e($key) . '"' . $selected . '>' . e($label) . '</option>';
++        }
++        return $html . '</select>';
++    }
++}
+diff --git a/src/Render/registry.php b/src/Render/registry.php
+index f038657..6c3b085 100644
+--- a/src/Render/registry.php
++++ b/src/Render/registry.php
+@@ -4,4 +4,5 @@ return [
+     'text' => TextRenderer::class,
+     'select' => SelectRenderer::class,
+     'repeater' => RepeaterRenderer::class,
++    'priority' => PriorityRenderer::class,
+ ];

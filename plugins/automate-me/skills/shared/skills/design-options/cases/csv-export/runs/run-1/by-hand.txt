@@ -1,0 +1,15 @@
+ARCH A1: write an account's invoices to the browser as a CSV download (download headers, header row, cell quoting, one row at a time) | PRECEDENT repo/src/Support/CsvWriter.php:8 | STANDARD NONE | USE reuse | WHY CsvWriter already owns the download headers, fputcsv escaping and row streaming, and OrderExportController.php:7-9 shows invoices are just another configured use of it (filename, header list, one row() per record over cursor()).
+ARCH A2: an export endpoint per account for invoices | PRECEDENT repo/src/Http/OrderExportController.php:5 | STANDARD NONE | USE mirror | WHY The order export controller is the one sibling: a class named <Model>ExportController with export($accountId) that scopes through Model::forAccount, and Invoice::forAccount already exists at repo/src/Models/Invoice.php:5.
+ARCH A3: route GET /invoices/export to the invoice export endpoint | PRECEDENT repo/src/routes.php:3 | STANDARD NONE | USE mirror | WHY The orders export route is the existing shape for this kind of endpoint.
+SHAPE A1: FAILS | step 3: the change sets its own download headers, quotes cells with its own str_replace/implode, and builds the whole file in memory from ->get(), which is a second CSV writer beside CsvWriter; the steps pick CsvWriter::download('invoices.csv', ['Number', 'Customer', 'Amount', 'Due']) then $csv->row([...]) for each invoice over Invoice::forAccount($accountId)->cursor(), as OrderExportController does | src/Http/InvoiceExportController.php:7-16 (change.diff), precedent repo/src/Support/CsvWriter.php:8-25, repo/src/Http/OrderExportController.php:7-9
+SHAPE A2: HOLDS | | src/Http/InvoiceExportController.php:3-5 (change.diff) matches repo/src/Http/OrderExportController.php:3-5 and scopes via repo/src/Models/Invoice.php:5
+SHAPE A3: HOLDS | | src/routes.php:4 (change.diff) mirrors repo/src/routes.php:3
+SEARCHES:
+ls repo/.claude (no project rules file, no .claude/blast-radius.md: noted, so no Standards or Capability index to check)
+find repo -type f (all files, to read siblings)
+grep -rn -i "csv" repo
+grep -rn "Content-Disposition" repo
+grep -rn "export" repo
+grep -rn "fputcsv\|implode" repo
+grep -rn "forAccount" repo
+grep -rn "cursor()\|->get()" repo

@@ -1,0 +1,5 @@
+[
+ {"id": 1001, "customer": "Acme Ltd", "amount_cents": 4200, "refunded_cents": 0, "status": "paid"},
+ {"id": 1002, "customer": "Globex", "amount_cents": 1999, "refunded_cents": 0, "status": "paid"},
+ {"id": 1003, "customer": "Initech", "amount_cents": 15000, "refunded_cents": 0, "status": "paid"}
+]

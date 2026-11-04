@@ -1,0 +1,36 @@
+{
+  "name": "sync",
+  "type": "shape-questions",
+  "applies_to": "two systems that share the same data",
+  "group": "Keeping {A} and {B} in sync",
+  "trigger": {
+    "min_system_branches": 2,
+    "between_has_points": true
+  },
+  "each_direction": [
+    "Which details should go from {from} to {to}?",
+    "When someone adds a record in {from}, should it also appear in {to}?",
+    "When someone deletes a record in {from}, what should happen in {to}?",
+    "If a change fails to reach {to}, who should be told?",
+    "When a change from {from} shows in {to}, whose name should {to} show?",
+    "If {to} receives a value it does not allow, should it reject it, accept it, or flag it for review?",
+    "How soon must a change in {from} show in {to}?",
+    "Which time zone decides the dates sent to {to}?"
+  ],
+  "once": [
+    "Who on the customer's side approves giving us access to their data?",
+    "When the same record changes in {A} and in {B} before they sync, which change should win?",
+    "Should the customer see when that happens?",
+    "What should a person see when a change fails to sync?",
+    "Can someone retry a change that failed to sync?",
+    "Can people see whether a record is synced, waiting or failed?",
+    "When sync is first turned on, a record may exist in both places with different details. Which version should we keep?",
+    "Does anything about how data moves between {A} and {B} today need to change?",
+    "If many records change or are deleted at once, should sync pause for someone to approve it?",
+    "If a bad sync overwrites good data, must a customer be able to undo it?",
+    "Must there be a history of what each sync changed?",
+    "Who decides which details sync: the customer or us?",
+    "If either system rebuilds its data and record IDs change, how should records be matched again?",
+    "If the account that connects {A} and {B} is replaced, what should happen to changes already made?"
+  ]
+}

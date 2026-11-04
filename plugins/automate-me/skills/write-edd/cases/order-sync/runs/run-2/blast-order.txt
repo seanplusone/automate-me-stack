@@ -1,0 +1,31 @@
+ROOTS: .
+ENTITY: Order | src/Models/Order.php
+CHAIN: App\Framework\Model | src/Framework/Model.php
+CHAIN: App\Traits\TenantScoped | src/Traits/TenantScoped.php
+CHAIN: App\Traits\Auditable | src/Traits/Auditable.php
+HOOK BR1: saving | src/Models/Order.php:20 | "static::saving(function ($order) {" | Before every save, sets score to 100 minus 10 per related line item (100 when there are none), overwriting any score passed in.
+HOOK BR2: deleting | src/Models/Order.php:24 | "static::deleting(function ($order) {" | Before delete, runs a bulk query delete of the order's line items; this skips LineItem's own deleting hook, so line item photos are not removed from storage.
+HOOK BR3: creating | src/Traits/TenantScoped.php:15 | "static::creating(function ($model) {" | On create, fills tenant_id from Context::tenantId() when the model has none.
+HOOK BR4: saved | src/Traits/Auditable.php:12 | "static::saved(function ($model) {" | After every save, inserts an AuditLog row with model class, id, Auth::id() and getDirty(); no hook runs on delete, so deletes are not audited.
+HOOK BR5: boot | src/Framework/Model.php:12 | "foreach (class_uses_recursive(static::class) as $trait) {" | Boot loops over the model's traits and calls each __boot_<TraitName> method, which is how TenantScoped and Auditable register their hooks.
+SCOPE BR6: tenant | src/Traits/TenantScoped.php:11 | "static::addGlobalScope('tenant', function ($query) {" | Every Order query is filtered to tenant_id = Context::tenantId(); with no tenant set in context the filter has no valid tenant to match.
+WRITER BR7: src/Http/OrdersController.php:13 | "$order->save();" | Updates an order from request input via fill() on the fillable fields, firing saving and saved hooks.
+WRITER BR8: src/Http/OrdersController.php:19 | "Order::findOrFail($id)->delete();" | Deletes one order, firing the deleting hook and removing its line items.
+WRITER BR9: src/Sync/CrmPull.php:12 | "Order::updateOrCreate(" | Creates or updates orders from CRM records, writing site_name, status, notes, ordered_at keyed by crm_id and tenant_id; goes through model save so hooks fire.
+WRITER BR10: src/Console/ImportCsv.php:14 | "DB::table('orders')->insert([" | Raw insert of site_name, status, notes; bypasses model hooks and the tenant scope, and sets no tenant_id or score.
+WRITER BR11: src/Models/Order.php:21 | "$order->score = $order->lineItems()->count() === 0 ? 100 : 100 - $order->lineItems()->count() * 10;" | Writes the score field on every save.
+READER BR12: src/Reports/OrderReport.php:11 | "return Order::where('status', 'open')->count();" | Reads status to count open orders, under the tenant scope.
+READER BR13: src/Http/OrdersController.php:11 | "$order = Order::findOrFail($id);" | Loads an order by id, under the tenant scope, before the update.
+READER BR14: src/Traits/Auditable.php:17 | "'changes' => $model->getDirty()," | Reads the changed fields of the order to store in the audit log.
+READER BR15: src/Models/Order.php:21 | "$order->score = $order->lineItems()->count() === 0 ? 100 : 100 - $order->lineItems()->count() * 10;" | Reads the related line items count to compute score.
+NOT FOUND: any existing code that writes a WebhookOutbox row for an Order | grep -rn "WebhookOutbox::create" src
+NOT FOUND: any model listener for updated, deleted, created or updating | grep -rnE "static::(updated|deleted|created|updating)\(" src
+NOT FOUND: any place that removes the tenant scope | grep -rn "withoutGlobalScope" src
+SEARCHES:
+grep -rn "Order" src
+grep -rnE "crm_id|site_name|'orders'|ordered_at|notes|score|'status'" src
+grep -rn "orders" . --exclude-dir=.git
+grep -rn "WebhookOutbox::create" src
+grep -rnE "static::(updated|deleted|created|updating)\(" src
+grep -rn "withoutGlobalScope" src
+COUNTS: hooks 5, scopes 1, writers 5, readers 4, not found 3

@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "github": {
+      "command": "github-mcp-server",
+      "args": ["stdio"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "mcp-fake-secret-aaa" }
+    },
+    "shop-db": {
+      "command": "uvx",
+      "args": ["postgres-mcp", "--access-mode=restricted"],
+      "env": { "DATABASE_URI": "postgresql://shop_ro:mcp-fake-secret-bbb@localhost:5433/shop" }
+    }
+  }
+}

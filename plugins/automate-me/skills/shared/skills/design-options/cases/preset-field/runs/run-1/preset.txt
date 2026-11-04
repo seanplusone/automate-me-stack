@@ -1,0 +1,9 @@
+ARCH A1: offer the form builder a select pre-filled with Low, Medium and High that defaults to Medium | PRECEDENT repo/builder/presets/YesNoPreset.php:3 | STANDARD NONE | USE reuse | WHY It is an ordinary select with settings filled in, which is exactly what the existing Preset kind does (repo/builder/presets/Preset.php:3), and SelectField already carries a default (repo/src/Fields/SelectField.php:11), so no new kind or runtime change is needed.
+SHAPE A1: HOLDS | adds one Preset subclass that mirrors YesNoPreset and registers it in the builder palette; the runtime field, registry and renderer are untouched, and it inherits the repeater exclusion from the Preset base (repo/builder/presets/Preset.php:14) | repo/builder/presets/YesNoPreset.php:3
+SEARCHES: ls .claude/blast-radius.md and project rules files (none exist: no Standards or Capability index to read, STANDARD NONE)
+grep -rn "extends Preset" repo
+grep -rni "preset" repo
+grep -rn "default" repo
+grep -rni "priority\|low\|medium\|high" repo
+grep -rn "options" repo
+grep -rn "excludedAncestors" repo

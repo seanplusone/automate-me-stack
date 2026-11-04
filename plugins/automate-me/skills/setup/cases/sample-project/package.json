@@ -1,0 +1,9 @@
+{
+  "name": "demo-shop",
+  "private": true,
+  "scripts": {
+    "dev": "vite --port 5174",
+    "start": "node server.js",
+    "test": "vitest run"
+  }
+}

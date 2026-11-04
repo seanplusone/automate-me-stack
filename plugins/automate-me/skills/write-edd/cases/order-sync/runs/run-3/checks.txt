@@ -1,0 +1,9 @@
+PASS delta: 15 changes checked
+PASS sections: 9 expected
+PASS coverage: 56/56 cited
+PASS hazards: 9 rows
+PASS spikes: 2 cited, 0 ran
+PASS diagrams: 2 found, 15/15 delta ids drawn
+PASS names: 7 checked in cases/order-sync/repo
+PASS writing: cases/order-sync/runs/run-3/edd.md
+SKIP render: mmdc not installed (npm i -g @mermaid-js/mermaid-cli)

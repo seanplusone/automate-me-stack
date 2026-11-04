@@ -1,0 +1,16 @@
+ARCH A1: download an account's invoices as a CSV file from an export route | PRECEDENT repo/src/Http/OrderExportController.php:5 (with repo/src/Support/CsvWriter.php:8 and repo/src/routes.php:3) | STANDARD NONE (no project rules file and no .claude/blast-radius.md in the repo) | USE mirror | WHY The order export already streams an account-scoped query through CsvWriter::download and row behind a GET /<thing>/export route, so the invoice export is the same controller shape with different headers, model and columns.
+ARCH A2: stop CSV cells that start with = + - or @ from running as spreadsheet formulas | PRECEDENT NONE | STANDARD NONE (no project rules file and no .claude/blast-radius.md in the repo) | USE new | WHY Nothing in the repo escapes formula cells today; CsvWriter::row passes cells straight to fputcsv, and the order export writes customer_name unescaped.
+OPTION A2.1: a private neutralize() in each export controller, mapped over the cells before calling CsvWriter::row (the change's shape) | RED FLAGS information leakage (the formula-prefix rule lives in every controller that exports), two ways to do one task (OrderExportController writes raw cells through the same writer while InvoiceExportController escapes them), invariant left out of the shared base (each new caller must remember to add it) | INTERFACE CsvWriter unchanged; every caller must wrap its cells itself
+OPTION A2.2: CsvWriter::row neutralizes each cell before fputcsv, so every download is escaped | RED FLAGS none | INTERFACE CsvWriter::download and row unchanged; callers pass raw values and need not know the rule exists
+SHAPE A1: HOLDS | mirrors OrderExportController: same CsvWriter::download, forAccount()->cursor() loop and route form | repo/src/Http/OrderExportController.php:5
+SHAPE A2: FAILS | step 5 (invariants in the base): the escape is a rule that must hold for every user of the shared CsvWriter, but the change puts it in one caller, so the existing order export (customer_name at OrderExportController.php:9) stays unescaped and the next export must copy it; the steps pick A2.2, the neutralization inside CsvWriter::row, with the controller calling row on raw values like the order export does | src/Http/InvoiceExportController.php:13 (diff), repo/src/Support/CsvWriter.php:22
+SEARCHES: ls -a . repo (looked for a project rules file or .claude/blast-radius.md; none)
+find repo -name 'blast-radius.md' (none)
+find repo -name 'CLAUDE.md' (none)
+find repo -path '*rules*' (none)
+find repo -name '.claude' (none)
+grep -rn "CsvWriter" repo (CsvWriter.php:4, OrderExportController.php:7)
+grep -rni "fputcsv\|csv" repo (CsvWriter.php:3,4,10,24; OrderExportController.php:7,9)
+grep -rnE "neutraliz|sanitiz|escape|formula|substr|'='" repo (no matches)
+grep -rn "export" repo (OrderExportController.php:5, routes.php:3)
+grep -rn "forAccount" repo (Order.php:5, Invoice.php:5, OrderExportController.php:8)

@@ -1,0 +1,35 @@
+REFERENCE: .claude/blast-radius.md
+ROOTS: repo
+ENTITY: Order | src/Models/Order.php
+CHAIN: Model (parent) | src/Framework/Model.php
+CHAIN: TenantScoped (trait) | src/Traits/TenantScoped.php
+CHAIN: Auditable (trait) | src/Traits/Auditable.php
+HOOK BR1: saving | src/Models/Order.php:20 | "static::saving(function ($order) {" | recomputes score from the count of line items before every save
+HOOK BR2: deleting | src/Models/Order.php:24 | "static::deleting(function ($order) {" | deletes all of the order's line items before it is deleted
+HOOK BR3: creating | src/Traits/TenantScoped.php:15 | "static::creating(function ($model) {" | fills tenant_id from Context::tenantId() when empty on create
+HOOK BR4: saved | src/Traits/Auditable.php:12 | "static::saved(function ($model) {" | writes an AuditLog row with the dirty fields after every save
+HOOK BR5: deleting | src/Models/LineItem.php:16 | "static::deleting(function ($lineItem) {" | runs for each line item removed by BR2 and deletes its photo from storage
+HOOK BR6: boot | src/Framework/Model.php:15 | "forward_static_call([static::class, $method]);" | calls each trait's __boot_<Trait> method, which registers BR3, BR4 and SCOPE BR7
+SCOPE BR7: tenant | src/Traits/TenantScoped.php:11 | "static::addGlobalScope('tenant', function ($query) {" | limits every query to tenant_id equal to Context::tenantId(), so a job with no tenant context may match nothing or the wrong tenant
+WRITER BR8: src/Http/OrdersController.php:13 | "$order->save();" | saves fields filled from request input, firing BR1 and BR4
+WRITER BR9: src/Http/OrdersController.php:19 | "Order::findOrFail($id)->delete();" | deletes one order, firing BR2 and BR5
+WRITER BR10: src/Sync/CrmPull.php:12 | "Order::updateOrCreate(" | creates or updates crm_id, site_name, status, notes and ordered_at from CRM records, firing BR1, BR3 and BR4
+WRITER BR11: src/Console/ImportCsv.php:14 | "DB::table('orders')->insert([" | inserts site_name, status and notes with raw SQL, bypassing every hook and scope
+WRITER BR12: src/Models/Order.php:21 | "$order->score = $order->lineItems()->count() === 0 ? 100 : 100 - $order->lineItems()->count() * 10;" | sets score on each save
+WRITER BR13: src/Traits/TenantScoped.php:16 | "if (empty($model->tenant_id)) {" | sets tenant_id on create when empty
+READER BR14: src/Http/OrdersController.php:11 | "$order = Order::findOrFail($id);" | loads one order by id before update, under the tenant scope
+READER BR15: src/Reports/OrderReport.php:11 | "return Order::where('status', 'open')->count();" | counts orders by status
+READER BR16: src/Traits/Auditable.php:17 | "'changes' => $model->getDirty()," | reads the changed fields of the saved order
+READER BR17: src/Models/Order.php:21 | "$order->score = $order->lineItems()->count() === 0 ? 100 : 100 - $order->lineItems()->count() * 10;" | reads the line items relation count
+READER BR18: src/Sync/CrmPull.php:13 | "['crm_id' => $record['id'], 'tenant_id' => $tenantId]," | matches existing rows by crm_id and tenant_id
+NOT FOUND: other repo or app that reads or writes the orders table | grep -rnE "Order|orders" repo/src
+NOT FOUND: vendor/ directory | ls vendor
+NOT FOUND: observers, updating or updated listeners, withoutGlobalScope calls | grep -rnE "updating|updated|observe|withoutGlobalScope" src
+NOT FOUND: Context, Auth, DB and Storage framework files | find src/Framework -type f
+SEARCHES: grep -rn "Order\|orders" src
+SEARCHES: grep -rnE "crm_id|site_name|ordered_at|notes|score|status" src
+SEARCHES: grep -rnE "saving|saved|creating|deleting|updating|updated|addGlobalScope|withoutGlobalScope|observe|boot" src
+SEARCHES: grep -rnE "updating|updated|observe|withoutGlobalScope" src
+SEARCHES: find src/Framework -type f
+SEARCHES: ls vendor
+COUNTS: hooks 6, scopes 1, writers 6, readers 5, not found 4

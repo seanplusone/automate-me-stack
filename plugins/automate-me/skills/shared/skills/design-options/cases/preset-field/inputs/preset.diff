@@ -1,0 +1,32 @@
+diff --git a/builder/palette.php b/builder/palette.php
+index 0d4637d..ea8256c 100644
+--- a/builder/palette.php
++++ b/builder/palette.php
+@@ -2,5 +2,5 @@
+ 
+ return [
+     'fields' => [TextField::class, SelectField::class, RepeaterField::class],
+-    'presets' => [YesNoPreset::class],
++    'presets' => [YesNoPreset::class, PriorityPreset::class],
+ ];
+diff --git a/builder/presets/PriorityPreset.php b/builder/presets/PriorityPreset.php
+new file mode 100644
+index 0000000..29e8fc9
+--- /dev/null
++++ b/builder/presets/PriorityPreset.php
+@@ -0,0 +1,15 @@
++<?php
++
++class PriorityPreset extends Preset
++{
++    public static $label = 'Priority';
++    public static $baseField = SelectField::class;
++
++    public static function settings()
++    {
++        return [
++            'options' => ['low' => 'Low', 'medium' => 'Medium', 'high' => 'High'],
++            'default' => 'medium',
++        ];
++    }
++}
