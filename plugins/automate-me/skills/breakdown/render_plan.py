@@ -120,7 +120,7 @@ def render(p):
          '<div class="tbl"><table><thead><tr><th></th><th>Item</th><th>What it does</th><th>Size</th><th>After</th></tr></thead><tbody>']
     for it in items:
         cond = f' Only if {r(it["only_if"])}' if it.get("only_if") else ""
-        if it is items[0]:
+        if it is items[0] and any(it["id"] in later.get("after", []) for later in items[1:]):
             cond = " Goes first." + cond
         o.append(f'<tr><td><b>{it["id"]}</b></td><td>{r(it["name"])}</td><td>{r(it["plain"])}{cond}</td><td>{it["size"]}</td><td>{", ".join(it.get("after", [])) or "start"}</td></tr>')
     o.append(f'</tbody></table></div><p class="cap">{KEY}</p>')

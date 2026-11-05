@@ -108,5 +108,31 @@ class RenderPlan(unittest.TestCase):
         self.assertEqual(page.count("<rect"), 2)
 
 
+class RealRules(unittest.TestCase):
+    """No stub: the rule folders as they ship."""
+
+    def example(self):
+        import json
+        import re
+        text = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "references", "plan-shape.md")).read()
+        return json.loads(re.search(r"```json\n(.*?)```", text, re.S)[1])
+
+    def test_doc_example_passes(self):
+        self.assertEqual(errs(self.example()), [])
+
+    def test_unknown_rule_set_fails(self):
+        p = self.example()
+        p["gaps"][0]["from"] = "rule:no-such-set"
+        self.assertTrue(any("from must be" in e for e in errs(p)))
+
+    def test_goes_first_only_when_something_waits(self):
+        p = self.example()
+        self.assertNotIn("Goes first", render_plan.render(p))
+        b = copy.deepcopy(p["items"][0])
+        b.update(id="B", after=["A"])
+        p["items"].append(b)
+        self.assertIn("Goes first", render_plan.render(p))
+
+
 if __name__ == "__main__":
     unittest.main()

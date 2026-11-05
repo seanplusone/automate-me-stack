@@ -34,6 +34,11 @@ def eng_patterns():
     return {f[:-5] for f in os.listdir(d) if f.endswith(".json")} if os.path.isdir(d) else set()
 
 
+def pm_sets():
+    d = os.path.join(SHARED, "rules")
+    return {f[:-5] for f in os.listdir(d) if f.endswith(".json")} if os.path.isdir(d) else set()
+
+
 def check_gaps(p, ids, need):
     """Gaps sit outside the plan's word cap, with their own. Every engineering pattern is listed as fired or not."""
     pats = eng_patterns()
@@ -45,7 +50,8 @@ def check_gaps(p, ids, need):
     text = []
     for i, g in enumerate(gaps, 1):
         src = g.get("from", "")
-        need(src in FROM or (src.startswith("rule:") and src[5:] in fired), f"gap {i}: from must be rule:<fired pattern>, evidence or guess")
+        rule = src[5:] if src.startswith("rule:") else None
+        need(src in FROM or rule in fired or (rule not in pats and rule in pm_sets()), f"gap {i}: from must be rule:<fired pattern or shared rule set>, evidence or guess")
         need(g.get("owner") in OWNERS, f"gap {i}: owner must be pm or engineer")
         need(g.get("changes") in ids or g.get("changes") == "question", f"gap {i}: changes must name an item, or say question")
         need(len(sentences(g.get("text", ""))) == 1, f"gap {i}: text must be one sentence")
