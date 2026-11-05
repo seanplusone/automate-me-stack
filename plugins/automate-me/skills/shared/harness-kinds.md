@@ -5,6 +5,9 @@ The thing that proves a fix option worked. It fails on today's code and passes a
 | Kind | What it is |
 |---|---|
 | `tests/safe test` | A write-safe test in the repo's safe suite. It fails before the change and passes after. |
+| `unit test` | A test in the target repo, outside a safe suite. It fails before the change and passes after. |
+| `findings file` | For an item that answers a question rather than changing code. A file answers it, with each claim labeled and its run or file:line. A fresh agent rechecks two claims. |
+| `script check` | A script that exits 1 while the output is wrong and 0 once it is right, such as a lint or a shape check. |
 | `revert check` | Restore the changed files from the commit before, rerun, and confirm the test fails again. Pairs with a test, never alone. |
 | `route test` | Asserts route order, or that an endpoint refuses a user without the right role. |
 | `migration rerun` | Run the migration twice on a database copy, then once with a planted bad row. |
