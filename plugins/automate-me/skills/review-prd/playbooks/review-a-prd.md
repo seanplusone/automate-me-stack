@@ -6,7 +6,7 @@ Input is one PRD. Output is a block of open questions that the engineer checks r
 
 1. **Build the mind map.** Run `skills/prd-mindmap`. A person checks the map before step 2.
 2. **Tag operations.** Run `skills/prd-gaps` step 2. The scenarios in step 3 read these tags to find missing operations, so they must exist first.
-3. **Scenarios.** `check.py scenarios out/gaps.txt rules out/map.txt` lists every scenario the rules produce. Rules in `rules/` fire on every PRD, on missing operations, or on the map's shape. It fails if `out/gaps.txt` has no tags yet. `skills/prd-gaps` step 3 fills each with a PRD quote or "not stated". `check.py check-scenarios` fails if one is missing or invented.
+3. **Scenarios.** `check.py scenarios out/gaps.txt ../shared/rules out/map.txt` lists every scenario the rules produce. Rules in `../shared/rules/` fire on every PRD, on missing operations, or on the map's shape. It fails if `out/gaps.txt` has no tags yet. `skills/prd-gaps` step 3 fills each with a PRD quote or "not stated". `check.py check-scenarios` fails if one is missing or invented.
 4. **Gaps.** Run `skills/prd-gaps` steps 1 and 4.
 5. **Collisions.** Run `../find-prd-collisions` on `out/map.txt` and `out/gaps.txt`. It finds points that contradict each other and scenarios that fall between points, which step 4 cannot see because it checks each point alone. Write its output to `out/collisions.md`. Its 15-question cap does not apply here. Its questions are input for step 6, not text for the PM. Step 6 writes every PM question.
 6. **Draft questions.** Load `../shared/writing-rules.md` and `../shared/voices/pm.md` first.
