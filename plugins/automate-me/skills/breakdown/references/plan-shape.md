@@ -14,7 +14,7 @@
     {
       "id": "A",
       "name": "Find who opens the current alerts",
-      "plain": "One sentence anyone can read, PM or junior engineer.",
+      "plain": "Count who opens the daily alerts today, so the digest has a baseline.",
       "after": [],
       "only_if": "",
       "size": "S",
@@ -37,7 +37,7 @@
       "open": ["A question only the user can answer, with a suggested answer."]
     }
   ],
-  "patterns": {"fired": ["sync"], "not_fired": ["import"]},
+  "patterns": {"fired": [], "not_fired": []},
   "gaps": [
     {"text": "A sync that looks like a reload could overwrite every record.", "from": "rule:sync", "owner": "engineer", "changes": "A"}
   ],
@@ -61,6 +61,6 @@
 - `spec.loop.max`: a whole number from 1 to 10. `exit_when` says what happens when the cap is hit.
 - `decisions[].label` and nothing else carries certainty: `measured`, `inferred` or `guess`. `over` names at least one rejected option.
 - `patterns`: every engineering rule file (shared/rules/eng), listed as `fired` or `not_fired`. Empty lists when that folder has no files.
-- `gaps`: at most 8, at most 250 words, outside the 900. Each is one sentence. `from` is `rule:<fired set>`, `evidence` or `guess`. `owner` is `pm` or `engineer`. `changes` names an item, or says `question`.
+- `gaps`: at most 8, at most 250 words, outside the 900. Each is one sentence. `from` is `rule:<set>`, `evidence` or `guess`. The set is a fired engineering set, or a PM set in `../../shared/rules/` such as `rule:sync`. `owner` is `pm` or `engineer`. `changes` names an item, or says `question`.
 - `log[].answer`: `held` or `changed`. A `changed` entry means the item above it was edited.
 - Every legend term appears on the page. The writing rules in `../../shared/writing-rules.md` apply to all prose.

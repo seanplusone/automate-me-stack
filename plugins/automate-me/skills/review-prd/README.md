@@ -25,7 +25,6 @@ review-prd/
     prd-gaps/SKILL.md       finds the gaps
   templates/
     open-questions.md       the block added as one section at the bottom of the PRD
-    sync.json               fires when two systems share data
   check/
     README.md               what the check script must verify
     check.py                the checks
