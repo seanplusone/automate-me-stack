@@ -40,6 +40,7 @@ These need `.claude/project-profile.md`, which `/automate-me:setup` writes. Tick
 | Review a PRD | `/automate-me:review-prd` | Open questions for the PM, as one section at the bottom of the PRD, plus inline corrections. |
 | A lighter PRD pass | `/automate-me:review-prd-light`, then `/automate-me:find-prd-collisions` | What is unclear or missing, then points that contradict each other and scenarios nothing covers. |
 | Write one PM message | `/automate-me:write-for-pm` | One draft a non-technical PM can answer. |
+| Break an idea into buildable parts | `/automate-me:breakdown <idea>` | One page with at most 8 small items in build order, each with a spec an agent can run. Ask "more on B" or "why is C after B?" to dig into one item. |
 | Design the change | `/automate-me:write-edd` | A draft EDD from the reviewed PRD, with today's code traced, the blast radius, and spikes run or marked blocked. |
 
 ## Good to know

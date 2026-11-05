@@ -25,9 +25,6 @@ review-prd/
     prd-gaps/SKILL.md       finds the gaps
   templates/
     open-questions.md       the block added as one section at the bottom of the PRD
-  rules/
-    expected-sets.json      CRUD and feature lifecycle
-    prd-basics.json         asked on every PRD, purpose first
     sync.json               fires when two systems share data
   check/
     README.md               what the check script must verify
@@ -71,3 +68,5 @@ Runs of one version differ. Score at least two runs of each version before readi
 ## Why the key is separate
 
 If the skill can see the key, the score means nothing. Run it from a copy of the case without `key.md`.
+
+The scenario rules live in `../shared/rules/`, so breakdown reads the same files.

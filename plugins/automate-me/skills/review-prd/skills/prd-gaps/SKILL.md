@@ -24,11 +24,11 @@ Check. Every point has six answers. None is a guess.
 
 Tag each point with one of: create, read, update, delete, none. Quote the line that shows it.
 
-Do not decide what is missing. The check script compares tags to `rules/` and lists what is missing.
+Do not decide what is missing. The check script compares tags to `../shared/rules/` and lists what is missing.
 
 ## Step 3. Fill rule scenarios
 
-`$SKILL_DIR` is the review-prd folder, which holds `check/`. Run `python3 "$SKILL_DIR"/check/check.py scenarios out/gaps.txt "$SKILL_DIR"/rules out/map.txt`. Copy each printed line into the output word for word, replacing the last field with the PRD quote that answers it, or `not stated`. Add no scenarios yourself.
+`$SKILL_DIR` is the review-prd folder, which holds `check/`. Run `python3 "$SKILL_DIR"/check/check.py scenarios out/gaps.txt "$SKILL_DIR"/../shared/rules out/map.txt`. Copy each printed line into the output word for word, replacing the last field with the PRD quote that answers it, or `not stated`. Add no scenarios yourself.
 
 Check. `check.py check-scenarios` passes: every rule scenario is present, and none is invented.
 
