@@ -1,6 +1,6 @@
 ---
 name: outcome
-description: Turn a rough idea, often a spoken ramble or a voice transcript, into a brief an agent can run. Sorts what was said into decisions, thinking aloud, tangents, questions and facts, then fills brief-check's slots, marks every gap unknown with the one question that fills it, and reads the brief back with at most 3 questions. Nothing runs until the user says yes. Use for /outcome, "here's a rough idea", "I'm just thinking out loud", or a long unstructured message about building, reviewing, designing, learning or deciding something. When a message looks like a ramble, offer it in one line first.
+description: Turn a rough idea, often a spoken ramble or a voice transcript, into a brief an agent can run. Sorts what was said into decisions, thinking aloud, tangents, questions and facts. Then it fills brief-check's slots and marks every gap unknown with the one question that fills it. It reads the brief back with at most 3 questions. Nothing runs until the user says yes. Use for /outcome, "here's a rough idea", "I'm just thinking out loud", or a long unstructured message about building, reviewing, designing, learning or deciding something. When a message looks like a ramble, offer it in one line first.
 ---
 
 # Outcome
@@ -13,7 +13,7 @@ Voice is only how the text arrives. The skill works on the transcript, typos and
 
 ## When to offer it
 
-The user can type `/automate-me:outcome`. When a message is a long ramble with no clear ask, offer it in one line: "Want me to turn this into a brief first?" Without a yes, answer the message as usual. With a yes, the skill shows the read-back and stops there. Nothing else runs until the user says yes to the brief.
+The user can type `/automate-me:outcome`. A message may be a long ramble with no clear ask. Then offer it in one line: "Want me to turn this into a brief first?" Without a yes, answer the message as usual. With a yes, the skill shows the read-back and stops there. Nothing else runs until the user says yes to the brief.
 
 ## Kinds of rough idea
 

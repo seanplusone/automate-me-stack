@@ -9,7 +9,7 @@ the same slot. The labels are fixed (see REQUIRED and OPTIONAL). Questions go in
 Fails when:
 - a required slot is missing, or any slot label appears more than once;
 - a slot has no value and no items;
-- an item that starts with `unknown` is not `unknown: <question>?`;
+- an item that starts with `unknown` is not `unknown: <question>?` (a note may follow the question);
 - the Unknowns slot is not `none` and holds an item that is not an unknown marker;
 - the Unknowns slot says `none` while another slot holds an unknown marker;
 - there are unknowns but no Questions block, or the block has more than 3 numbered questions,
@@ -29,7 +29,7 @@ SLOT = re.compile(r"^- (" + "|".join(map(re.escape, LABELS)) + r"):(.*)$", re.I)
 SUB = re.compile(r"^\s+[-*]\s+(.*)$")
 NUMBERED = re.compile(r"^(\d+)\.\s+(.*)$")
 UNKNOWN_START = re.compile(r"^unknown\b", re.I)
-UNKNOWN_OK = re.compile(r"^unknown:\s*\S.*\?\s*$", re.I)
+UNKNOWN_OK = re.compile(r"^unknown:\s*[^?\s][^?]*\?", re.I)
 TRAP = {"modern", "clean", "good", "better", "correct", "valid", "nice"}
 FILLER = {"a", "an", "the", "it", "its", "is", "be", "should", "must", "make", "made", "very", "really", "and",
           "or", "more", "look", "looks", "feel", "feels", "pretty", "just", "kind", "of", "enough", "to"}

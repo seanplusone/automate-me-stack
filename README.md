@@ -46,6 +46,7 @@ Every skill is named verb first and loads as `/automate-me:<name>`.
 | Write something an engineer will read | `write-for-engineer` |
 | Turn a colleague's ask into claims, proposals, fix options and tests before running anything | `decode-ask` |
 | Load a set of working rules for this session | `working-rules` |
+| Turn a rough idea or a spoken ramble into a brief an agent can run | `outcome` |
 | Check and tighten a draft prompt before an agent runs it | `brief-check` |
 
 The skills under `shared/skills/` run inside those, not on their own. Their names match the EDD steps they fill: `current-state`, `blast-radius`, `design-options` and `panel-check`.
@@ -97,6 +98,7 @@ Everything lives under `plugins/automate-me/skills/`:
 - `decode-ask/` turns a colleague's message into one short page before anything runs. The page lists what they want decided, each claim in system terms, each proposal, and each test with the result that would change the answer. Tests then run one per turn after a go, and the reply is drafted from the results.
 - `working-rules/` holds working rules for a session: response style, scope, verification, process, review voice and delegation. `fix <ticket>` and `pickup <ticket>` run a ticket from worktree to draft PR with checkpoints, using the values in `.claude/project-profile.md`. `check/check_profile.py` fails when a placeholder the rules use is missing from the profile, and `--filled` fails a value still left as a placeholder. It loads only when typed.
 - `write-for-pm/` and `write-for-engineer/` are standalone writing skills: one piece of text in, one draft out, in the matching voice from `shared/voices/`.
+- `outcome/` turns a rough idea, typed or spoken, into a brief. It sorts the ramble into decisions, thinking aloud, tangents and questions, fills brief-check's slots, and marks every gap it can't fill as unknown with a question. Then it reads the brief back with at most 3 questions, and nothing runs until the user says yes. `cases/` holds four rambles (an apartment search, an ERD, a PRD review and learning a topic), scored by `check/score_case.py` for kept facts, asked gaps and no invented ones.
 - `brief-check/` scores a draft prompt on six slots (plan first, goal, checks, output, verify, if stuck) and flags common traps. It fixes mechanical gaps and runs the prompt, or stops and asks when a gap needs information only the user has.
 - `shared/` holds what all of them use:
   - `writing-rules.md` and `check_writing.py`, plus `pr_prose.py`, which runs the same check over the comments, markdown, commit messages and body a PR publishes.
