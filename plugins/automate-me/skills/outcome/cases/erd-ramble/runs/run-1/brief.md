@@ -1,7 +1,7 @@
 # Brief: Pawpath ERD
 
 - Kind: build
-- Plan first: no. The entities are named; the two open questions go to the read-back.
+- Plan first: none needed. The entities are named; the open questions go to the read-back.
 - Goal: Draw an ERD for Pawpath, the dog walking booking app, in Postgres terms.
 - Decision:
   - The speaker shows it to the team on Thursday.
@@ -9,8 +9,9 @@
 - Context: No repo or schema was named. The database is Postgres. Owners pay per booking and the app takes 15 percent.
 - Must-haves:
   - Entities walker, owner, dog, booking and payment, each with a primary key. Proof is the diagram.
-  - A booking links one walker, one dog and one time slot, as stated. Group walks stay open until answered.
+  - A booking links one walker, one dog and one time slot (hedged, confirm). Group walks stay open until answered.
   - A payment belongs to one booking and records the 15 percent fee. Proof is a field on the payment entity.
+  - out of scope: reviews, owners rating walkers. Said "later", so also in the Parking lot.
 - Taste:
   - The speaker wants it to "look clean" for Thursday. Flag, don't filter.
   - unknown: What would make it look clean to you, fewer fields shown or only keys and links?

@@ -75,6 +75,24 @@ expect("forbidden guessed", "Forbidden: cap | \\bcap\\b[^.?\\n]{0,25}4300\n", 1,
        brief=BRIEF.replace("- Output: 10 rows.", "- Output: 10 rows under the cap of 4300."))
 expect("forbidden ignores questions", "Forbidden: cap | \\bcap\\b[^.?\\n]{0,25}4300\n", 0, "clear",
        brief=BRIEF.replace("Is 4300 the cap, or 5k?", "Is the cap 4300, or 5k?"))
+expect("pet does not match carpet (old substring bug)", "Unknown: pets | pet\n", 1, "no unknown or question names: pet",
+       brief=BRIEF.replace("Tour or apply?", "Is carpet in the bedrooms fine?"))
+expect("pet matches pets", "Unknown: pets | pet\n", 0, "PASS",
+       brief=BRIEF.replace("What move-in date do you need?", "Do you have pets?"))
+expect("slot term 10 does not match 100", "Slot: If stuck | 10\n", 1, "does not name: 10")
+expect("slot term matches a word start only", "Slot: Goal | sting\n", 1, "does not name: sting",
+       brief=BRIEF.replace("Find 10 listings", "Find 10 existing listings"))
+expect("phrase matches across spaces", "Slot: If stuck | next 100\n", 0, "PASS",
+       brief=BRIEF.replace("next 100 dollars", "next  100 dollars"))
+expect("any finds a term in any slot", "Any: tool | browser\n", 0, "PASS",
+       brief=BRIEF.replace("- If stuck: Peek", "- If stuck: Check the browser works. Peek"))
+expect("any misses a term nowhere in the brief", "Any: tool | browser\n", 1, "brief does not name: browser")
+expect("a short term is a whole word", "Slot: Goal | ERD\n", 1, "does not name: ERD",
+       brief=BRIEF.replace("Find 10 listings", "Draw an erDiagram of 10 listings"))
+expect("a short term takes a plural s", "Slot: Goal | ERD\n", 0, "PASS",
+       brief=BRIEF.replace("Find 10 listings", "Draw two ERDs of 10 listings"))
+expect("pet is not petty", "Unknown: pets | pet\n", 1, "names: pet",
+       brief=BRIEF.replace("Tour or apply?", "Is a petty fee fine?"))
 expect("parking found", "Parking: fb | facebook\n", 0, "PASS")
 expect("parking missing", "Parking: pricing | pricing page\n", 1, "parking lot does not name")
 expect("key lines in a code block are ignored", "```\nFact: nowhere\n```\nFact: 2600\n", 0, "PASS 1/1")

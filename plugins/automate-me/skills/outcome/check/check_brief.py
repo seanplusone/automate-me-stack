@@ -2,13 +2,17 @@
 
 Usage: python3 check/check_brief.py <brief.md>
 
-A slot is a top-level line `- <Label>: <value>`. Indented `  - <item>` lines under it are more items of
-the same slot. The labels are fixed (see REQUIRED and OPTIONAL). Questions go in a block headed
+A slot is a top-level line `- <Label>: <value>`. A note in brackets after the label is allowed, as in
+`- Taste (flag, don't filter):`. Indented `  - <item>` lines under it are more items of the same slot.
+The labels are fixed (see REQUIRED and OPTIONAL). Questions go in a block headed
 `## Questions`, as numbered lines `1. <question>?`.
 
 Fails when:
 - a required slot is missing, or any slot label appears more than once;
 - a slot has no value and no items;
+- Plan first does not start with `yes` or `none needed`;
+- an `investigate:` or `out of scope:` item sits outside Must-haves, or a `how:` item outside Skills;
+- a slot that holds `unknown:` also offers a default;
 - an item that starts with `unknown` is not `unknown: <question>?` (a note may follow the question);
 - the Unknowns slot is not `none` and holds an item that is not an unknown marker;
 - the Unknowns slot says `none` while another slot holds an unknown marker;
@@ -21,11 +25,11 @@ Prints a PASS or FAIL line per check and exits 1 on any FAIL.
 import re
 import sys
 
-REQUIRED = ["Goal", "Decision", "Context", "Must-haves", "Taste", "Output", "Verify", "If stuck",
+REQUIRED = ["Plan first", "Goal", "Decision", "Context", "Must-haves", "Taste", "Output", "Verify", "If stuck",
             "Skills", "Parking lot", "Unknowns"]
-OPTIONAL = ["Plan first", "Kind"]
+OPTIONAL = ["Kind"]
 LABELS = REQUIRED + OPTIONAL
-SLOT = re.compile(r"^- (" + "|".join(map(re.escape, LABELS)) + r"):(.*)$", re.I)
+SLOT = re.compile(r"^- (" + "|".join(map(re.escape, LABELS)) + r")(?:\s*\([^)]*\))?:(.*)$", re.I)
 SUB = re.compile(r"^\s+[-*]\s+(.*)$")
 NUMBERED = re.compile(r"^(\d+)\.\s+(.*)$")
 UNKNOWN_START = re.compile(r"^unknown\b", re.I)
@@ -34,6 +38,9 @@ TRAP = {"modern", "clean", "good", "better", "correct", "valid", "nice"}
 FILLER = {"a", "an", "the", "it", "its", "is", "be", "should", "must", "make", "made", "very", "really", "and",
           "or", "more", "look", "looks", "feel", "feels", "pretty", "just", "kind", "of", "enough", "to"}
 MAX_QUESTIONS = 3
+PLAN_OK = re.compile(r"^(yes\b|none needed\b)", re.I)
+TAGS = {"investigate": ["Must-haves"], "out of scope": ["Must-haves"], "how": ["Skills"]}
+TAG = re.compile(r"^(" + "|".join(map(re.escape, TAGS)) + r"):", re.I)
 
 
 def canon(label):
@@ -112,7 +119,8 @@ def check(text):
     if is_none(unknowns):
         list_fails += [f"Unknowns says none but {s} is unknown" for s in marked]
     else:
-        list_fails += [f"Unknowns item is not an unknown marker: {i!r}" for i in unknowns if not UNKNOWN_START.match(i)]
+        list_fails += [f"Unknowns item is not an unknown marker: {i!r}. Report only goes in If stuck, exclusions in"
+                       f" Must-haves as 'out of scope:'" for i in unknowns if not UNKNOWN_START.match(i)]
     add("Unknowns list matches the slots", list_fails)
 
     q_fails = []
@@ -123,6 +131,22 @@ def check(text):
         q_fails.append(f"{len(questions)} questions, at most {MAX_QUESTIONS}")
     q_fails += [f"question {n} has no question mark" for n, q in enumerate(questions, 1) if "?" not in q]
     add(f"at most {MAX_QUESTIONS} questions, each a question", q_fails)
+
+    plan = slots.get("Plan first", [])
+    add("Plan first says yes or none needed",
+        [f"Plan first is {plan[0]!r}; write 'yes: <plan>' or 'none needed'" for _ in [0] if plan and not PLAN_OK.match(plan[0])])
+
+    tag_fails = []
+    for s, items in slots.items():
+        for i in items:
+            m = TAG.match(i)
+            if m and s not in TAGS[m.group(1).lower()]:
+                tag_fails.append(f"{s}: {m.group(1)!r} item belongs in {' or '.join(TAGS[m.group(1).lower()])}")
+    add("tagged items in their slots", tag_fails)
+
+    add("no default beside an unknown",
+        [f"{s} offers a default beside an unknown; leave the unknown on its own" for s, items in slots.items()
+         if any(re.search(r"\bunknown:", i, re.I) for i in items) and any(re.search(r"\bdefault", i, re.I) for i in items)])
 
     add("no bare trap adjective", [f"{s}: {i!r} names no visible signal" for s, items in slots.items()
                                    for i in items if is_bare_trap(i)])
