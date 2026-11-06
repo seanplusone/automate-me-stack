@@ -18,12 +18,12 @@ Slot: Kind | learn
 Slot: Goal | index
 Slot: Output | explanation/explain | example | check/quiz
 Slot: Verify | source/docs | cite
-Slot: Must-haves | composite/multicolumn/two-column | customer_id | created_at
+Slot: Must-haves | customer_id | created_at
 Slot: If stuck | report only/read-only/never create
 
 ## Gaps that must be asked, not guessed
 
-Unknown: version | version
+Unknown: version | postgres version/version of postgres/which version
 Unknown: data size | rows/table size/how big
 Unknown: where to run | run/database/local
 

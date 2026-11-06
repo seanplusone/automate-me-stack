@@ -1,7 +1,7 @@
 # Brief: 3 bed apartment in Irvine
 
 - Kind: search/decide
-- Plan first: yes. Show the search plan, then search sources in parallel, not one at a time.
+- Plan first: yes: show the sources and filters before the search starts.
 - Goal: Find about 10 listings for a 3 bed 2 bath apartment in Irvine and rank them.
 - Decision: unknown: Is the shortlist for picking which places to tour, or which to apply to?
 - Context: Three people. The couple pays 2600 and the other tenant pays 1700, which sums to 4300. The speaker said "we can go up to 5k if it's really good."
@@ -19,6 +19,7 @@
   - A second reviewer checks the list like a senior reviewing a junior, before it comes back.
 - If stuck: if fewer than 10 listings fit under the cap, peek the next 100 dollars up and mark those as over. Stop after one peek. Never loosen a must-have without asking. Report only; contact no landlord.
 - Skills:
+  - how: search the sources in parallel, not one at a time, one agent per source.
   - No plugin skill fits the search. The run needs a browser tool that can open listing photos; check it works first.
   - After the run, if something great turns up, offer once to save what worked, using the learn-from-run playbook.
 - Parking lot:

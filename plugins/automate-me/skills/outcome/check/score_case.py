@@ -3,12 +3,17 @@
 Usage: python3 check/score_case.py <cases/<name>/key.md> <brief.md>
 
 Key lines, one item each, outside code blocks. Terms are separated by ` | `; a term written `a/b`
-matches either side. Matching ignores case.
+matches either side. Matching ignores case. A term matches at the start of a word: `pet` matches
+`pets` but not `carpet`, and a term that ends in a digit must end the number (`10` is not `100`).
+A term of 3 letters or fewer must be the whole word, or that word plus s (`ERD` is not `erDiagram`).
+A term of several words matches as a phrase.
 
   Fact: <term> | <term> ...       each term appears in the brief exactly as written. A term that
                                   starts or ends with a letter or digit must not run into another
                                   one, so `10` does not match `100` and `2600` does not match `2,600`.
   Slot: <Label> | <term> ...      the slot's text holds every term.
+  Any: <id> | <term> ...          the brief holds every term, in any slot. For a point whose slot
+                                  is a judgment call, such as which slot names a tool.
   Unknown: <id> | <term> ...      one unknown marker (`unknown: ...?`) or one numbered question holds
                                   every term. The gap was asked, not guessed.
   Forbidden: <id> | <regex>       the regex matches nowhere in the brief once every sentence that ends
@@ -24,7 +29,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from check_brief import UNKNOWN_START, canon, parse  # noqa: E402
 
-KEY_LINE = re.compile(r"^(Fact|Slot|Unknown|Forbidden|Parking):\s*(.+)$")
+KEY_LINE = re.compile(r"^(Fact|Slot|Any|Unknown|Forbidden|Parking):\s*(.+)$")
 
 
 def read_key(path):
@@ -48,8 +53,21 @@ def fact_found(term, text):
     return False
 
 
+def term_pattern(alt):
+    """A term matches at the start of a word, so `pet` matches `pets` but not `carpet`. A term that ends in
+    a digit must end the number, so `10` does not match `100`. A word of 3 letters or fewer must end the word,
+    with an optional plural s, so `ERD` matches `ERDs` but not `erDiagram`. Words in a phrase may be split by
+    any spaces."""
+    body = r"\s+".join(re.escape(w) for w in alt.split())
+    left = r"(?<!\w)" if alt[0].isalnum() or alt[0] == "_" else ""
+    right = r"(?!\d)" if alt[-1].isdigit() else ""
+    if len(alt) <= 3 and alt.isalpha():
+        right = r"s?(?!\w)"
+    return left + body + right
+
+
 def term_in(term, text):
-    return any(alt.lower() in text.lower() for alt in term.split("/"))
+    return any(re.search(term_pattern(alt), text, re.I) for alt in term.split("/") if alt.strip())
 
 
 def missing(terms, text):
@@ -81,6 +99,9 @@ def score(key_path, brief_path):
                 body = ""
             lost = missing(parts[1:], body)
             name, result = f"slot {label}", ("MISSED slot does not name: " + ", ".join(lost)) if lost else "found"
+        elif kind == "Any":
+            lost = missing(parts[1:], text)
+            name, result = f"any {parts[0]}", ("MISSED brief does not name: " + ", ".join(lost)) if lost else "found"
         elif kind == "Unknown":
             best = min((missing(parts[1:], i) for i in unknown_items), key=len, default=parts[1:])
             name = f"unknown {parts[0]}"

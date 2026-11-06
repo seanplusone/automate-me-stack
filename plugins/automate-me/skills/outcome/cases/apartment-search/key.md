@@ -21,16 +21,18 @@ Slot: Kind | search
 Slot: Taste | modern | carpet | bedroom | flag | photo
 Slot: Verify | photo/picture | description | senior/second reviewer/reviewer
 Slot: Output | 10
-Slot: Plan first | parallel
+Any: parallel | parallel
 Slot: Must-haves | 3 bed | 2 bath | Irvine
-Slot: If stuck | next 100/$100
-Slot: Skills | browser | save what worked
+Slot: If stuck | never loosen
+Slot: Skills | save what worked
+Any: peek | next 100
+Any: tool | browser
 
 ## Gaps that must be asked, not guessed
 
 Unknown: decision | tour/apply
 Unknown: move-in | move-in/move in
-Unknown: cap | 4300 | 5k/5000
+Unknown: cap | cap/ceiling/limit | 5k/5000
 Unknown: area | commute/neighborhood/area
 Unknown: pets | pet
 
@@ -47,4 +49,4 @@ Parking: facebook | facebook
 
 ## Learn step
 
-The brief names the learn step in its Skills slot (`save what worked`). Whether the run really offers it once, after something great turns up, is checked by a person.
+The brief names the learn step in its Skills slot (`save what worked`), as SKILL.md says. Whether the run really offers it once, after something great turns up, is checked by a person.

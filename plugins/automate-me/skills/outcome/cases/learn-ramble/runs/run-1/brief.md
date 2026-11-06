@@ -1,7 +1,7 @@
 # Brief: Learn how database indexes work
 
 - Kind: learn
-- Plan first: no. One topic, one session.
+- Plan first: none needed. One topic, one session.
 - Goal: Explain how an index speeds up a query, and when it does not, using the slow orders query as the example.
 - Decision: Whether to add the index someone suggested for the orders query, and how to explain why in standup.
 - Context:
