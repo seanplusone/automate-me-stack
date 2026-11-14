@@ -6,7 +6,7 @@
 
 - The skill's output file.
 - The PRD it reviewed (`cases/<name>/input/prd.md`).
-- `rules/expected-sets.json`.
+- `../../shared/rules/expected-sets.json`.
 
 `check.py` never reads `key.md`. `score_case.py` scores a run against the key, and a person checks its found gaps (see the main README).
 

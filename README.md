@@ -48,6 +48,7 @@ Every skill is named verb first and loads as `/automate-me:<name>`.
 | Load a set of working rules for this session | `working-rules` |
 | Turn a rough idea or a spoken ramble into a brief an agent can run | `outcome` |
 | Check and tighten a draft prompt before an agent runs it | `brief-check` |
+| Break an idea into small items an agent can build and prove, on one page | `breakdown` |
 
 The skills under `shared/skills/` run inside those, not on their own. Their names match the EDD steps they fill: `current-state`, `blast-radius`, `design-options` and `panel-check`.
 
@@ -100,9 +101,12 @@ Everything lives under `plugins/automate-me/skills/`:
 - `write-for-pm/` and `write-for-engineer/` are standalone writing skills: one piece of text in, one draft out, in the matching voice from `shared/voices/`.
 - `outcome/` turns a rough idea, typed or spoken, into a brief. It sorts the ramble into decisions, thinking aloud, tangents and questions, fills brief-check's slots, and marks every gap it can't fill as unknown with a question. Then it reads the brief back with at most 3 questions, and nothing runs until the user says yes. `cases/` holds four rambles (an apartment search, an ERD, a PRD review and learning a topic), scored by `check/score_case.py` for kept facts, asked gaps and no invented ones.
 - `brief-check/` scores a draft prompt on six slots (plan first, goal, checks, output, verify, if stuck) and flags common traps. It fixes mechanical gaps and runs the prompt, or stops and asks when a gap needs information only the user has.
+- `breakdown/` turns an idea too big for one prompt into at most 8 small items in a `plan.json`. Each item names its outcome, done check, limits, harness, try cap, verifier, model, effort and the only context its agent gets. `check_plan.py` holds it to those limits, at most 8 labeled gaps and the writing rules. `render_plan.py` draws the page (a build-order diagram, one plain line per item, details folded) and prints any item as an agent prompt with `--prompt`. The user then challenges one item at a time, and each answer is logged as held or changed.
 - `shared/` holds what all of them use:
   - `writing-rules.md` and `check_writing.py`, plus `pr_prose.py`, which runs the same check over the comments, markdown, commit messages and body a PR publishes.
   - `client_sweep.py`: finds every repo and client that reads a changed key, searching each `--repo` you pass by the key's name, the value's shape and the payload it travels in. `working-rules fix` runs it before any "no effect" claim.
+  - `harness-kinds.md`: the names for the check that proves a change, used by decode-ask and breakdown.
+  - `rules/`: the gap rules. PM questions sit at the top, and review-prd reads them. Engineer checks go in `rules/eng/`, empty for now. breakdown reads both.
   - `voices/`: who a draft is written for. `engineer.md` is the voice for PR review comments, and `pm.md` is for questions a non-technical PM reads.
   - `skills/current-state`: how the code does one thing today, step by step with file:line.
   - `skills/blast-radius`: what fires, filters or depends on one entity. `check_blast.py` checks both lists against the code.
