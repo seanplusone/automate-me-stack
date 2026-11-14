@@ -27,6 +27,7 @@ VERDICT = re.compile(r"^(approve|approve after .+|needs answer: .+|hold: .+|scop
 PR_HEAD = re.compile(r"^## (\S+/\S+#\d+) \| (.+)$")
 FINDING_HEAD = re.compile(r"^### (.+?) \| (\S+:\d+|PR) \| (https://\S+)(?: \| reply \d+)?$")
 SITES = re.compile(r"^\d+ \| \S.*$")
+LENSES = re.compile(r"^[2-9]$|^[1-9]\d+$")
 MID_COLON = re.compile(r"[a-z`)\]] *: +[a-z`\"]")
 MD_LINK = re.compile(r"\[([^\]]+)\]\(https?://[^)\s]+\)")
 BARE_REF = re.compile(r"(?<![\w/@.#-])(?:[\w.-]+/)?[\w.-]*#\d+\b|(?<![\w/#.-])[0-9a-f]{7,40}\b")
@@ -70,7 +71,7 @@ def read(path):
             continue
         if line.startswith("### ") and prs and prs[-1]:
             m = FINDING_HEAD.match(line)
-            finding = {"head": line, "match": m, "comment": [], "evidence": [], "sites": [], "plain": [], "steps": [], "bad_steps": []}
+            finding = {"head": line, "match": m, "comment": [], "evidence": [], "sites": [], "lenses": [], "plain": [], "steps": [], "bad_steps": []}
             prs[-1]["findings"].append(finding)
             continue
         if not prs:
@@ -92,6 +93,8 @@ def read(path):
             continue
         if line.startswith("Sites:"):
             finding["sites"].append(line[len("Sites:"):].strip())
+        elif line.startswith("Lenses:"):
+            finding["lenses"].append(line[len("Lenses:"):].strip())
         elif line.startswith("Evidence:"):
             finding["evidence"].append(line[len("Evidence:"):].strip())
         elif line.startswith("Plain:"):
@@ -173,6 +176,8 @@ def check_drafts(path):
                 fails.append(f"{where} more than one Evidence line")
             if len(f["sites"]) > 1:
                 fails.append(f"{where} more than one Sites line")
+            if len(f["lenses"]) > 1:
+                fails.append(f"{where} more than one Lenses line")
             if len(f["plain"]) > 1:
                 fails.append(f"{where} more than one Plain line")
             for pl in f["plain"]:
@@ -195,6 +200,9 @@ def check_drafts(path):
             for st in f["sites"]:
                 if not SITES.match(st):
                     fails.append(f"{where} Sites line must be '<n> | <command>': {st[:60]}")
+            for ln in f["lenses"]:
+                if not LENSES.match(ln):
+                    fails.append(f"{where} Lenses line must be '<n>' with n at least 2: {ln[:60]}")
             for ev in f["evidence"]:
                 if len(ev.split()) > MAX_EVIDENCE_WORDS:
                     fails.append(f"{where} evidence is {len(ev.split())} words, max {MAX_EVIDENCE_WORDS}")
