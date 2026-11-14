@@ -86,6 +86,20 @@ if "`" in source:
 if "Explain</summary>" in render(write(drafts(("should fix", 3, [])))):
     FAILS.append("explain panel rendered with no steps")
 
+
+# Lenses: <n> is allowed on a finding, with n at least 2, and is not comment text.
+with_lenses = drafts(("should fix", 3, two + ["Lenses: 3"]))
+expect("Lenses 3 passes", with_lenses, True)
+expect("Lenses 1 fails", drafts(("should fix", 3, two + ["Lenses: 1"])), False, "Lenses line must be")
+doc = read(write(with_lenses))
+if doc["prs"][0]["findings"][0]["lenses"] != ["3"]:
+    FAILS.append(f"Lenses parsed wrong: {doc['prs'][0]['findings'][0]['lenses']}")
+if any("Lenses" in c for c in doc["prs"][0]["findings"][0]["comment"]):
+    FAILS.append("Lenses line leaked into the comment")
+page = render(write(with_lenses))
+if "Raised by 3 lenses." not in page:
+    FAILS.append("render did not show the Lenses count")
+
 if __name__ == "__main__":
     for line in FAILS:
         print(f"FAIL {line}")

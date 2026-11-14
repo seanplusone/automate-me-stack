@@ -51,11 +51,12 @@ def grouped(findings):
         if not m:
             continue
         text = " ".join(f["comment"])
-        g = out.setdefault(text, {"tag": m.group(1), "text": text, "lines": [], "plain": "", "evidence": "", "sites": "", "steps": []})
+        g = out.setdefault(text, {"tag": m.group(1), "text": text, "lines": [], "plain": "", "evidence": "", "sites": "", "lenses": "", "steps": []})
         g["lines"].append((m.group(2), m.group(3)))
         g["plain"] = g["plain"] or " ".join(f["plain"])
         g["evidence"] = g["evidence"] or " ".join(f["evidence"])
         g["sites"] = g["sites"] or " ".join(f["sites"])
+        g["lenses"] = g["lenses"] or " ".join(f["lenses"])
         g["steps"] = g["steps"] or f["steps"]
     return list(out.values())
 
@@ -91,13 +92,14 @@ def finding_html(pr, g):
     plain = f'<div class="plain"><p class="box-label">What this means</p><p>{inline(g["plain"])}</p></div>' if g["plain"] else ""
     explain = explain_html(g["steps"]) if g["steps"] else ""
     proof = ""
-    if g["evidence"] or g["sites"]:
+    if g["evidence"] or g["sites"] or g["lenses"]:
         ev = f"<p>{inline(g['evidence'])}</p>" if g["evidence"] else ""
         st = ""
         if g["sites"]:
             count, _, cmd = g["sites"].partition("|")
             st = f"<p>Found in {html.escape(count.strip())} places with <code>{html.escape(cmd.strip())}</code></p>"
-        proof = f'<details class="proof"><summary>How this was checked</summary>{ev}{st}</details>'
+        ln = f"<p>Raised by {html.escape(g['lenses'])} lenses.</p>" if g["lenses"] else ""
+        proof = f'<details class="proof"><summary>How this was checked</summary>{ev}{st}{ln}</details>'
     topic = f"{pr}: {g['tag']} finding on {g['lines'][0][0]}"
     return (
         f'<article class="finding" data-topic="{html.escape(topic)}">'

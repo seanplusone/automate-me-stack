@@ -35,6 +35,7 @@ Evidence: <one line: what was read or measured>
 Step: measured | <trigger, first step of the flow>
 Step: inferred | <next step, ending at the failure>
 Sites: <n> | <the command that lists them>
+Lenses: <n>
 
 ### ...
 
@@ -59,7 +60,8 @@ Rules for the file:
 - **At most 5 findings per PR, and at most 1 nit.** Fold every nit into that one comment.
 - **Steps.** `Step: measured | <text>` or `Step: inferred | <text>`, in flow order from trigger to failure. Required on `blocking` and `should fix` (2 to 6, first copy only), optional on `question` (2 to 6), none on `nit`. `measured` means you ran something and saw it, such as a command, a test or a grep count. `inferred` means you read it from code and reasoned. At most 20 words each. They are never posted.
 - **Sites.** A finding that is a pattern (the same mistake at more than one place) gets a `Sites:` line. It holds the count of every place it occurs, found by a command, and the command itself. Comment on the sites that matter most and let the count carry the rest. Never stop at the first two you happened to read.
-- **One comment per site.** A pattern found at three lines is three comments with the same text. They count once toward the cap. `Plain`, `Evidence` and `Sites` go on the first copy only.
+- **Lenses.** A finding raised by 2 or more panel lenses records `Lenses: <n>` on the first copy. The check enforces the shape.
+- **One comment per site.** A pattern found at three lines is three comments with the same text. They count once toward the cap. `Plain`, `Evidence`, `Sites` and `Lenses` go on the first copy only.
 - **Plain.** One line per finding, on the first copy, at most 110 words. Say what the code does wrong and what a user or operator would notice, as you would to a colleague who has not read the diff. Define every term the comment uses that is not plain English (a flag, "post-action", "N+1", "DNM", "rebase").
 - **About.** One sentence per PR, what it does in product terms.
 - **Changes.** One line per PR, pasted from `check/classify.py` (playbook step 0), such as `12 files: 3 source, 1 test, 8 generated`. When `classes.json` sits next to `drafts.md`, the check fails a missing or edited line, and any finding anchored on a `generated` file. Without it, the check fails an anchor on a hashed or `.gz` file name only. The page shows it under About. It is never posted.
@@ -115,8 +117,10 @@ Never part of the review. Post only when the user says to post, and post the wor
   ```
   python3 "$SKILL_DIR"/check/post_review.py <dir>/drafts.md
   python3 "$SKILL_DIR"/check/post_review.py <dir>/drafts.md --submit --reviewer <their login>
+  python3 "$SKILL_DIR"/check/post_review.py <dir>/drafts.md --comments-only
+  python3 "$SKILL_DIR"/check/post_review.py <dir>/drafts.md --comments-only --submit
   ```
-  It adds them as a requested reviewer where they are missing and posts at each PR's current head. It posts `reply <id>` findings into their threads, and prints each review URL with how many inline comments landed. Give them those URLs.
+  It adds them as a requested reviewer where they are missing and posts at each PR's current head. It posts `reply <id>` findings into their threads, and prints each review URL with how many inline comments landed. Give them those URLs. `--comments-only` posts the findings as one PR comment with no review event, and does not add a requested reviewer. Use it when the user never lets agents approve.
 - After posting, point them to the *Summary message* box at the top of the review page. Its Copy button puts rich text on the clipboard. Pasted into a chat tool such as Slack or Teams, the headings stay bold and each PR number stays a link. Text pasted from the terminal stays raw, so never hand them the message in chat. The box lists each PR as a linked number under Approved, Approved with comments, Needs an answer or Changes requested, and leaves out empty groups and `scope:` PRs. A `needs answer:` PR gets its own group and the box lists its question. An `approve after` PR goes under Changes requested, since it is not approved yet. They post it themselves. `check/summary.py` prints the same message as Markdown, or with `--format slack` in Slack's mrkdwn, for posting through an API.
 - Run `python3 "$SKILL_DIR"/check/live_state.py <dir>/drafts.md` first. It fails on a closed or merged PR and on a head that moved since the review.
 - Re-check the anchors if a head moved since the review. One line outside every hunk rejects the whole review.

@@ -60,7 +60,7 @@ Most skills work as installed. Four read a file from your project's `.claude/` f
 /automate-me:setup
 ```
 
-It detects what it can from the repo (default branch, test command, local ports, Postgres services, database env variable names and MCP servers, never secret values). Then it asks a few multiple-choice questions, checks the answers and writes the files below. Run it again to change them. To do it by hand, copy each example from the skill's folder:
+It detects what it can from the repo (default branch, test command, local ports, Postgres services, database env variable names and MCP servers, never secret values). Then it asks a few multiple-choice questions, checks the answers and writes the files below. Run it again to change them. `setup --propose` writes a dry-run `.claude/project-profile.proposed.md` with every detected value marked unconfirmed, and changes nothing else. To do it by hand, copy each example from the skill's folder:
 
 | Skill | Copy | To | What it holds |
 |---|---|---|---|
