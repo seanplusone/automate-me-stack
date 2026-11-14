@@ -129,7 +129,7 @@ Do not assume the answer.
 - Good: "What, if anything, is a private record tied to?"
 
 **W16. Purpose first.** [script]
-If the purpose question from `review-prd/rules/prd-basics.json` is asked, it comes first among the questions, word for word. It is not asked when the PRD states the customer problem.
+If the purpose question from `shared/rules/prd-basics.json` is asked, it comes first among the questions, word for word. It is not asked when the PRD states the customer problem.
 
 ## How a rule gets added
 
