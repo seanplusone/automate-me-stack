@@ -1,6 +1,6 @@
 # Project profile
 
-Run `/automate-me:setup` to fill this in from what it finds in the repo, or copy this file to `.claude/project-profile.md` in the project repo and replace every `<...>`. The working-rules skill and its fix playbook read a value here wherever they write `<profile: ...>` with that key. Keep one ``- `key`: value`` line per key, so the skill finds it. Delete a line the project does not need, and the skill asks when it hits that step. A list key (`review_lenses`, `eval_gate`) may use a blank first line and one indented `- item` line under it.
+Run `/automate-me:setup` to fill this in from what it finds in the repo, or copy this file to `.claude/project-profile.md` in the project repo and replace every `<...>`. The working-rules skill and its fix playbook read a value here wherever they write `<profile: ...>` with that key. Keep one ``- `key`: value`` line per key, so the skill finds it. Delete a line the project does not need, and the skill asks when it hits that step.
 
 ## Tracker
 
@@ -35,9 +35,6 @@ Run `/automate-me:setup` to fill this in from what it finds in the repo, or copy
 
 - `review_skill`: `<the repo's own review skill or command, e.g. /team:review, or none>`
 - `change_checklist`: `<the repo's change checklist or blast-radius file, e.g. .claude/blast-radius.md, or none>`
-- `review_lenses`: `<one line per lens: name | model family | headless command | prompt file, or blank to skip the panel>`
-- `eval_gate`: `<registry, gate, eval and golden paths, or blank if the project has no model eval>`
-- `second_model`: `<a second model family to use as an adversary reviewer, or blank to use one only when the user asks>`
 
 ## Opening a PR (read by open-pr)
 

@@ -24,16 +24,6 @@ Write the project files that `working-rules`, `open-pr`, `query-db` and `verify-
 - **Whole files.** Each file is written in full, from the current values plus the answers, so a re-run gives the same file. Keep keys and sections the user added by hand.
 - **Shared things stay as they are.** Don't start, stop or restart services, and don't create database logins. Report what the user must do.
 
-## Unattended dry run
-
-`setup --propose` writes `.claude/project-profile.proposed.md` from detected values and changes nothing else. Every filled value is marked `(unconfirmed)`. It does not write `.claude/project-profile.md`, ask questions, or touch database or web-app files. A delegated agent can run it. review-pr may read the proposed file; each value it uses is labelled unconfirmed in the review.
-
-```bash
-python3 "$SKILL_DIR"/propose.py [<project dir>]
-```
-
-`check/test_propose.py` runs this on `cases/sample-project` and checks the file, the `(unconfirmed)` marks, and that no fixture secret is written.
-
 ## 1. Pick the parts
 
 Check which of the three files exist, then ask one multi-select question: "Which parts should I set up?" Options:

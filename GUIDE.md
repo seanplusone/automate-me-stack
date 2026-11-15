@@ -7,7 +7,7 @@ Find where you are in the work, then type the command. Every skill drafts for yo
 | You want to | Type | You get |
 |---|---|---|
 | Turn a rough idea into a prompt | `/automate-me:outcome` | Your ramble sorted into a one-line-per-slot brief, with at most 3 questions only you can answer. Nothing runs until you say yes. |
-| Set the project up | `/automate-me:setup` | Your databases, tracker, test commands and local app detected and confirmed, then written to `.claude/`. Run it again to change anything. `setup --propose` writes an unconfirmed profile and changes nothing else. |
+| Set the project up | `/automate-me:setup` | Your databases, tracker, test commands and local app detected and confirmed, then written to `.claude/`. Run it again to change anything. |
 
 ## Working a ticket
 
@@ -30,7 +30,7 @@ These need `.claude/project-profile.md`, which `/automate-me:setup` writes. Tick
 |---|---|---|
 | Understand a doc or a PR before reviewing it | `/automate-me:explain-doc <path or PR link>` | One page that shows the big picture through a small example and the flow in stages. It sums up every section and lists what looked wrong. |
 | Check a PR does what its test plan says | `/automate-me:verify-web pr <PR number>` | Each scenario run on the base branch and the PR branch, with evidence. A `verify.md` marks each one VERIFIED, CONTRADICTED or NOT RUN. |
-| Review a PR | `/automate-me:review-pr <PR link>` | At most five short inline comments per PR and a verdict, on a page you can share. Results from `verify-web pr` go in as findings. Nothing is posted until you say so. |
+| Review a PR | `/automate-me:review-pr <PR link>` | At most five short inline comments per PR and a verdict, on a page you can share. It flags a PR body that is hard to follow, and a model change whose eval does not run the production checks. Results from `verify-web pr` go in as findings. Nothing is posted until you say so. |
 | Know if a PR is too big | `/automate-me:split-pr <PR link or branch>` | A size verdict and, if it should split, which files go in each smaller PR and in what order. |
 | Write one comment or reply | `/automate-me:write-for-engineer` | One draft in the engineer voice, with the evidence behind each claim. |
 
