@@ -77,12 +77,10 @@ The argument after `working-rules` picks what to do. A ticket is a key in the pr
 - Draft first, as a pending review or an artifact page. Nothing posts until the user has read it.
 - Approve in good faith when nothing is breaking and the fixes are small. Hold only on a blocking finding.
 - Also run the repo's own review skill when the profile names one (`<profile: review_skill>`). Run both reviews again on any code added after their first pass.
-- When the profile names review lenses (`<profile: review_lenses>`), review-pr runs them as a panel before the refuter. A blank value skips the panel.
-- When the profile names an eval gate (`<profile: eval_gate>`), review-pr checks that a model or gate change is scored by the project's eval. A blank value skips that lens.
 
 ## Delegation
 
 - Run independent work in parallel agents. Give them file paths, not pasted text.
 - Pick model and effort per role. When pstack is installed and `~/.claude/rules/pstack-models.md` exists, take them from it. Say which you used when asked.
 - Every subagent brief says: never edit, stash or check out in the repo's main checkout, only in the ticket's worktree. Write any command-line flags literally, never from a shell variable.
-- Use a second model family when the profile names one (`<profile: second_model>`), or when the user asks. With a blank value, use one only when the user asks.
+- Use Codex only when the user asks for it.

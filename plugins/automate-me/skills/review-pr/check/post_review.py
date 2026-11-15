@@ -1,6 +1,6 @@
 """Posts a checked drafts.md to GitHub, one review per PR, so posting is the same every time.
 
-Usage: python3 check/post_review.py <drafts.md> [--submit] [--reviewer <login>] [--comments-only]
+Usage: python3 check/post_review.py <drafts.md> [--submit] [--reviewer <login>]
 Without --submit it only prints each payload. With --submit it adds the reviewer to each PR that
 does not already have them, posts the review at the PR's current head, and checks that every
 inline comment landed. Run it only when the user has said to post.
@@ -9,9 +9,6 @@ The event follows the verdict: `approve` posts APPROVE, `hold:` posts REQUEST_CH
 `approve after`, `needs answer:` or `scope:` post COMMENT. A `reply <id>` finding cannot go in a review, so it is
 posted into that thread after the review. A `PR` finding has no line, so it is posted as a PR
 comment after the review.
-
-`--comments-only` posts the findings as one PR comment with no review event, and does not add a
-requested reviewer. Use it when the user never lets agents approve.
 """
 import json
 import os
@@ -40,27 +37,7 @@ def event(verdict):
     return "COMMENT"
 
 
-def comments_only_body(pr):
-    parts = []
-    if pr["body"]:
-        parts.append(pr["body"])
-    for f in pr["findings"]:
-        m = f["match"]
-        if not m:
-            continue
-        body = " ".join(f["comment"])
-        site = m.group(2)
-        reply = REPLY.search(f["head"])
-        if reply:
-            parts.append(f"- {site} (reply {reply.group(1)}): {body}")
-        else:
-            parts.append(f"- {site}: {body}")
-    return "\n\n".join(parts)
-
-
-def plan(pr, comments_only=False):
-    if comments_only:
-        return None, [(None, comments_only_body(pr))]
+def plan(pr):
     comments, replies = [], []
     for f in pr["findings"]:
         m = f["match"]
@@ -81,13 +58,8 @@ def plan(pr, comments_only=False):
     return review, replies
 
 
-def submit(pr, review, replies, reviewer, comments_only=False):
+def submit(pr, review, replies, reviewer):
     repo, _, num = pr["pr"].partition("#")
-    if comments_only:
-        body = replies[0][1] if replies else (pr["body"] or "")
-        posted = gh("-X", "POST", f"repos/{repo}/issues/{num}/comments", payload={"body": body})
-        print(f"OK   {pr['pr']} comments-only {posted['html_url']}")
-        return True
     head = gh(f"repos/{repo}/pulls/{num}")
     if reviewer and reviewer != head["user"]["login"] and reviewer not in [r["login"] for r in head["requested_reviewers"]]:
         gh("-X", "POST", f"repos/{repo}/pulls/{num}/requested_reviewers", "-f", f"reviewers[]={reviewer}")
@@ -108,15 +80,12 @@ def submit(pr, review, replies, reviewer, comments_only=False):
 def main(argv):
     path = argv[1]
     reviewer = argv[argv.index("--reviewer") + 1] if "--reviewer" in argv else None
-    comments_only = "--comments-only" in argv
     prs, _ = parse(path)
     ok = True
     for pr in prs:
-        review, replies = plan(pr, comments_only)
+        review, replies = plan(pr)
         if "--submit" in argv:
-            ok = submit(pr, review, replies, reviewer, comments_only) and ok
-        elif comments_only:
-            print(pr["pr"], "comments-only:", json.dumps({"body": replies[0][1] if replies else ""}, indent=1))
+            ok = submit(pr, review, replies, reviewer) and ok
         else:
             print(pr["pr"], json.dumps(review, indent=1), "replies:", replies)
     return 0 if ok else 1

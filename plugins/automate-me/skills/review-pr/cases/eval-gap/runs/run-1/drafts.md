@@ -13,7 +13,6 @@ Evidence: Production rejected 52 of 295 eval-passing outputs at the PR head.
 Step: measured | The eval command scores schema and format only.
 Step: measured | evaluateOutputGate rejected 52 of those 295 outputs.
 Step: inferred | A default-model swap can ship with no eval signal from that gate.
-Lenses: 3
 
 ### should fix | lib/ai/models.ts:12 | https://github.com/acme/text-app/pull/88/files#diff-942f73d13d403391f92998e05dbb5f0b94a0f02b01239a4df9eb685ace879dbaR12
 This changes the default model, and no workflow runs the eval when this file changes. Can a job run the eval on this path, and skip when the key is absent?

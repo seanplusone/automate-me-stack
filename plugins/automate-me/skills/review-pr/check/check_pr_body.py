@@ -28,8 +28,8 @@ BAD_HEADING = re.compile(
 )
 BAD_PHRASE = re.compile(
     r"staff engineers?|security staff|as a reviewer|the review panel|"
-    r"glossary|definition of|score tables?|pass/fail table|"
-    r"how I reviewed|how we reviewed|refuter|lenses:\s*\d|"
+    r"\bglossary\b|definition of|score tables?|pass/fail table|"
+    r"how I reviewed|how we reviewed|\brefuter\b|\blenses:\s*\d|"
     r"for the interview|this PR was reviewed by|generated with",
     re.I,
 )
@@ -37,7 +37,7 @@ HEADING = re.compile(r"^#{1,6}\s+(.*)$")
 TABLE = re.compile(r"^\s*\|.+\|\s*$")
 BULLET = re.compile(r"^\s*[-*+]\s+\S")
 FENCE = re.compile(r"^```")
-ABBREV = re.compile(r"(?:e\.g|i\.e|etc|vs|Mr|Mrs|Ms|Dr|No)\.$")
+ABBREV = re.compile(r"\b(?:e\.g|i\.e|etc|vs|Mr|Mrs|Ms|Dr|No)\.$")
 
 
 def words(text):

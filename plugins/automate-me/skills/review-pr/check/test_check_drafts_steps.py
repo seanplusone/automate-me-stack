@@ -1,3 +1,4 @@
+"""Run: python3 check/test_check_drafts_steps.py"""
 import contextlib
 import html
 import io
@@ -15,6 +16,7 @@ FIX = "The upload skips the size guard. Can it call the guard first?"
 
 
 def drafts(*findings):
+    """Each finding is (tag, line, steps) where steps are raw 'Step:' lines; the comment text is shared per tag."""
     verdict = "hold: drops the guard" if any(t == "blocking" for t, _, _ in findings) else "approve after the guard"
     lines = ["# PR review: t", "", "Risk.", "", f"## o/r#1 | {verdict}", "About: Adds uploads.", ""]
     for tag, line, steps in findings:
@@ -83,19 +85,6 @@ if "`" in source:
     FAILS.append("backtick left in the mermaid source")
 if "Explain</summary>" in render(write(drafts(("should fix", 3, [])))):
     FAILS.append("explain panel rendered with no steps")
-
-
-with_lenses = drafts(("should fix", 3, two + ["Lenses: 3"]))
-expect("Lenses 3 passes", with_lenses, True)
-expect("Lenses 1 fails", drafts(("should fix", 3, two + ["Lenses: 1"])), False, "Lenses line must be")
-doc = read(write(with_lenses))
-if doc["prs"][0]["findings"][0]["lenses"] != ["3"]:
-    FAILS.append(f"Lenses parsed wrong: {doc['prs'][0]['findings'][0]['lenses']}")
-if any("Lenses" in c for c in doc["prs"][0]["findings"][0]["comment"]):
-    FAILS.append("Lenses line leaked into the comment")
-page = render(write(with_lenses))
-if "Raised by 3 lenses." not in page:
-    FAILS.append("render did not show the Lenses count")
 
 if __name__ == "__main__":
     for line in FAILS:
