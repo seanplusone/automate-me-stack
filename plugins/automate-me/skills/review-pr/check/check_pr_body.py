@@ -21,13 +21,11 @@ MAX_BULLETS = 6
 MAX_HEADINGS = 2
 MAX_FENCE = 8
 
-# Headings that turn a short PR into a document.
 BAD_HEADING = re.compile(
     r"^(glossary|definitions?|terms(?: used)?|reviewers?|review notes|"
     r"how this was reviewed|how we scored|appendix|changelog)$",
     re.I,
 )
-# Process or write-up phrases that do not help a human reviewer.
 BAD_PHRASE = re.compile(
     r"staff engineers?|security staff|as a reviewer|the review panel|"
     r"glossary|definition of|score tables?|pass/fail table|"
@@ -47,7 +45,6 @@ def words(text):
 
 
 def sentences(text):
-    """Split opening prose into sentences, ignoring common abbreviations."""
     text = " ".join(text.split())
     if not text:
         return []

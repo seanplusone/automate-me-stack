@@ -1,4 +1,3 @@
-"""Run: python3 check/test_check_readable.py"""
 import os
 import subprocess
 import sys

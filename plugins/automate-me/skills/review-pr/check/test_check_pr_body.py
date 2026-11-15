@@ -1,4 +1,3 @@
-"""Run: python3 check/test_check_pr_body.py"""
 import os
 import sys
 import tempfile

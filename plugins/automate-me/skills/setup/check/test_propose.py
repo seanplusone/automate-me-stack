@@ -1,11 +1,3 @@
-"""Tests for propose.py against cases/sample-project.
-
-Run: python3 check/test_propose.py
-
-Copies the fixture to a temp dir, makes it a git repo (same as test_detect.py), runs propose.py,
-and checks that only the proposed profile is written, filled values are marked (unconfirmed),
-and no fixture secret appears in the file.
-"""
 import os
 import shutil
 import subprocess
@@ -44,7 +36,6 @@ git(project, "remote", "add", "origin", "https://ci-user:remote-fake-secret@gith
 git(project, "update-ref", "refs/remotes/origin/main", "HEAD")
 git(project, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
 
-# A confirmed profile must be left untouched.
 os.makedirs(os.path.join(project, ".claude"))
 confirmed = os.path.join(project, ".claude", "project-profile.md")
 open(confirmed, "w").write("- `base_branch`: `keep-me`\n")
@@ -84,8 +75,6 @@ check("every filled value is marked unconfirmed",
       text)
 check("blank keys from the example are still present",
       "- `review_skill`:" in text and "- `second_model`:" in text, text)
-# second_model may not be in the example yet when this test is written; if the profile
-# was updated it should be present. The check above will fail if we forget the key.
 
 if FAILS:
     print(f"{len(FAILS)} failed")
