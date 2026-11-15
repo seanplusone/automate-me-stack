@@ -1,4 +1,3 @@
-"""Run: python3 check/test_post_review.py"""
 import json
 import os
 import sys

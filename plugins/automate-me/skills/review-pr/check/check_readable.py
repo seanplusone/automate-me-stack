@@ -40,7 +40,6 @@ def changed_files(base, head):
 
 
 def touched_lines(base, head, path):
-    """1-indexed right-side line numbers the diff adds or keeps in path."""
     lines = set()
     raw = git("diff", "-U0", f"{base}...{head}", "--", path)
     at = 0
@@ -58,7 +57,6 @@ def touched_lines(base, head, path):
 
 
 def functions(text):
-    """Each (name, start_line, end_line) in the file, 1-indexed, inclusive."""
     rows = text.splitlines()
     starts = []
     for i, row in enumerate(rows, 1):

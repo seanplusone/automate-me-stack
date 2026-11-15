@@ -41,7 +41,6 @@ def event(verdict):
 
 
 def comments_only_body(pr):
-    """One PR comment: the review body, then each finding as a path and its comment text."""
     parts = []
     if pr["body"]:
         parts.append(pr["body"])

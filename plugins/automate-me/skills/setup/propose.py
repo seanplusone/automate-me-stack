@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""Write a dry-run project profile from detected values. Changes nothing else.
-
-Usage: python3 propose.py [<project dir>]     (default: the current directory)
-
-Writes <project>/.claude/project-profile.proposed.md. Every filled value is marked
-(unconfirmed). It never writes .claude/project-profile.md, query-db.json, verify-web.yaml
-or .mcp.json, and never writes a secret. review-pr may read the proposed file; each value
-it uses must be labelled unconfirmed in the review.
-"""
+"""Write only .claude/project-profile.proposed.md. Never a secret, project-profile.md, query-db.json, verify-web.yaml, or .mcp.json."""
 import os
 import re
 import sys
@@ -42,7 +34,6 @@ def tracker_label(value):
 
 
 def derived(detected):
-    """Profile key -> suggested value, from detect output only. No secrets."""
     out = {}
     label = tracker_label(first(detected.get("tracker", [])))
     if label:
