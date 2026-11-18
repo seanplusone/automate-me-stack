@@ -21,7 +21,7 @@ Evidence: No workflow path filter includes lib/ai/models.ts.
 Step: measured | The default in lib/ai/models.ts:12 changed.
 Step: measured | No CI workflow lists that path as a trigger.
 
-Body: The eval needs to call the production gate before merge. The other comment is inline. Both defaults scored 40/40 on generation and 20/40 on the gated path, so the swap did not cause the gap.
+Body: The eval needs to call the production gate before merge, and the other comment is inline. Both defaults scored 40/40 on generation and 20/40 on the gated path, so the swap did not cause the gap.
 
 ## Totals
 Refuter: checked 2, reworded 0, dropped 0.
