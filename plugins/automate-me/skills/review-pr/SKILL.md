@@ -12,7 +12,7 @@ A good review is a few findings that are all true, that the author does not alre
 ## Run
 
 1. Open `playbooks/review-a-pr.md`. Copy its steps into the todolist word for word. With no todolist tool, keep the list in your notes and mark each step as you go.
-2. Follow the steps. Each one names the reference, sub-skill or script it uses.
+2. Follow the steps. Each one names the reference, sub-skill or script it uses. When the diff touches a model registry, a prompt, or a gate on model output, the playbook loads `playbooks/eval-gap.md`. It also runs `check/check_pr_body.py` on the saved PR body.
 3. Report back in the format below. Nothing else.
 
 ## The drafts file
@@ -52,7 +52,7 @@ Rules for the file:
 - **Comment.** At most 50 words. A plain fact, then a direct ask. The ask is usually a question, and can be a plain statement of what needs changing.
 - **Links.** Every PR, issue, commit or comment a comment names is a markdown link to it: `[acme/orders-api#123](<url>)`, `[abc1234](<commit url>)`. GitHub links a bare `#123` to that number in the PR's own repo, and a bare sha or `repo#n` to nothing. A link counts as one word. The check enforces it.
 - **Voice.** Write it in the engineer voice from `../shared/voices/engineer.md`, and read that file before drafting. One plain fact, then a direct ask that names the fix. No pleasantries and no softeners, and no process words from this file (tags, "verdict", "good faith").
-- **Review body.** Empty when the PR is approved with no comments. When it is approved with comments, one sentence says the approval stands and the comments are inline, such as "Approving, since an existing order's refund still goes through. The inline comment on the retry warning can be a follow-up." The check enforces it. One more sentence only when something has no line to sit on, such as a stale PR description.
+- **Review body.** Empty when the PR is approved with no comments. When it is approved with comments, one sentence says the approval stands and the comments are inline, such as "Approving, since an existing order's refund still goes through, and the inline comment on the retry warning can be a follow-up." The check enforces it. One more sentence only when something has no line to sit on, such as the eval pass rates (old vs new, measured once) or a stale PR description. A second extra sentence fails the check.
 - **PR-level comment.** A finding about code the diff does not touch but the change still reaches, or about a claim in the PR body, has no line to anchor on. Write `PR` in place of `<path>:<line>` and the PR URL as the link. It is posted as a PR comment and counts toward the cap like any other.
 - **Page colors.** The badge and tab dot follow the verdict: red for `hold`, yellow for `approve` with comments, `approve after` or `needs answer`, green for `approve` with none, grey for `scope`.
 - **Evidence.** At most 25 words, one line. Leave it out when the comment already names its proof.
