@@ -23,6 +23,7 @@ MIN_STEPS, MAX_STEPS = 2, 6
 STEP_LABELS = {"measured", "inferred"}
 MAX_FINDINGS = 5
 MAX_NITS = 1
+MAX_BODY_SENTENCES = 2
 VERDICT = re.compile(r"^(approve|approve after .+|needs answer: .+|hold: .+|scope: .+)$")
 PR_HEAD = re.compile(r"^## (\S+/\S+#\d+) \| (.+)$")
 FINDING_HEAD = re.compile(r"^### (.+?) \| (\S+:\d+|PR) \| (https://\S+)(?: \| reply \d+)?$")
@@ -44,6 +45,11 @@ def unlinked_refs(comment):
 def comment_words(comment):
     """Words in a comment, counting each markdown link as one."""
     return len(MD_LINK.sub("link", comment).split())
+
+
+def sentences(text):
+    """Sentences in a review Body, split the same way as the shared writing check."""
+    return [s for s in re.split(r"(?<=[.?!])\s+", re.sub(r"\s+", " ", text.strip())) if s]
 
 
 def read(path):
@@ -205,6 +211,10 @@ def check_drafts(path):
             fails.append(f"{name} has a blocking finding but the verdict does not hold")
         if pr["verdict"].startswith("approve") and tags and not pr["body"]:
             fails.append(f"{name} approves with comments, so the Body line must say the approval stands with comments inline")
+        if pr["verdict"].startswith("approve") and tags and pr["body"]:
+            n = len(sentences(pr["body"]))
+            if n > MAX_BODY_SENTENCES:
+                fails.append(f"{name} Body has too many sentences ({n}); one extra sentence past the approval is allowed")
         sites = {}
         for f in pr["findings"]:
             if f["match"]:

@@ -40,6 +40,6 @@ This playbook does not add an eval framework, a scorer registry, or a CI templat
 
 4. **Model change trigger.** If the diff changes a model default and nothing runs the eval on that path, that is a `should fix` finding. Ask for a trigger on the model registry path, and for a graceful skip when the provider key is absent.
 
-5. **Measure once.** Run the eval on the old and new model config with the same cases, and put both pass rates in the review body. Use the offline command when it exists and is enough. If the live command needs a provider key that is not set, skip with `skip: no provider key` and still file findings from steps 2 to 4. If both configs fail the same way, the model swap did not cause the failure, so say so.
+5. **Measure once.** Run the eval on the old and new model config with the same cases, and put both pass rates in the drafts `Body:` as that one allowed extra sentence, not a separate essay. Use the offline command when it exists and is enough. If the live command needs a provider key that is not set, skip with `skip: no provider key` and still file findings from steps 2 to 4. If both configs fail the same way, the model swap did not cause the failure, so say so.
 
 Findings from this lens go into the candidates of `review-a-pr.md` step 6, then through classify, draft and the refuter like any other.
