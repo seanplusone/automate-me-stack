@@ -1,6 +1,6 @@
 ---
 name: shape-idea
-description: Brainstorm a vague idea before outcome. The user wants something and does not yet know how it looks or how it works. Each turn restates the idea, asks one question, and names at most one risk. Decisions go into decisions.md as they are made. It stops when goal, done, output, verify, and constraints are decided, or at 10 turns, or at 5 open items, then hands the file to outcome. It never builds, runs, or posts anything. Use for /shape-idea, "help me think this through", "I have an idea but no plan", or a want with no shape yet.
+description: Brainstorm a vague idea before outcome. The user wants something and does not yet know how it looks or how it works. Each turn restates the idea, asks one question, and names at most one risk. Decisions go into decisions.md as they are made. It stops when the five slots are decided, at turn 10, or after turn 1 when more than 5 other gaps stay open. Then it hands the file to outcome. It never builds, runs, or posts anything. Use for /shape-idea, "help me think this through", "I have an idea but no plan", or a want with no shape yet.
 ---
 
 # Shape an idea
@@ -45,7 +45,7 @@ Keep the user's own words for every number and name. Never round, convert, or "f
 
 Read the whole message before you write. Sort each part into one section. Each item is one line.
 
-Five slots are required. Each one is a Decided line that starts with its name, or an Open line that starts with its name and ends with the one question that settles it. A slot the user did not decide is Open. Write missing slots before other gaps. An example is `output: what comes back, a list or a page?`.
+Five slots are required: goal, done, output, verify, and constraints. Each one is a Decided line that starts with its name, or an Open line that starts with its name and ends with one question. A slot the user did not decide is Open. Write a missing slot before any other gap. An example is `output: what comes back, a list or a page?`. A slot line does not count toward the open cap. A gap past that cap goes under Parked, question and all. Do not drop it.
 
 | Part of the message | Where it goes |
 |---|---|
@@ -103,19 +103,19 @@ On a later turn, a firm answer becomes one Decided line. Remove the Open line it
 
 After you save a message, check in this order. The first match wins. Write Handoff and do not take another turn.
 
-1. **done.** All five slots are Decided lines. The slots are goal, done, output, verify, and constraints.
-2. **open-cap.** Open has 5 items. Keep a missing slot before any other gap. If more gaps remain, do not write them.
+1. **done.** All five slots are Decided lines, and none of them is also Open.
+2. **open-cap.** Not on turn 1. After that, Open has more than 5 lines that are not the five slots.
 3. **turn-cap.** This reply is turn 10.
 
-Record that turn as `turns: <n>` in Handoff. Never write a turn above 10.
+Record that turn as `turns: <n>` in Handoff. The number is from 1 through 10.
 
-Record the message first, up to those 5 open items. A stop ends further turns. It does not drop a slot the user already decided in this message. A slot they left open stays Open, even at the cap.
+The five slots do not count toward open-cap. On turn 1, park any gap past the 5 other Open lines and ask the next question. Do not stop. A parked gap keeps its question. Outcome reads Parked as the Parking lot. A stop ends further turns. It does not drop a slot the user already decided.
 
 ## 4. Hand off
 
 A finished file has a Handoff section. A run without one fails the check.
 
-`stop` is one of `done`, `turn-cap`, or `open-cap`. `next` is `/automate-me:outcome`. `stop: done` is valid only when all five slots are Decided lines.
+`stop` is one of `done`, `turn-cap`, or `open-cap`. `next` is `/automate-me:outcome`. `stop: done` is valid only when all five slots are Decided and none is Open. `stop: open-cap` is valid only after turn 1, and only when more than 5 Open lines are not slots. `stop: turn-cap` is valid only when `turns` is 10.
 
 Before you write Handoff, run the repo's shared writing check. From this skill that script is `../shared/check_writing.py`. Run `python3 "$SKILL_DIR"/../shared/check_writing.py <decisions.md>`. Fix the lines it flags. Do not change the user's numbers or names. If a fix changes a line, run the check again.
 
@@ -136,7 +136,7 @@ Outcome reads the sections like this.
 | Open | Unknowns |
 | Parked | Parking lot |
 
-Run `python3 "$SKILL_DIR"/check/check_decisions.py <decisions.md>` after you write Handoff. Fix what it flags before you show the file. It checks the shape. The four sections are present once, in order. Every Open item ends with a question mark. Open has at most 5 items. Each slot is a Decided line or an Open line. `stop` is one of the three reasons. `turns` is a whole number no higher than 10. When `stop` is `done`, all five slots are Decided lines. No item runs past one line. Handoff names outcome and says `writing: pass`.
+Run `python3 "$SKILL_DIR"/check/check_decisions.py <decisions.md>` after you write Handoff. Fix what it flags before you show the file. It checks the shape, and it runs the shared writing check on the file. A `writing: pass` line does not override a writing failure. The four sections are present once, in order. Every Open item ends with one question mark. Each slot is one Decided line or one Open line, with a value. `stop` matches the file. `turns` is a whole number from 1 through 10. No item runs past one line. Handoff names outcome.
 
 The reply follows the [writing rules](../shared/writing-rules.md). Inside `decisions.md`, keep the user's numbers and names, and rewrite any line the writing check flags.
 

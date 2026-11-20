@@ -69,7 +69,36 @@ expect("a short word takes a plural s", "Open: pets | pet\n", 0, "PASS",
 expect("pet does not match carpet", "Parked: pets | pet\n", 1, "no parked item names: pet",
        decisions=DECISIONS.replace("share streaks with friends", "the carpet is fine"))
 expect("alternation", "Decided: goal | phone/tablet\n", 0, "PASS")
-expect("id is not itself a term", "Decided: label | phone\n", 0, "PASS")
+expect("a non-slot id does not read a slot line", "Decided: label | phone\n", 1, "no decided item names: phone")
+expect("a slot id reads that slot line", "Decided: goal | phone\n", 0, "PASS")
+RICH = """# Decisions: t
+
+## Decided
+
+- goal: a phone habit with drinking water, 10 seconds, a streak, accounts, and only me
+- done: later
+- output: o
+- verify: v
+- constraints: c
+
+## Open
+
+- none
+
+## Parked
+
+- none
+
+## Handoff
+
+- next: /automate-me:outcome
+- stop: done
+- turns: 3
+- writing: pass
+"""
+expect("keywords on the wrong slot score low",
+       "Decided: goal | phone | habit\nDecided: done | 10 seconds | streak\nDecided: constraints | accounts | only me\n",
+       1, "FAIL 1/3", decisions=RICH)
 expect("lone none is empty", "Parked: friends | friends\n", 1, "no parked item names: friends",
        decisions=DECISIONS.replace("- share streaks with friends", "- none"))
 expect("key lines in a code block are ignored", "```\nDecided: nowhere | nowhere\n```\nDecided: goal | phone\n", 0, "PASS 1/1")

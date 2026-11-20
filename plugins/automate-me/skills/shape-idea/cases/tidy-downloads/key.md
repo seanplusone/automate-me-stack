@@ -2,13 +2,16 @@
 
 A synthetic case. The tool and every number are invented. Never show this file to the skill.
 
-Turn 1 keeps the goal and the move rule. The four missing slots are Open, and so is the delete question, because it holds "30 days" and it can remove files. That is 5 open items, so the stop is `open-cap`. Watching the folder, zip files, the desktop, and undo were not written. The partner on the same laptop is the one pushback. It is not written down. Desktop icons are parked.
+The run is a fresh model that read SKILL.md and the ramble, then the replies that settle done, output, verify, and constraints. It did not see this key. Terms must sit on the named slot line. The cutoff question is parked, not dropped. Desktop icons are parked.
 
-Decided: goal | goal | downloads | command line
-Decided: files | pictures | installers | docs
-Open: done | done | downloads folder
-Open: output | output | list of moves
-Open: verify | verify | right folder
-Open: limits | constraints | never move
-Open: delete | delete | 30 days
+Decided: goal | command line | Downloads | pictures
+Decided: done | pictures | installers | docs
+Decided: output | list of the moves
+Decided: verify | picture | installer
+Decided: constraints | never delete | 30 days
+Open: watch | watch | ask
+Open: desktop | desktop | Downloads
+Open: zip | zip file
+Open: undo | undo a move
+Parked: cutoff | pass the number | 30 days
 Parked: icons | desktop icons
