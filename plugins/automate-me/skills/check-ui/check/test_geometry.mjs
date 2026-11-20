@@ -50,6 +50,8 @@ function boxEl(over) {
     match: over.match ?? {},
     ch: over.ch ?? 0,
     cardLike: over.cardLike ?? false,
+    password: over.password ?? false,
+    display: over.display || "",
   }
 }
 
@@ -280,9 +282,9 @@ const skipped = buildReport("empty.html", [{ width: 390, rules: [{ id: "G9", sta
 function readingPage(width, extra) {
   const x = (1280 - width) / 2
   const elements = [
-    boxEl({ i: 0, tag: "main", selector: "main", rect: { x, y: 0, width, height: 500 }, ch: 9, cardLike: Boolean(extra && extra.cardLike) }),
+    boxEl({ i: 0, tag: "main", selector: "main", rect: { x, y: 0, width, height: 500 }, ch: (extra && extra.columnCh) || 9, cardLike: Boolean(extra && extra.cardLike) }),
     boxEl({ i: 1, parent: 0, tag: "h1", selector: "h1", rect: { x: x + 16, y: 16, width: 200, height: 32 } }),
-    boxEl({ i: 2, parent: 0, tag: "p", selector: "p", rect: { x: x + 16, y: 64, width: 240, height: 48 } }),
+    boxEl({ i: 2, parent: 0, tag: "p", selector: "p", rect: { x: x + 16, y: 64, width: 240, height: 48 }, ch: (extra && extra.paragraphCh) || 9 }),
   ]
   if (extra && extra.cards) {
     for (let n = 0; n < extra.cards; n++) {
@@ -299,6 +301,9 @@ function readingPage(width, extra) {
   if (extra && extra.form) {
     elements.push(boxEl({ i: 3, parent: 0, tag: "form", selector: "form", rect: { x: x + 16, y: 16, width: width - 32, height: 220 } }))
   }
+  if (extra && extra.password) {
+    elements.push(boxEl({ i: 4, parent: 3, tag: "input", selector: "input", rect: { x: x + 24, y: 80, width: 200, height: 32 }, password: true }))
+  }
   return { viewportWidth: 1280, scrollWidth: 1280, requestedWidth: 1280, widths: [1280], elements }
 }
 
@@ -308,7 +313,7 @@ check(
   proseRules.some((r) => r.status === "skip" && r.measured.exemption === "prose") && badIds(proseRules).length === 0,
   JSON.stringify(proseRules.filter((r) => r.status !== "pass"), null, 2),
 )
-const signinRules = evaluate(readingPage(360, { form: true }), cfg)
+const signinRules = evaluate(readingPage(360, { form: true, password: true }), cfg)
 check(
   "a centered sign-in card is an exempt skip",
   signinRules.some((r) => r.status === "skip" && r.measured.exemption === "signin") && badIds(signinRules).length === 0,
@@ -320,7 +325,7 @@ check(
   badIds(evaluate(readingPage(680), mergeConfig({ columnExemptions: [] }))).includes("G1"),
 )
 check("all skips are inconclusive", skipped.verdict === "inconclusive")
-check("a page error is inconclusive", buildReport("bad.html", [{ width: 390, rules: [{ id: "G9", status: "pass", element: "html", measured: {}, limit: {}, message: "No sideways scroll." }] }], { pageError: true }).verdict === "inconclusive")
+check("a fatal page is inconclusive", buildReport("bad.html", [{ width: 390, rules: [{ id: "G9", status: "pass", element: "html", measured: {}, limit: {}, message: "No sideways scroll." }] }], { fatal: true, reason: "The page has no visible content." }).verdict === "inconclusive")
 
 console.log(`${passed} passed, ${failed} failed`)
 process.exit(failed ? 1 : 0)

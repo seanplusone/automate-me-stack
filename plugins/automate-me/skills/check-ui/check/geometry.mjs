@@ -153,7 +153,6 @@ export function kindKey(el) {
   const classes = keptClasses(el.classes).sort()
   if (el.role || classes.length) return `${el.role || ""}|${classes.join(".")}`
   if (el.dataUi) return `data-ui:${el.dataUi}`
-  if (el.cardLike) return "card-like"
   return ""
 }
 
@@ -207,13 +206,14 @@ function marginBox(el) {
   return { left: b.left, right: b.right, top: b.top - top, bottom: b.bottom + bottom, width: b.width, height: b.height + top + bottom }
 }
 
-function contentBoxes(card, elements, seen = new Set()) {
+function contentBoxes(card, elements, seen = new Set(), map = null) {
   if (seen.has(card.i)) return []
   seen.add(card.i)
   const boxes = []
-  for (const child of kids(elements, card.i)) {
+  const own = map ? (map.get(card.i) || []).filter((e) => inFlow(e) && (e.rect.width > 0 || e.rect.height > 0)) : kids(elements, card.i)
+  for (const child of own) {
     if (child.stretched) {
-      const inner = contentBoxes(child, elements, seen)
+      const inner = contentBoxes(child, elements, seen, map)
       boxes.push(...(inner.length ? inner : [marginBox(child)]))
     } else boxes.push(marginBox(child))
   }
@@ -246,8 +246,8 @@ export function cardSlack(card, children, tolerance) {
     const contentBottom = Math.max(...children.map((c) => c.bottom))
     const innerTop = b.top + borderTop + padTop
     const innerBottom = b.bottom - borderBottom - padBottom
-    slackTop = px(contentTop - innerTop)
-    slackBottom = px(innerBottom - contentBottom)
+    slackTop = contentTop - innerTop
+    slackBottom = innerBottom - contentBottom
     contentSpan = px(contentBottom - contentTop)
   }
   const allowed = contentSpan + px(padTop) + px(padBottom) + px(borderTop) + px(borderBottom)
@@ -412,21 +412,69 @@ export function edgeChecks(elements, config) {
   const column = primaryColumn(elements, config) || elements.find((e) => e.tag === "body") || null
   if (!column) return [entry("G4", "skip", "", {}, {}, "No main column to align.")]
   const byIndex = Object.fromEntries(elements.map((e) => [e.i, e]))
+  for (const el of elements) {
+    if (!isButton(el, config)) continue
+    const row = elements.some((other) => other.parent === el.parent && other.control && overlaps(box(other), box(el)))
+    if (row) el.controlRow = true
+  }
   const candidates = elements.filter((el) => {
     if (el.i === column.i || !inFlow(el)) return false
-    if (el.align === "center" || el.align === "end") return false
     if (INDENT_TAG.has(el.tag)) return false
     if (!(isHeading(el, config) || isBody(el, config) || isCard(el, config) || isButton(el, config))) return false
     const ancestors = ancestorChain(el, byIndex)
-    if (!ancestors.some((a) => a.i === column.i)) return false
+    if (!ancestors.some((a) => a.i === column.i) && column.tag !== "body") return false
     const between = ancestors.filter((a) => a.i !== column.i)
-    if (between.some((a) => INDENT_TAG.has(a.tag) || isCard(a, config) || isContainer(a, config))) return false
-    if (between.some((a) => (a.padding?.left || 0) > config.alignPx || (a.border?.left || 0) > 0)) return false
+    if (between.some((a) => INDENT_TAG.has(a.tag) || isCard(a, config))) return false
+    if (el.controlRow) return false
+    const parent = byIndex[el.parent]
+    if (parent && String(parent.display).includes("flex") && parent.flow !== "column" && parent.flow !== "column-reverse") {
+      const sibs = elements.filter((other) => other.parent === el.parent && overlaps(box(other), box(el)) && (other.rect.width > 0))
+      if (sibs.length) {
+        const right = Math.max(...sibs.map((other) => other.rect.x + other.rect.width))
+        const left = Math.min(...sibs.map((other) => other.rect.x))
+        const parentLeft = parent.rect.x + (parent.padding?.left || 0)
+        const parentRight = parent.rect.x + parent.rect.width - (parent.padding?.right || 0)
+        if (parentRight - right <= 4 && left - parentLeft > 8) return false
+      }
+    }
+    const host = between.find((a) => (a.padding?.left || 0) > config.alignPx) || column
+    if (gapKind(el, host) !== "start") return false
+    el.edgeGroup = host.i
     return el.rect.width > 0 || el.rect.height > 0
   })
   if (candidates.length < 2) {
-    return [entry("G4", "skip", column.selector, {}, {}, "No column with two stacked headings, paragraphs, cards, or buttons.")]
+    return [entry("G4", "skip", column.selector || "", {}, {}, "No column with two stacked headings, paragraphs, cards, or buttons.")]
   }
+  const groups = new Map()
+  for (const el of candidates) {
+    const key = el.edgeGroup ?? column.i
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(el)
+  }
+  const out = []
+  for (const group of groups.values()) {
+    if (group.length < 2) continue
+    out.push(...edgeGroup(group, column, config))
+  }
+  if (!out.length) {
+    return [entry("G4", "pass", column.selector, { spread: 0, edges: candidates.length }, { alignPx: config.alignPx }, "Headings, text, cards, and buttons share a left edge.")]
+  }
+  if (out.every((row) => row.status === "pass")) return [out[0]]
+  return out.filter((row) => row.status === "fail")
+}
+
+function gapKind(el, host) {
+  const leftEdge = host.rect.x + (host.padding?.left || 0) + (host.border?.left || 0)
+  const rightEdge = host.rect.x + host.rect.width - (host.padding?.right || 0) - (host.border?.right || 0)
+  const leftGap = el.rect.x - leftEdge
+  const rightGap = rightEdge - (el.rect.x + el.rect.width)
+  if (leftGap > 2 && Math.abs(leftGap - rightGap) <= 2) return "center"
+  const shrink = el.rect.width < (rightEdge - leftEdge) * 0.8
+  if (shrink && rightGap <= 2 && leftGap > 8) return "end"
+  return "start"
+}
+
+function edgeGroup(candidates, column, config) {
   const sorted = [...candidates].sort((a, b) => a.rect.y - b.rect.y || a.rect.x - b.rect.x)
   const bands = []
   for (const el of sorted) {
@@ -517,65 +565,79 @@ function effectiveColumn(column, elements) {
   return { ...column, rect: { x: left, y: top, width: right - left, height: bottom - top } }
 }
 
-function readingCh(column) {
-  if (!column.ch) return 0
+function readingCh(column, paragraphs) {
+  const sample = paragraphs.find((item) => item.ch) || column
+  if (!sample.ch) return 0
   const inner = column.rect.width - (column.padding?.left || 0) - (column.padding?.right || 0) - (column.border?.left || 0) - (column.border?.right || 0)
-  return inner / column.ch
+  return inner / sample.ch
 }
 
-function columnExemption(column, elements, config, viewport) {
+function columnExemption(column, elements, config) {
   const allowed = new Set(config.columnExemptions || [])
-  if (!allowed.size || !column) return ""
+  if (!allowed.size || !column) return { kind: "", ch: 0 }
   const tree = descendantsOf(column.i, childMap(elements))
-  const cards = tree.filter((e) => isCard(e, config))
-  const forms = tree.filter((e) => e.tag === "form")
   const paragraphs = tree.filter((e) => isBody(e, config))
-  const ch = readingCh(column)
-  if (allowed.has("prose") && ch >= 55 && ch <= 80 && paragraphs.length >= 1 && cards.length === 0) return "prose"
+  const ch = readingCh(column, paragraphs)
+  const cards = tree.filter((e) => isCard(e, config))
+  const blocked = cards.length > 0 || tree.some((e) => e.tag === "table" || e.display === "grid" || e.display === "inline-grid")
+  if (allowed.has("prose") && !blocked && ch >= 55 && ch <= 80 && paragraphs.length >= 1) return { kind: "prose", ch }
   const left = column.rect.x
-  const right = viewport - (column.rect.x + column.rect.width)
-  const centered = left >= 24 && right >= 24 && Math.abs(left - right) <= Math.max(24, viewport * 0.04)
-  const selfCard = isCard(column, config)
-  const singleCard = (selfCard && cards.length === 0) || cards.length === 1
-  const singleForm = forms.length === 1 && cards.length <= 1
-  if (allowed.has("signin") && centered && (singleForm || singleCard) && cards.length <= 1) return "signin"
-  return ""
+  const right = (column.viewport || 0) - (column.rect.x + column.rect.width)
+  const centered = left >= 24 && right >= 24 && Math.abs(left - right) <= 24
+  const password = tree.some((e) => e.password)
+  const form = tree.some((e) => e.tag === "form")
+  if (allowed.has("signin") && password && (form || centered)) return { kind: "signin", ch }
+  return { kind: "", ch }
 }
 
-function rowAdjusted(card, elements, config) {
-  const boxes = contentBoxes(card, elements)
+function rowAdjusted(card, elements, config, map) {
+  const boxes = contentBoxes(card, elements, new Set(), map)
   if (!card.stretched || !boxes.length) return boxes
-  const siblings = elements.filter((e) => e.parent === card.parent && e.i !== card.i && isCard(e, config) && e.rect.height > 0)
+  const siblings = (map.get(card.parent) || []).filter((e) => e.i !== card.i && isCard(e, config) && e.rect.height > 0)
   const row = siblings.filter((e) => overlaps(box(e), box(card)))
   let maxBottom = Math.max(...boxes.map((item) => item.bottom))
   for (const sib of row) {
-    const sibBoxes = contentBoxes(sib, elements)
+    const sibBoxes = contentBoxes(sib, elements, new Set(), map)
     if (sibBoxes.length) maxBottom = Math.max(maxBottom, ...sibBoxes.map((item) => item.bottom))
   }
   const innerBottom = card.rect.y + card.rect.height - (card.border?.bottom || 0) - (card.padding?.bottom || 0)
   const target = Math.min(maxBottom, innerBottom)
-  return boxes.map((item) => (item.bottom >= target ? item : { ...item, bottom: item.bottom === Math.max(...boxes.map((b) => b.bottom)) ? target : item.bottom }))
+  const lowest = Math.max(...boxes.map((item) => item.bottom))
+  return boxes.map((item) => (item.bottom === lowest && target > item.bottom ? { ...item, bottom: target } : item))
 }
 
 export function evaluate(snapshot, config) {
   const elements = snapshot.elements || []
   const rules = []
-  const cards = elements.filter((e) => isCard(e, config) && e.rect.height > 0 && (inFlow(e) || e.position === "absolute" || e.position === "fixed"))
-  for (const card of cards) rules.push(cardSlack(card, rowAdjusted(card, elements, config), config.whitespacePx))
+  const map = childMap(elements)
+  const cards = elements.filter((e) => e.tag !== "iframe" && isCard(e, config) && e.rect.height > 0 && (inFlow(e) || e.position === "absolute" || e.position === "fixed"))
+  for (const card of cards) {
+    const row = cardSlack(card, rowAdjusted(card, elements, config, map), config.whitespacePx)
+    const declared = flagged(card, "card") || Boolean(card.dataUi) || (card.classes || []).some((c) => CARD_RE.test(c))
+    if (card.guess === "low" && !declared) {
+      rules.push({ ...row, status: "review", message: `${row.message} This box was only a guess.` })
+    } else rules.push(row)
+  }
   const width = snapshot.requestedWidth ?? px(snapshot.viewportWidth)
   const widths = snapshot.widths
   if (width === config.columnAtWidth) {
     const column = effectiveColumn(primaryColumn(elements, config) || elements.find((e) => e.tag === "body") || null, elements)
     if (!column) rules.push(entry("G1", "skip", "", {}, {}, config.auto ? "No main column to measure." : "auto is off and no column was marked."))
     else {
+      column.viewport = snapshot.viewportWidth
       const share = columnShare(column, snapshot.viewportWidth, config.minWidthRatio)
-      const exempt = share.status === "fail" ? columnExemption(column, elements, config, snapshot.viewportWidth) : ""
-      if (exempt) {
-        const ch = r2(readingCh(column))
-        const message = exempt === "prose"
-          ? `Exempt: prose, a reading column ${ch}ch wide.`
-          : "Exempt: signin, a centered card or form."
-        rules.push(entry("G1", "skip", column.selector, { width: px(column.rect.width), viewport: px(snapshot.viewportWidth), ch, exemption: exempt }, { minWidthRatio: config.minWidthRatio }, message))
+      const exempt = share.status === "fail" ? columnExemption(column, elements, config) : { kind: "", ch: 0 }
+      if (exempt.kind) {
+        const ch = r2(exempt.ch)
+        const low = exempt.kind === "prose" && (ch < 58 || ch > 77)
+        rules.push(entry(
+          "G1",
+          low ? "review" : "skip",
+          column.selector,
+          { width: px(column.rect.width), viewport: px(snapshot.viewportWidth), ch, exemption: exempt.kind },
+          { minWidthRatio: config.minWidthRatio },
+          exempt.kind === "prose" ? `Exempt: prose, a reading column ${ch}ch wide.` : "Exempt: signin, a centered card or form.",
+        ))
       } else rules.push(share)
     }
   } else if (widths && !widths.includes(config.columnAtWidth) && width === widths[0]) {
@@ -605,6 +667,8 @@ export function evaluate(snapshot, config) {
 export function verdictOf(widthReports) {
   const rules = widthReports.flatMap((w) => w.rules)
   if (rules.some((rule) => rule.status === "fail")) return "fail"
+  if (rules.some((rule) => rule.status === "review")) return "review"
+  if (!rules.some((rule) => rule.status === "pass" || rule.status === "skip")) return "inconclusive"
   if (!rules.some((rule) => rule.status === "pass")) return "inconclusive"
   return "pass"
 }
@@ -612,6 +676,20 @@ export function verdictOf(widthReports) {
 export function buildReport(page, widthReports, flags = {}) {
   const widths = widthReports.map((w) => ({ width: w.width, rules: w.rules }))
   let verdict = verdictOf(widths)
-  if (flags.empty || flags.pageError || flags.jsonError || flags.navError) verdict = "inconclusive"
-  return { page, widths, verdict }
+  let reason = ""
+  if (flags.fatal) {
+    verdict = "inconclusive"
+    reason = flags.reason || "The page could not be judged."
+  }
+  const review = []
+  for (const width of widths) {
+    for (const rule of width.rules) {
+      if (rule.status !== "review") continue
+      review.push({ width: width.width, id: rule.id, element: rule.element, message: rule.message, shot: rule.shot || "" })
+      delete rule.shot
+    }
+  }
+  const report = { page, verdict, review, warnings: flags.warnings || [], widths }
+  if (reason) report.reason = reason
+  return report
 }

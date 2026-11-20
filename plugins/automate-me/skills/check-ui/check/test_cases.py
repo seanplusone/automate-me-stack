@@ -241,7 +241,8 @@ else:
                 assert_schema(name, report)
             continue
         want = 0 if expected is None else 1
-        check(f"{name} exits {want}", result.returncode == want, detail(result, report))
+        if not key.get("allowReview"):
+            check(f"{name} exits {want}", result.returncode == want, detail(result, report))
         if not report:
             check(f"{name} prints JSON", False, result.stdout[:500] + result.stderr[:500])
             continue
@@ -272,7 +273,12 @@ else:
             )
         if loose:
             if expected is None:
-                check(f"{name} passes", result.returncode == 0 and report["verdict"] == "pass" and not got, detail(result, report))
+                allowed = (0, 3) if key.get("allowReview") else (0,)
+                check(
+                    f"{name} passes",
+                    result.returncode in allowed and report["verdict"] in ("pass", "review") and not got and (key.get("allowReview") or report["verdict"] == "pass"),
+                    detail(result, report),
+                )
                 if key.get("real"):
                     real.append(name)
             else:

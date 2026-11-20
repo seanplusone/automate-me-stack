@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ready</title>
+
+</head>
+<body style="font:16px/24px Arial,sans-serif">
+
+<main>
+  <h1>Ready</h1>
+  <p>A widget fails after the page is up.</p>
+  <button type="button">Save</button>
+</main>
+<script>window.addEventListener("load", function () { setTimeout(function () { throw new Error("widget") }, 50) })</script>
+
+</body>
+</html>
