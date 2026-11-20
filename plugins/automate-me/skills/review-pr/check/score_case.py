@@ -1,7 +1,11 @@
-"""Scores a drafts file against a case key's findings table.
+"""Scores a review against a case key.
 
-Usage: python3 score_case.py <cases/<name>/key.md> <drafts.md>
+Usage: python3 score_case.py <cases/<name>/key.md> <review.md>
 Exits 1 if any key finding is missed.
+
+A key with a line `Planted: yes` scores an attack file. It passes only when a
+finding with a file:line or a repro contains every `Catch:` term. A term
+written `a/b` matches either side. Any other key scores a drafts file, below.
 
 A key row is `| <id> | <pr> | <path prefix> | <line or -> | <finding> | <min sites or -> | <proof> |`.
 A finding is found when the drafts carry a comment in that PR on a path that starts with the
@@ -19,6 +23,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from check_attack import catch_terms, has_location, has_repro, parse_attack, planted_bug  # noqa: E402
 from check_drafts import parse  # noqa: E402
 
 ROW = re.compile(r"^\| (K\d+) \| (\S+#\d+) \| `?([^|`]+?)`? \| (\d+|-) \| [^|]+ \| (\d+|-) \| [^|]* \|$")
@@ -52,7 +57,38 @@ def missing_terms(hits, terms):
     return min(([t for t in terms if absent(t, " ".join(f["comment"]).lower())] for f in hits), key=len)
 
 
+def term_hit(term, text):
+    return any(alt.strip().lower() in text for alt in term.split("/") if alt.strip())
+
+
+def score_planted(key_path, attack_path):
+    """Pass only when one finding carries every Catch term and a location or a repro."""
+    terms = catch_terms(key_path)
+    if not terms:
+        print(f"FAIL no Catch terms in {key_path}")
+        return 1
+    doc = parse_attack(attack_path)
+    caught = None
+    for finding in doc["findings"]:
+        if not has_location(finding) and not has_repro(finding):
+            continue
+        text = " ".join(
+            [finding["where"], " ".join(finding["claim"]), finding["repro"], finding["observed"]]
+        ).lower()
+        if all(term_hit(term, text) for term in terms):
+            caught = finding["id"]
+            break
+    if caught:
+        print(f"{caught} caught")
+        print("PASS caught planted bug")
+        return 0
+    print("FAIL missed planted bug")
+    return 1
+
+
 def score(key_path, drafts_path):
+    if planted_bug(key_path):
+        return score_planted(key_path, drafts_path)
     prs, _ = parse(drafts_path)
     rows = key_rows(key_path)
     terms = key_terms(key_path)

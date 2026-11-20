@@ -4,7 +4,7 @@ Part of `automate-me`. Shared writing rules live in `../shared/writing-rules.md`
 
 Reviews one PR, or a set of linked PRs, and drafts short inline comments with a verdict per PR. Nothing is posted. The user reads the page, then says whether to post it as a pending review.
 
-Status: working. Two synthetic scored cases (`cases/refund-endpoint`, `cases/auth-header`). The original cases came from real reviews on a production codebase and were replaced with synthetic ones for public release.
+Status: working. The review attacks by default. It re-runs claims and keeps a finding only with a file and line or a breaking input it ran. Five synthetic scored cases. `cases/refund-endpoint` and `cases/auth-header` score comment drafts. `cases/trust-report`, `cases/word-score` and `cases/item-cap` each hide one planted bug, and `check/score_case.py` passes only when the attack file catches it. The original comment cases came from real reviews on a production codebase and were replaced with synthetic ones for public release.
 
 ## What keeps it short
 
@@ -20,6 +20,13 @@ Status: working. Two synthetic scored cases (`cases/refund-endpoint`, `cases/aut
 - a finding has more than one `Plain:` line, or one over 110 words;
 - the shared `[script]` writing rules fail.
 
+`check/check_attack.py` fails an attack file when:
+
+- it tried no breaking input;
+- a finding has neither a file and line nor a repro with the output of a run;
+- an input that did not break is missing from the held list;
+- the verdict is approve and the case key says `Planted: yes`.
+
 ## Layout
 
 ```
@@ -29,6 +36,7 @@ review-pr/
   playbooks/
     review-a-pr.md           the steps, start to finish
   references/
+    attack.md                the attack brief, the attack file, and the merge rule
     infra.md                 scripts, CI, IAM, cloud resources, the CLI stub
     claude-config.md         .claude/ rules, skills, settings, plugins and marketplaces
     docs.md                  runbooks, ADRs, design docs
@@ -37,13 +45,16 @@ review-pr/
   check/
     cli.py                   shared usage/exit helper the other scripts import
     classify.py              labels each changed file source, test, generated, asset or docs
+    attack_agents.py         finds codex or claude on PATH and runs one headless pass each
+    check_attack.py          fails an attack file that tried nothing, or approved a planted bug
     check_drafts.py          the format and writing check
+    merge_attacks.py         dedupes passes and keeps only reproduced findings
     live_state.py            fails on a closed PR or a head that moved since the review
     moved_drift.py           lists what a moved file is missing from its source
     post_review.py           posts a checked drafts file to GitHub, only when told
     render_page.py           renders a checked drafts file as the review page
     summary.py               the summary message, as Markdown or Slack mrkdwn
-    score_case.py            scores a drafts file against a case key's findings, lines, terms and site counts
+    score_case.py            scores drafts against a findings table, or an attack file against a planted bug
     test_*.py                plain-script tests: python3 check/test_<name>.py
   cases/
     refund-endpoint/         one Python PR: a line row with Terms, a directory row with a site minimum, a PR-level row
@@ -55,8 +66,26 @@ review-pr/
       runs/run-1/drafts.md   fails on purpose: a sampled site count and a comment outside the line window
       runs/run-2/drafts.md   the same drafts with both misses fixed (passes, 3 of 3)
       runs/score.md          why run-1 fails, and both scorer outputs
+    trust-report/            a report check that trusts a self-reported passed field
+      key.md                 Planted: yes, plus the Catch terms
+      pr.md                  the PR body, including a pass claim
+      diff.patch             the small diff
+      runs/run-1/passes/current.md  the single pass, before the merge
+      runs/run-1/attack.md   the attack file from that pass
+      runs/run-1/trace.txt   the commands and the output they printed
+      runs/score.md
+    word-score/              a scorer that passes keyword-stuffed text
+      key.md
+      runs/run-1/attack.md
+      runs/score.md
+    item-cap/                a cap of 5 written as less-than 5
+      key.md
+      runs/run-1/attack.md
+      runs/score.md
 ```
 
-Run the check on a case: `python3 check/check_drafts.py cases/refund-endpoint/runs/run-1/drafts.md`.
+Run the drafts check on a case: `python3 check/check_drafts.py cases/refund-endpoint/runs/run-1/drafts.md`.
 
-Score a run against its key: `python3 check/score_case.py cases/auth-header/key.md cases/auth-header/runs/run-1/drafts.md`.
+Score a drafts run against its key: `python3 check/score_case.py cases/auth-header/key.md cases/auth-header/runs/run-1/drafts.md`.
+
+Score an attack run against a planted bug: `python3 check/score_case.py cases/trust-report/key.md cases/trust-report/runs/run-1/attack.md`.

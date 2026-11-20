@@ -68,6 +68,72 @@ expect("a/b term matches the second word", drafts(("scripts/stage.sh:17", None),
 expect("a/b term needs one of its words", drafts(("scripts/stage.sh:17", None), text="An admin only."), set(), KEY + "\nTerms: K1 | admin | owner/assignee\n")
 expect("row without terms unaffected", drafts(("scripts/stage.sh:28", None)), {"K2"}, KEY_TERMS)
 
+
+def planted_files(attack, catch="returns True | ok\": false"):
+    d = tempfile.mkdtemp()
+    k, p = os.path.join(d, "key.md"), os.path.join(d, "attack.md")
+    open(k, "w").write(f"Planted: yes\nCatch: {catch}\n")
+    open(p, "w").write(attack)
+    return k, p
+
+
+def planted_score(attack, catch="returns True | ok\": false"):
+    k, p = planted_files(attack, catch)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = score(k, p)
+    return code, out.getvalue()
+
+
+CAUGHT = """# Attack review: t
+
+Verdict: needs fixes
+
+## Tried
+- Input: {"ok": false}
+  Observed: True
+  Broke: yes
+
+## Findings
+### F1 | report.py:4 | passes: current
+accept returns True when a case has ok false.
+Repro: {"passed": true, "ok": false}
+Observed: True
+
+## Held
+None
+"""
+MISSED = """# Attack review: t
+
+Verdict: needs fixes
+
+## Tried
+- Input: {}
+  Observed: error
+  Broke: yes
+
+## Findings
+### F1 | report.py:9 | passes: current
+The name field has no length cap.
+Repro: {"name": ""}
+Observed: accepted
+
+## Held
+None
+"""
+def expect_planted(name, got, want):
+    RAN.append(name)
+    if got != want:
+        FAILS.append(f"{name}: wanted {want!r}, got {got!r}")
+
+
+code, text = planted_score(CAUGHT)
+expect_planted("planted bug caught", (code, "caught" in text and text.strip().endswith("PASS caught planted bug")), (0, True))
+code, text = planted_score(MISSED)
+expect_planted("planted bug missed", (code, "FAIL missed planted bug" in text), (1, True))
+code, _text = planted_score(CAUGHT, "returns true/returns True")
+expect_planted("a/b catch term", code, 0)
+
 if __name__ == "__main__":
     for f in FAILS:
         print(f"FAIL {f}")
