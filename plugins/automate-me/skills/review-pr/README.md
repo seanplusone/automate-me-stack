@@ -6,7 +6,7 @@ Reviews one PR, or a set of linked PRs, and drafts short inline comments with a 
 
 Status: working. The review attacks by default. It re-runs claims and keeps a finding only with a file and line or a breaking input it ran. Five synthetic scored cases. `cases/refund-endpoint` and `cases/auth-header` score comment drafts. `cases/trust-report`, `cases/word-score` and `cases/item-cap` each hide one planted bug, and `check/score_case.py` passes only when the attack file catches it. The original comment cases came from real reviews on a production codebase and were replaced with synthetic ones for public release.
 
-`--sandbox auto` uses `bwrap` whenever it is installed. The agent sees system libraries, a fresh `/tmp`, and a home that receives only login files. Session transcripts stay on the host. `--sandbox none` is unsandboxed and prints a warning. Without `bwrap`, auto refuses when a `key.md` is under the cwd or a parent.
+`--sandbox auto` uses `bwrap` whenever it is installed. A reachable `key.md` runs only in that sandbox. `--sandbox none` cannot override a practice run. A checkout with no `key.md` may use `--sandbox none`, which prints a warning. The agent sees system libraries, a fresh `/tmp`, and a home that receives only login files. Session transcripts stay on the host.
 
 ## What keeps it short
 

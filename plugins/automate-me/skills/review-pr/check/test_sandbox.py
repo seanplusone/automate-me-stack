@@ -9,9 +9,10 @@ import stat
 import sys
 import tempfile
 import time
+import tomllib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from attack_agents import bwrap_command, cleanup_stale, command, key_reachable, practice_roots, resolve_sandbox, run_all  # noqa: E402
+from attack_agents import _minimal_codex_config, bwrap_command, cleanup_stale, command, key_reachable, practice_roots, resolve_sandbox, run_all  # noqa: E402
 
 FAILS = []
 CHECKS = []
@@ -41,8 +42,12 @@ root, head, key = practice()
 stubs = tempfile.mkdtemp()
 open(os.path.join(stubs, "codex"), "w").write("#!/usr/bin/python3\nprint('ran')\n")
 os.chmod(os.path.join(stubs, "codex"), 0o755)
-expect("sandbox none warns and runs", run_all(
+expect("sandbox none refuses a practice case", run_all(
     brief, tempfile.mkdtemp(), search_path=stubs, cwd=head, sandbox="none",
+), 2)
+plain = tempfile.mkdtemp()
+expect("sandbox none runs when no key is reachable", run_all(
+    brief, tempfile.mkdtemp(), search_path=stubs, cwd=plain, sandbox="none",
 ), 0)
 expect("docker is not a practice sandbox", run_all(
     brief, tempfile.mkdtemp(), search_path=stubs, cwd=head, sandbox="docker",
@@ -63,8 +68,10 @@ expect("bwrap keeps the network", "--share-net" in argv, True)
 expect("bwrap clears the environment", "--clearenv" in argv, True)
 expect("the work dir is /work", "--chdir" in argv and "/work" in argv, True)
 expect("tmp is a fresh disk", argv.count("--tmpfs") >= 2 and "/tmp" in argv, True)
-expect("home is a fresh tmpfs", "/home/agent" in argv and "--file" in argv or "/home/agent" in argv, True)
-expect("login files are fds", "--file" in argv or not feed_fds, True)
+pairs = list(zip(argv, argv[1:]))
+file_fds = [nxt for flag, nxt in pairs if flag == "--file"]
+expect("home is a fresh tmpfs", ("--tmpfs", "/home") in pairs, True)
+expect("login files are fds", len(file_fds) == len(feed_fds) and all(item.isdigit() for item in file_fds), True)
 expect("the case key is not a mount", key not in text and "key.md" not in text, True)
 expect("host state is not mounted", os.path.expanduser("~/.codex") not in text, True)
 expect("host claude dir is not mounted", os.path.expanduser("~/.claude") not in text, True)
@@ -86,12 +93,77 @@ expect("a dot-folder key is reachable", key_reachable(hidden), True)
 linked = tempfile.mkdtemp()
 os.symlink(cases_dir, os.path.join(linked, "jump"))
 expect("a symlink to cases is reachable", key_reachable(linked), True)
+for label, parts in (
+    ("a dot-folder key is refused", (".cases", "item-cap")),
+    ("a git key is refused", (".git", "x")),
+    ("a modules key is refused", ("node_modules", "pkg")),
+):
+    tree = tempfile.mkdtemp()
+    folder = tree
+    for part in parts:
+        folder = os.path.join(folder, part)
+    os.makedirs(folder)
+    open(os.path.join(folder, "key.md"), "w").write("Planted: yes\n")
+    expect(label, run_all(
+        brief, tempfile.mkdtemp(), search_path=stubs, cwd=tree, sandbox="bwrap",
+    ), 2)
+    expect(label + " with sandbox none", run_all(
+        brief, tempfile.mkdtemp(), search_path=stubs, cwd=tree, sandbox="none",
+    ), 2)
 stale = tempfile.mkdtemp(prefix="attack-cwd-")
 fresh = tempfile.mkdtemp(prefix="attack-cwd-")
+empty = tempfile.mkdtemp(prefix="attack-cwd-")
+open(os.path.join(stale, "head.txt"), "w").write("x\n")
+open(os.path.join(fresh, "head.txt"), "w").write("x\n")
 os.utime(stale, (time.time() - 7200, time.time() - 7200))
 cleanup_stale()
 expect("a stale copy is removed", os.path.isdir(stale), False)
 expect("a fresh copy stays", os.path.isdir(fresh), True)
+expect("an empty work copy is removed", os.path.isdir(empty), False)
+host_dir = tempfile.mkdtemp()
+sample = "\n".join([
+    'model_reasoning_effort = "high"',
+    'openai_base_url = "https://example.test/v1"',
+    'cli_auth_credentials_store = "file"',
+    'model_providers.openai.name = "OpenAI"',
+    'model_providers.openai.base_url = "https://example.test/v1"',
+    'model_providers.openai.wire_api = "responses"',
+    'model_providers.openai.extra = "kept"',
+    "note = '''",
+    "alpha",
+    "beta \"quote\" and \\slash",
+    "'''",
+    'sandbox_cwd = "%s"' % host_dir,
+    "",
+    "[profiles.work]",
+    'model = "gpt"',
+    "",
+    '[projects."/secret/host-project"]',
+    'trust_level = "trusted"',
+    "",
+    "[hooks]",
+    'run = "/home/me/hook.sh"',
+    "",
+    'notify = ["/usr/bin/notify-send"]',
+    "",
+    "[history]",
+    'path = "/home/me/.codex/history.jsonl"',
+    "",
+    "[mcp_servers.local]",
+    'command = "/usr/bin/local-mcp"',
+    "",
+    "[plugins]",
+    'path = "/home/me/plugins"',
+])
+original = tomllib.loads(sample)
+written = _minimal_codex_config(sample)
+parsed = tomllib.loads(written.decode())
+expect("config keeps a multi-line string", parsed["note"], original["note"])
+expect("config keeps dotted provider keys", parsed["model_providers"], original["model_providers"])
+expect("config keeps effort and auth settings", parsed["model_reasoning_effort"] == "high" and parsed["openai_base_url"] == "https://example.test/v1" and parsed["cli_auth_credentials_store"] == "file", True)
+dropped = ("projects", "hooks", "plugins", "mcp_servers", "notify", "history", "sandbox_cwd")
+expect("config drops host tables and host paths", all(name not in parsed for name in dropped), True)
+expect("config round trip parses again", tomllib.loads(written.decode()), parsed)
 shutil.rmtree(fresh, ignore_errors=True)
 
 if shutil.which("bwrap") is None:
@@ -149,7 +221,7 @@ else:
     tool = os.path.join(tempfile.mkdtemp(), "codex")
     open(tool, "w").write(
         "#!/bin/sh\n"
-        "for t in awk sed grep find python3 git; do\n"
+        "for t in awk sed grep find python3 python git; do\n"
         "  if command -v \"$t\" >/dev/null 2>&1; then echo OK:$t; else echo MISSING:$t; fi\n"
         "done\n"
     )
@@ -157,9 +229,9 @@ else:
     tool_out = tempfile.mkdtemp()
     tool_code = run_all(brief, tool_out, search_path=os.path.dirname(tool), cwd=head, sandbox="bwrap")
     tool_body = open(os.path.join(tool_out, "codex.md")).read() if os.path.isfile(os.path.join(tool_out, "codex.md")) else ""
-    expect("common tools resolve", tool_code == 0 and "MISSING:" not in tool_body and "OK:awk" in tool_body, True)
+    expect("common tools resolve", tool_code == 0 and "MISSING:" not in tool_body and "OK:awk" in tool_body and "OK:python" in tool_body, True)
     rel_parent = tempfile.mkdtemp()
-    rel_case = os.path.join(rel_parent, "mycase")
+    rel_case = os.path.join(rel_parent, "cases", "item")
     os.makedirs(os.path.join(rel_case, "head"))
     open(os.path.join(rel_case, "key.md"), "w").write("Planted: yes\n")
     open(os.path.join(rel_case, "head", "cap.py"), "w").write("x\n")
@@ -169,7 +241,7 @@ else:
     here = os.getcwd()
     os.chdir(rel_parent)
     try:
-        rel_code = run_all(brief, tempfile.mkdtemp(), search_path=os.path.dirname(rel_stub), cwd="mycase/head", sandbox="bwrap")
+        rel_code = run_all(brief, tempfile.mkdtemp(), search_path=os.path.dirname(rel_stub), cwd="cases/item/head", sandbox="bwrap")
     finally:
         os.chdir(here)
     expect("a relative cwd is accepted", rel_code, 0)
@@ -204,7 +276,37 @@ else:
         brief, escape_out, search_path=os.path.dirname(escape_stub), cwd=escape_head, sandbox="auto",
     )
     escape_body = open(os.path.join(escape_out, "codex.md")).read() if os.path.isfile(os.path.join(escape_out, "codex.md")) else ""
-    expect("a case outside cases/ is sandboxed", escape_code == 0 and "PARENT:no" in escape_body, True)
+    expect("a case outside cases/ is refused", escape_code, 2)
+    wide = tempfile.mkdtemp()
+    os.makedirs(os.path.join(wide, ".codex"))
+    open(os.path.join(wide, ".codex", "config.toml"), "w").write(
+        'model = "gpt"\nnote = """\n%s\n"""\n' % ("y" * 70000)
+    )
+    wide_stub = os.path.join(tempfile.mkdtemp(), "codex")
+    open(wide_stub, "w").write(
+        "#!/bin/sh\nwc -c < /home/agent/.codex/config.toml\n"
+    )
+    os.chmod(wide_stub, 0o755)
+    saved_env = {name: os.environ.get(name) for name in ("HOME", "CODEX_HOME")}
+    os.environ["HOME"] = wide
+    os.environ.pop("CODEX_HOME", None)
+    wide_out = tempfile.mkdtemp()
+    try:
+        wide_code = run_all(
+            brief, wide_out, search_path=os.path.dirname(wide_stub), cwd=head, sandbox="bwrap", timeout=20,
+        )
+    finally:
+        for name, value in saved_env.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+    wide_body = open(os.path.join(wide_out, "codex.md")).read() if os.path.isfile(os.path.join(wide_out, "codex.md")) else ""
+    wide_size = 0
+    for token in wide_body.split():
+        if token.isdigit():
+            wide_size = int(token)
+    expect("a login file over 64KB is readable", wide_code == 0 and wide_size > 70000, True)
 
     fake = tempfile.mkdtemp()
     os.makedirs(os.path.join(fake, ".codex", "sessions"))
@@ -289,28 +391,33 @@ if os.environ.get("AMS_REAL_CLI") != "1":
 elif shutil.which("bwrap") is None:
     print("SKIP bwrap is not installed")
 else:
-    smoke_brief = os.path.join(tempfile.mkdtemp(), "brief.md")
-    open(smoke_brief, "w").write(
-        "Write the word pong into /tmp/pong.txt. Reply with the single word pong.\n"
-    )
     for cli in ("codex", "claude"):
-        if shutil.which(cli) is None:
+        binary = shutil.which(cli)
+        if binary is None:
             print("SKIP %s is not installed" % cli)
             continue
+        only = tempfile.mkdtemp()
+        os.symlink(binary, os.path.join(only, cli))
+        filename = "pong-%s.txt" % cli
+        other = "pong-claude.txt" if cli == "codex" else "pong-codex.txt"
+        smoke_brief = os.path.join(tempfile.mkdtemp(), "brief.md")
+        open(smoke_brief, "w").write(
+            "Write the word pong into /tmp/%s. Reply with the single word pong.\n" % filename
+        )
         smoke_dir = tempfile.mkdtemp()
         host_tmp = tempfile.mkdtemp()
         smoke_out = tempfile.mkdtemp()
         code = run_all(
-            smoke_brief, smoke_out, cwd=smoke_dir, sandbox="bwrap", timeout=180, host_tmp=host_tmp,
+            smoke_brief, smoke_out, search_path=only, cwd=smoke_dir, sandbox="bwrap", timeout=180, host_tmp=host_tmp,
         )
         path = os.path.join(smoke_out, cli + ".md")
         text = open(path).read() if os.path.isfile(path) else ""
         lowered = text.lower()
-        pong_path = os.path.join(host_tmp, "pong.txt")
+        pong_path = os.path.join(host_tmp, filename)
         pong = open(pong_path).read() if os.path.isfile(pong_path) else ""
         expect(
-            "%s logs in and writes /tmp/pong.txt" % cli,
-            code == 0 and "pong" in lowered and "not logged in" not in lowered and "401" not in text and "pong" in pong,
+            "%s logs in and writes /tmp/%s" % (cli, filename),
+            code == 0 and "pong" in lowered and "not logged in" not in lowered and "401" not in text and "pong" in pong and not os.path.exists(os.path.join(host_tmp, other)),
             True,
         )
 
