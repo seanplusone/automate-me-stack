@@ -3,8 +3,11 @@ import contextlib
 import io
 import json
 import os
+import signal
+import subprocess
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from score_case import score  # noqa: E402
@@ -222,6 +225,29 @@ buf = io.StringIO()
 with contextlib.redirect_stdout(buf):
     code = judge(k, p, environ={"JUDGE_CLI": slow_judge, "PATH": "/usr/bin"}, timeout=0.2)
 expect_planted("a judge timeout is not a pass", (code, "SKIP judge timed out" in buf.getvalue() and "PASS" not in buf.getvalue()), (2, True))
+
+score_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "score_case.py")
+for stop, use_group in ((signal.SIGTERM, False), (signal.SIGKILL, True)):
+    late = os.path.join(tempfile.mkdtemp(), "late.txt")
+    stub = os.path.join(tempfile.mkdtemp(), "judge")
+    open(stub, "w").write("#!/usr/bin/python3\nimport time\npath = %r\ntime.sleep(3)\nopen(path, 'w').write('late')\n" % late)
+    os.chmod(stub, 0o755)
+    k, p = planted_files(CAUGHT)
+    open(k, "a").write("Where: report.py:4\n")
+    env = os.environ.copy()
+    env["PATH"] = "/usr/bin"
+    env["JUDGE_CLI"] = stub
+    proc = subprocess.Popen(
+        [sys.executable, score_script, k, p], env=env, start_new_session=True,
+    )
+    time.sleep(0.4)
+    if use_group:
+        os.killpg(proc.pid, signal.SIGKILL)
+    else:
+        proc.send_signal(stop)
+    proc.wait(timeout=5)
+    time.sleep(3.2)
+    expect_planted("judge dies with the scorer (%s)" % stop.name, os.path.exists(late), False)
 
 if __name__ == "__main__":
     for f in FAILS:

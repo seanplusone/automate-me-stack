@@ -13,7 +13,7 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from check_attack import check_attack, norm_location, parse_attack  # noqa: E402
+from check_attack import check_attack, norm_location, norm_span, parse_attack  # noqa: E402
 from merge_attacks import merge  # noqa: E402
 from score_case import score_planted  # noqa: E402
 
@@ -278,6 +278,44 @@ open(same, "w").write(open(block(clean())).read())
 garbage = write("not json\n")
 expect("out cannot be an input", merge_main(["merge", "--out", same, same, garbage]), 2)
 expect("the input approve is still there", parse_attack(same)["verdict"], "approve")
+
+crlf_bug = ("```json\n" + json.dumps(bug) + "\n```\n").replace("\n", "\r\n")
+crlf = write(crlf_bug + "```json\n" + json.dumps(clean()) + "\n```\n")
+expect("a crlf fence still counts", parse_attack(crlf)["parsed"], False)
+bom = write("\ufeff```json\n" + json.dumps(clean()) + "\n```\n")
+expect("a bom does not hide the block", parse_attack(bom)["verdict"], "approve")
+folded = dict(clean())
+folded["verdict"] = "Needs fixes"
+expect("verdict case is folded", parse_attack(block(folded))["verdict"], "needs fixes")
+numbered = block({
+    "verdict": "needs fixes",
+    "tried": [{"input": "within_cap(5)", "broke": True, "observed": "False"}],
+    "findings": [{"file": "cap.py", "line": "3", "claim": "returns False", "repro": "within_cap(5)"}],
+})
+expect("a string line is a number", parse_attack(numbered)["findings"][0]["line"], 3)
+expect("backticks around the path", norm_location("`head/cap.py`:3", None), ("cap.py", 3))
+expect("a symbol suffix keeps the file", norm_location("cap.py::within_cap", None)[0], "cap.py")
+expect("a range beats a point line", norm_span("score_review.py:3-6", 4)[1:], (3, 6))
+
+symbol = block({
+    "verdict": "needs fixes",
+    "tried": [{"input": "within_cap(5)", "broke": True, "observed": "False"}],
+    "findings": [{"file": "cap.py::within_cap", "line": None, "claim": "returns False", "repro": "within_cap(5)"}],
+})
+expect("a symbol with no judge is not weak", score_planted(key, symbol, environ={"PATH": "/nonexistent"}), 1)
+expect("a symbol reaches the judge", score_planted(key, symbol, environ={"PATH": "/nonexistent"}, runner=yes), 0)
+broke_only = block({
+    "verdict": "needs fixes",
+    "tried": [{"input": "within_cap(5)", "broke": True, "observed": "within_cap(5) returns False"}],
+    "findings": [],
+})
+expect("a break with no finding is not weak", score_planted(key, broke_only, environ={"PATH": "/nonexistent"}), 1)
+expect("a break with no finding reaches the judge", score_planted(
+    key, broke_only, environ={"PATH": "/nonexistent"}, runner=yes,
+), 0)
+expect("an unparsed judge reply is a skip", score_planted(
+    key, caught, environ={"PATH": "/nonexistent"}, runner=lambda prompt: "no idea\n",
+), 2)
 
 if __name__ == "__main__":
     for item in FAILS:
