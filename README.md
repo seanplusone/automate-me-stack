@@ -121,8 +121,12 @@ Every check prints PASS or FAIL and exits 1 on FAIL. Run `sh setup.sh` once afte
 
 ```
 python3 shared/check_shared.py
-for t in $(find . -name 'test_*.py'); do (cd "$(dirname "$t")" && python3 "$(basename "$t")" >/dev/null) || echo "FAIL $t"; done
+sh shared/list_tests.sh | while IFS= read -r t; do
+  (cd "$(dirname "$t")" && python3 "$(basename "$t")" >/dev/null) || echo "FAIL $t"
+done
 ```
+
+The list script skips `head` and `base` directories inside a case. A planted program lives there and must not count as a passing test. `shared/test_case_files.py` fails when any file under a skill's `cases` directory is named `test_*.py`.
 
 `query-db/check/test_guard.py` needs a local Postgres or a pulled `postgres:16` image and prints SKIP without one. The `verify-web` PR case needs Node with Playwright.
 

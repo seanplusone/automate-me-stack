@@ -4,4 +4,4 @@
 
 Tests: 2 passed.
 
-`test_cap.py` checks 4 and 6.
+`case_test_cap.py` checks 4 and 6.

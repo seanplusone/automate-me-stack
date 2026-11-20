@@ -3,7 +3,7 @@
 Verdict: needs fixes
 
 ## Tried
-- Input: python3 test_report.py
+- Input: python3 case_test_report.py
   Observed: 2 passed
   Broke: no
 - Input: {'passed': True, 'cases': [{'name': 'a', 'ok': False}]}
@@ -29,7 +29,7 @@ Repro: {'passed': True, 'cases': [{'name': 'a', 'ok': False}]}
 Observed: True
 
 ## Held
-- Input: python3 test_report.py
+- Input: python3 case_test_report.py
   Observed: 2 passed
 - Input: {'passed': False, 'cases': [{'name': 'a', 'ok': False}]}
   Observed: False

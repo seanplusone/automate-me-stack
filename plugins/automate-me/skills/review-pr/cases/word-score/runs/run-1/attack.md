@@ -3,7 +3,7 @@
 Verdict: needs fixes
 
 ## Tried
-- Input: python3 test_score_review.py
+- Input: python3 case_test_score_review.py
   Observed: 1 passed
   Broke: no
 
@@ -39,7 +39,7 @@ Repro: accept returns True at report.py:4 for input x
 Observed: False
 
 ## Held
-- Input: python3 test_score_review.py
+- Input: python3 case_test_score_review.py
   Observed: 1 passed
 
 - Input: bug at line 3

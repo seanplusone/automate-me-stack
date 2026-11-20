@@ -3,7 +3,7 @@
 Verdict: needs fixes
 
 ## Tried
-- Input: python3 test_cap.py
+- Input: python3 case_test_cap.py
   Observed: 2 passed
   Broke: no
 
@@ -30,7 +30,7 @@ Repro: within_cap(5)
 Observed: False
 
 ## Held
-- Input: python3 test_cap.py
+- Input: python3 case_test_cap.py
   Observed: 2 passed
 
 - Input: within_cap(4)

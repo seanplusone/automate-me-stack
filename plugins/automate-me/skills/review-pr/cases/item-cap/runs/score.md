@@ -2,7 +2,7 @@
 
 A synthetic case. The module, the diff and the PR body are invented. The codex CLI and the claude CLI were not on PATH. `check/attack_agents.py` printed `none`, so the current agent wrote the only pass.
 
-The pass re-ran `python3 test_cap.py`. It printed `2 passed` and exited 0. It then called `within_cap` on 4, 5, 6 and 0. On the base, `within_cap(5)` returns True. `merge_attacks.py` wrote `attack.md` from that pass.
+The pass re-ran `python3 case_test_cap.py`. It printed `2 passed` and exited 0. It then called `within_cap` on 4, 5, 6 and 0. On the base, `within_cap(5)` returns True. `merge_attacks.py` wrote `attack.md` from that pass.
 
 The author's two tests held. Counts 4, 6 and 0 held. Count 5 did not.
 

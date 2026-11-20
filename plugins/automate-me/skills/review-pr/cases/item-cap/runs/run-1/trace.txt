@@ -3,7 +3,7 @@
 Agents: codex absent, claude absent. attack_agents.py printed none.
 
 ## head
-$ python3 test_cap.py
+$ python3 case_test_cap.py
 2 passed
 exit:0
 
