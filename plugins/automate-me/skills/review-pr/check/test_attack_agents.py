@@ -157,9 +157,9 @@ head = os.path.join(root, "cases", "item-cap", "head")
 os.makedirs(head)
 open(os.path.join(root, "cases", "item-cap", "key.md"), "w").write("Planted: yes\nSECRET-KEY-LINE\n")
 open(os.path.join(head, "cap.py"), "w").write("x = 1\n")
-expect("a practice case refuses sandbox none", run_all(
+expect("sandbox none runs a practice case", run_all(
     brief, tempfile.mkdtemp(), search_path=both, cwd=head, sandbox="none",
-), 2)
+), 0)
 
 script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "attack_agents.py")
 for stop in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGQUIT):
