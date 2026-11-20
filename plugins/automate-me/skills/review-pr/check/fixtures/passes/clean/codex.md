@@ -1,16 +1,11 @@
-# Attack review: clean
+Nothing broke. The empty input held.
 
-Synthetic. Nothing broke.
-
-Verdict: approve
-
-## Tried
-- Input: empty
-  Observed: ok
-  Broke: no
-
-## Findings
-
-## Held
-- Input: empty
-  Observed: ok
+```json
+{
+  "verdict": "approve",
+  "tried": [
+    {"input": "empty", "broke": false, "observed": "ok"}
+  ],
+  "findings": []
+}
+```

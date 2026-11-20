@@ -12,7 +12,7 @@ Write the inputs before you treat the author's tests as evidence. Each input is 
 - keyword-stuffed nonsense, when the change scores or matches text
 - a claim the PR asserts and never executes
 
-Run the code. Record the command and the output you saw. A finding without a file and line, and without that output, is dropped.
+Run the code. Record the command and the output you saw. A finding needs a file and a line, or a repro of that output. A null line is kept when the repro is filled in.
 
 ## Second pass
 
@@ -31,34 +31,21 @@ Write `<dir>/attack-brief.md` in your own words from this outline. Paste the dif
 1. Assume the change is wrong. Try to break it.
 2. Do not trust the PR's test count or its pass line. Re-run the claim.
 3. Run the inputs from "What to run" against the code in the diff.
-4. Reply with only an attack file, in the shape below. No preamble.
+4. End the reply with one json block, in the shape below. Prose before it is ignored.
 
 ## Attack file
 
-Run `python3 "$SKILL_DIR"/check/check_attack.py <dir>/attack.md` on the file. It fails when the file does not parse. It fails when no input was tried. It fails a finding with neither a file and line nor a repro. It fails when Held omits an input that did not break. It finds `key.md` above the file and fails an approve when that key marks a planted bug.
+End the pass with one json block. Prose before it is fine. The machine reads only that block.
 
-```
-# Attack review: <topic>
-
-Verdict: approve | needs fixes
-
-## Tried
-- Input: <the value or command you ran>
-  Observed: <what the run printed>
-  Broke: yes | no
-
-## Findings
-### F1 | <path>:<line> | passes: <agent names>
-<One sentence: what broke, and what a caller would see.>
-Repro: <the input, or none>
-Observed: <the output, or none>
-
-## Held
-- Input: <an input that did not break>
-  Observed: <what the run printed>
+```json
+{"verdict": "approve", "tried": [{"input": "within_cap(4)", "broke": false, "observed": "True"}], "findings": []}
 ```
 
-`Verdict` is `needs fixes` when any finding remains, and `approve` when none do. A finding's middle field is `none` only when the repro and the observed output are both filled in. Held lists every Tried input whose Broke line is `no`. With one pass, that pass's name is `current`.
+`verdict` is `approve` or `needs fixes`. Each tried row has a string `input`, a boolean `broke`, and a string `observed`. Each finding has string `file`, `claim`, and `repro`, and `line` as an integer or null. No other keys.
+
+An approve needs at least one tried row, every `broke` false, and no findings. A true `broke` or any finding is needs fixes, even if the verdict says approve. Missing or invalid JSON is an error, and an error is not an approve.
+
+Run `python3 "$SKILL_DIR"/check/check_attack.py <dir>/attack.md`. It finds `key.md` above the file and fails an approve when that key marks a planted bug.
 
 ## Merge
 
@@ -66,4 +53,4 @@ Observed: <the output, or none>
 python3 "$SKILL_DIR"/check/merge_attacks.py --out <dir>/attack.md <dir>/passes/*.md
 ```
 
-Findings match on the file and the line. `head/cap.py:3` and `cap.py:3` are the same line. Wording does not split them. A finding from either pass is kept, with both passes' evidence. The verdict is needs fixes when a finding remains. A pass is an approve only with one approve line outside a code fence. It tried at least one input, and every input held. It names no file and line. The merge approves only when every pass is that kind of approve.
+Findings on the same file and line are one finding. `head/cap.py` and `cap.py` match. A null line is kept and is not dropped. Both passes' claims stay in the merged finding. The merge approves only when every pass is a valid approve.

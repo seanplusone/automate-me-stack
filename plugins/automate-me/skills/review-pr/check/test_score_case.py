@@ -1,6 +1,7 @@
 """Run: python3 check/test_score_case.py"""
 import contextlib
 import io
+import json
 import os
 import sys
 import tempfile
@@ -85,42 +86,21 @@ def planted_score(attack, catch="returns True | ok\": false", runner=None):
     return code, out.getvalue()
 
 
-CAUGHT = """# Attack review: t
+def attack_json(file, line, claim, repro):
+    body = {
+        "verdict": "needs fixes",
+        "tried": [{"input": "{\"ok\": false}", "broke": True, "observed": "True"}],
+        "findings": [{"file": file, "line": line, "claim": claim, "repro": repro}],
+    }
+    return "```json\n" + json.dumps(body) + "\n```\n"
 
-Verdict: needs fixes
 
-## Tried
-- Input: {"ok": false}
-  Observed: True
-  Broke: yes
-
-## Findings
-### F1 | report.py:4 | passes: current
-accept returns True when a case has ok false.
-Repro: {"passed": true, "ok": false}
-Observed: True
-
-## Held
-None
-"""
-MISSED = """# Attack review: t
-
-Verdict: needs fixes
-
-## Tried
-- Input: {}
-  Observed: error
-  Broke: yes
-
-## Findings
-### F1 | report.py:9 | passes: current
-The name field has no length cap.
-Repro: {"name": ""}
-Observed: accepted
-
-## Held
-None
-"""
+CAUGHT = attack_json(
+    "report.py", 4,
+    "accept returns True when a case has ok: false.",
+    "{\"passed\": true, \"ok\": false}",
+)
+MISSED = attack_json("report.py", 9, "The name field has no length cap.", "{\"name\": \"\"}")
 def expect_planted(name, got, want):
     RAN.append(name)
     if got != want:
@@ -133,16 +113,37 @@ code, text = planted_score(MISSED)
 expect_planted("planted bug missed", (code, "FAIL missed planted bug" in text and "SKIP" in text), (1, True))
 code, _text = planted_score(CAUGHT, "returns true/returns True")
 expect_planted("a/b catch term", code, 0)
-QUOTED = CAUGHT.replace('{"passed": true, "ok": false}', "`ok`: False")
+QUOTED = attack_json("report.py", 4, "accept returns True", "`ok`: False")
 code, _text = planted_score(QUOTED, "'ok': False | returns True")
 expect_planted("quotes and case are ignored", code, 0)
-PARAPHRASE = CAUGHT.replace(
-    "accept returns True when a case has ok false.",
+PARAPHRASE = attack_json(
+    "report.py", 4,
     "The early return treats the summary as proof.",
-).replace('{"passed": true, "ok": false}', "a failed case with a true summary")
-code, text = planted_score(PARAPHRASE, "returns True | 'ok': False", runner=lambda prompt: "ITEM 1: yes\n")
+    "a failed case with a true summary",
+)
+seen = []
+code, text = planted_score(
+    PARAPHRASE, "returns True | 'ok': False",
+    runner=lambda prompt: seen.append(prompt) or "ITEM 1: yes\n",
+)
 expect_planted("meaning judge can catch a paraphrase", (code, "PASS judge caught planted bug" in text), (0, True))
-DENIED = CAUGHT.replace("### F1 | report.py:4 | passes: current", "### F1 | unrelated.py:900 | passes: current")
+expect_planted("the judge sees the matching claim", "summary as proof" in seen[0], True)
+mixed = attack_json("unrelated.py", 900, "MARKER other bug", "other")
+# A second finding on the key line is the only one the judge should see.
+parsed = json.loads(mixed.split("```json\n", 1)[1].split("\n```", 1)[0])
+parsed["findings"].append({
+    "file": "report.py", "line": 4,
+    "claim": "The early return treats the summary as proof.",
+    "repro": "a failed case",
+})
+mixed_path_key, mixed_path = planted_files("```json\n" + json.dumps(parsed) + "\n```\n", "returns True | 'ok': False")
+open(mixed_path_key, "a").write("Where: report.py:4\n")
+prompts = []
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    code = score(mixed_path_key, mixed_path, environ={"PATH": "/nonexistent"}, runner=lambda prompt: prompts.append(prompt) or "ITEM 1: yes\n")
+expect_planted("only the matching finding is judged", (code, "MARKER" not in prompts[0] and "summary as proof" in prompts[0]), (0, True))
+DENIED = attack_json("unrelated.py", 900, "accept returns True when a case has ok false.", "ok false")
 k, p = planted_files(DENIED, "returns True | ok false")
 open(k, "a").write("Where: report.py:4\n")
 out = io.StringIO()
@@ -154,23 +155,24 @@ code, text = planted_score(PARAPHRASE, "returns True | 'ok': False", runner=lamb
 expect_planted("a non-zero judge does not pass", (code, "SKIP judge exited non-zero" in text and "PASS judge" not in text), (1, True))
 code, text = planted_score(PARAPHRASE, "returns True | 'ok': False", runner=lambda prompt: "ITEM 1: no\nITEM 1: yes\n")
 expect_planted("conflicting judge answers fail", (code, "FAIL judge missed planted bug" in text), (1, True))
-SPAN = CAUGHT.replace("### F1 | report.py:4 | passes: current", "### F1 | report.py:3 | passes: current")
+SPAN = attack_json("report.py", 3, "accept returns True when a case has ok false.", "ok false")
 k, p = planted_files(SPAN, "returns True | ok false")
 open(k, "a").write("Where: report.py:3-4\n")
 out = io.StringIO()
 with contextlib.redirect_stdout(out):
     code = score(k, p, environ={"PATH": "/nonexistent"})
 expect_planted("a line in the key span counts", code, 0)
-FAR = CAUGHT.replace("### F1 | report.py:4 | passes: current", "### F1 | report.py:9 | passes: current")
+FAR = attack_json("report.py", 9, "accept returns True when a case has ok false.", "ok false")
 k, p = planted_files(FAR, "returns True | ok false")
 open(k, "a").write("Where: report.py:4\n")
 out = io.StringIO()
 with contextlib.redirect_stdout(out):
     code = score(k, p, environ={"PATH": "/nonexistent"})
 expect_planted("a line outside the window misses", code, 1)
-DENY = CAUGHT.replace(
-    "accept returns True when a case has ok false.",
+DENY = attack_json(
+    "report.py", 4,
     "This does not show a bug. returns True and ok false are only words.",
+    "ok false",
 )
 k, p = planted_files(DENY, "returns True | ok false")
 open(k, "a").write("Where: report.py:4\n")

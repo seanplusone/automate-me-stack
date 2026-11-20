@@ -5,10 +5,11 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from attack_agents import command, detect, main as agent_main, run_all, stamp  # noqa: E402
+from attack_agents import command, detect, main as agent_main, run_all  # noqa: E402
 
 FAILS = []
-STUB = """#!/usr/bin/env python3
+CHECKS = []
+STUB = """#!/usr/bin/python3
 import os, sys
 sys.stdout.write("agent=" + os.path.basename(sys.argv[0]) + "\\n")
 sys.stdout.write("args=" + " ".join(sys.argv[1:]) + "\\n")
@@ -17,6 +18,7 @@ sys.stdout.write("brief=" + sys.stdin.read())
 
 
 def expect(name, got, want):
+    CHECKS.append(name)
     if got != want:
         FAILS.append(f"{name}: wanted {want!r}, got {got!r}")
 
@@ -59,12 +61,13 @@ expect("prompt is not an argument", "attack this diff" not in claude_out.split("
 
 only = bindir("claude")
 expect("claude alone", [name for name, _binary in detect(only)], ["claude"])
-expect("stamp adds the agent", "passes: claude" in stamp("### F1 | head/cap.py:3\nbroke\n", "claude"), True)
-expect("stamp does not repeat the agent",
-       stamp("### F1 | cap.py:3 | passes: claude\n", "claude").count("claude"), 1)
-section = stamp("## Findings (all in cap.py:3)\n### F1 | cap.py:3\n", "codex")
-expect("stamp leaves a section header", section.splitlines()[0], "## Findings (all in cap.py:3)")
-expect("stamp still marks the finding", "passes: codex" in section, True)
+plain = tempfile.mkdtemp()
+plain_bin = os.path.join(plain, "codex")
+open(plain_bin, "w").write("#!/usr/bin/python3\nimport sys\nsys.stdout.write('## Findings (all in cap.py:3)\\n')\n")
+os.chmod(plain_bin, os.stat(plain_bin).st_mode | stat.S_IEXEC)
+plain_out = tempfile.mkdtemp()
+run_all(brief, plain_out, search_path=plain)
+expect("stdout is stored unchanged", open(os.path.join(plain_out, "codex.md")).read(), "## Findings (all in cap.py:3)\n")
 
 slow_dir = tempfile.mkdtemp()
 slow = os.path.join(slow_dir, "codex")
@@ -78,7 +81,7 @@ expect("timeout stderr is kept", "timed out after 0.2s" in open(os.path.join(slo
 
 bad = tempfile.mkdtemp()
 bad_bin = os.path.join(bad, "codex")
-open(bad_bin, "w").write("""#!/usr/bin/env python3
+open(bad_bin, "w").write("""#!/usr/bin/python3
 import sys
 sys.stdout.write("# Attack review: t\\n\\nVerdict: approve\\n\\n## Tried\\n- Input: x\\n  Observed: ok\\n  Broke: no\\n\\n## Findings\\n\\n## Held\\n- Input: x\\n  Observed: ok\\n")
 sys.exit(7)
@@ -90,7 +93,7 @@ expect("non-zero exit is not an approve", open(os.path.join(bad_out, "codex.md")
 
 raw = tempfile.mkdtemp()
 raw_bin = os.path.join(raw, "claude")
-open(raw_bin, "w").write("""#!/usr/bin/env python3
+open(raw_bin, "w").write("""#!/usr/bin/python3
 import sys
 sys.stdout.buffer.write(b"note \\xff\\n")
 """)
@@ -113,16 +116,30 @@ run_all(brief, stale, search_path=slow_dir and bindir("codex"))
 expect("a stale pass is cleared", os.path.exists(os.path.join(stale, "claude.md")), False)
 
 flags = tempfile.mkdtemp()
-expect("timeout 0.5 does not crash",
-       agent_main(["attack_agents.py", "--run", "--brief", brief, "--out", flags, "--timeout", "0.5"]), 0)
-expect("repeated --out is an error",
-       agent_main(["attack_agents.py", "--run", "--brief", brief, "--out", flags, "--out", flags]), 2)
-expect("a bad timeout is an error",
-       agent_main(["attack_agents.py", "--run", "--brief", brief, "--out", flags, "--timeout", "nope"]), 2)
+isolated = tempfile.mkdtemp()
+saved = os.environ.get("PATH")
+os.environ["PATH"] = isolated
+try:
+    expect("timeout 0.5 does not crash",
+           agent_main(["attack_agents.py", "--run", "--brief", brief, "--out", flags, "--timeout", "0.5"]), 0)
+    expect("repeated --out is an error",
+           agent_main(["attack_agents.py", "--run", "--brief", brief, "--out", flags, "--out", flags]), 2)
+    expect("a bad timeout is an error",
+           agent_main(["attack_agents.py", "--run", "--brief", brief, "--out", flags, "--timeout", "nope"]), 2)
+    os.environ["PATH"] = both
+    stub_out = tempfile.mkdtemp()
+    expect("main uses PATH stubs", agent_main(
+        ["attack_agents.py", "--run", "--brief", brief, "--out", stub_out]), 0)
+    expect("the stub ran, not another binary",
+           "agent=codex" in open(os.path.join(stub_out, "codex.md")).read(), True)
+finally:
+    if saved is None:
+        os.environ.pop("PATH", None)
+    else:
+        os.environ["PATH"] = saved
 
 if __name__ == "__main__":
     for item in FAILS:
         print(f"FAIL {item}")
-    total = 29
-    print(f"{total - len(FAILS)}/{total} passed")
+    print(f"{len(CHECKS) - len(FAILS)}/{len(CHECKS)} passed")
     sys.exit(1 if FAILS else 0)

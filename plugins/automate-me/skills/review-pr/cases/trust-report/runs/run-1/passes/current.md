@@ -1,37 +1,23 @@
-# Attack review: trust report
+The current agent tried the author's tests and five reports. Three of them broke.
 
-Verdict: needs fixes
-
-## Tried
-- Input: python3 case_test_report.py
-  Observed: 2 passed
-  Broke: no
-- Input: {'passed': True, 'cases': [{'name': 'a', 'ok': False}]}
-  Observed: True
-  Broke: yes
-- Input: {'passed': False, 'cases': [{'name': 'a', 'ok': False}]}
-  Observed: False
-  Broke: no
-- Input: {'passed': True, 'cases': 'bad'}
-  Observed: True
-  Broke: yes
-- Input: {'passed': True}
-  Observed: True
-  Broke: yes
-- Input: {}
-  Observed: False
-  Broke: no
-
-## Findings
-### F1 | report.py:4 | passes: current
-accept returns True when passed is True and a case has ok False.
-Repro: {'passed': True, 'cases': [{'name': 'a', 'ok': False}]}
-Observed: True
-
-## Held
-- Input: python3 case_test_report.py
-  Observed: 2 passed
-- Input: {'passed': False, 'cases': [{'name': 'a', 'ok': False}]}
-  Observed: False
-- Input: {}
-  Observed: False
+```json
+{
+  "verdict": "needs fixes",
+  "tried": [
+    {"input": "python3 case_test_report.py", "broke": false, "observed": "2 passed"},
+    {"input": "{'passed': True, 'cases': [{'name': 'a', 'ok': False}]}", "broke": true, "observed": "True"},
+    {"input": "{'passed': False, 'cases': [{'name': 'a', 'ok': False}]}", "broke": false, "observed": "False"},
+    {"input": "{'passed': True, 'cases': 'bad'}", "broke": true, "observed": "True"},
+    {"input": "{'passed': True}", "broke": true, "observed": "True"},
+    {"input": "{}", "broke": false, "observed": "False"}
+  ],
+  "findings": [
+    {
+      "file": "report.py",
+      "line": 4,
+      "claim": "accept returns True when passed is True and a case has ok False.",
+      "repro": "{'passed': True, 'cases': [{'name': 'a', 'ok': False}]}"
+    }
+  ]
+}
+```

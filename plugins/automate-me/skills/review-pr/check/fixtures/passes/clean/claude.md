@@ -1,15 +1,13 @@
-# Attack review: clean
+Same clean result, including a mention of cap.py:3 in prose that the machine must ignore.
 
-Synthetic. Nothing broke.
+None
 
-Verdict: approve
-
-## Tried
-- Input: empty
-  Observed: ok
-  Broke: No, it held
-
-## Findings
-
-## Held
-The empty input held. Input empty observed ok.
+```json
+{
+  "verdict": "approve",
+  "tried": [
+    {"input": "empty", "broke": false, "observed": "ok"}
+  ],
+  "findings": []
+}
+```

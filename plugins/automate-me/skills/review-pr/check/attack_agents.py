@@ -14,7 +14,6 @@ an approve.
 This script does not decide what to attack, and it does not pick a fallback agent.
 """
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -37,25 +36,6 @@ def as_text(blob):
     if isinstance(blob, bytes):
         return blob.decode("utf-8", "replace")
     return blob
-
-
-def stamp(text, agent):
-    """Put the agent name on every finding heading, in the canonical shape."""
-    from check_attack import parse_finding_heading  # noqa: E402
-    lines = []
-    for line in (text or "").splitlines():
-        heading = parse_finding_heading(line)
-        if not heading:
-            lines.append(line)
-            continue
-        names = list(heading["passes"])
-        if agent not in names:
-            names.append(agent)
-        lines.append(f"### {heading['id']} | {heading['where']} | passes: {', '.join(names)}")
-    body = "\n".join(lines)
-    if text and text.endswith("\n"):
-        body += "\n"
-    return body
 
 
 def write_error(out_path, err_path, detail):
@@ -114,7 +94,7 @@ def run_all(brief_path, out_dir, search_path=None, runner=None, timeout=DEFAULT_
             write_error(out_path, err_path, stderr + ("\n" if stderr else "") + stdout)
             print(name)
             continue
-        open(out_path, "w").write(stamp(stdout, name))
+        open(out_path, "w").write(stdout)
         open(err_path, "w").write(stderr)
         print(name)
     return failed
