@@ -107,15 +107,21 @@ After you save a message, check in this order. The first match wins. Write Hando
 2. **open-cap.** Not on turn 1. After that, Open has more than 5 lines that are not the five slots.
 3. **turn-cap.** This reply is turn 10.
 
+The first match is the only legal stop. If done matches, do not write open-cap or turn-cap. If open-cap matches, do not write turn-cap.
+
 Record that turn as `turns: <n>` in Handoff. The number is from 1 through 10.
 
-The five slots do not count toward open-cap. On turn 1, park any gap past the 5 other Open lines and ask the next question. Do not stop. A parked gap keeps its question. Outcome reads Parked as the Parking lot. A stop ends further turns. It does not drop a slot the user already decided.
+The five slots do not count toward open-cap. A slot label still counts when a space sits before the colon, or the colon is the full-width one. `Output : still open?` is the output slot.
+
+On turn 1, Open may hold at most 5 lines that are not slots. Park the rest, each with its question. Do not stop on turn 1 for the cap. A parked gap is not dropped. Outcome reads Parked as the Parking lot. A finished file that still has more than 5 of those lines on turn 1 fails the check.
+
+Every part of the user's message lands in Decided, Open, or Parked. A hedge stays Open or Parked. Do not write it as a firm line.
 
 ## 4. Hand off
 
 A finished file has a Handoff section. A run without one fails the check.
 
-`stop` is one of `done`, `turn-cap`, or `open-cap`. `next` is `/automate-me:outcome`. `stop: done` is valid only when all five slots are Decided and none is Open. `stop: open-cap` is valid only after turn 1, and only when more than 5 Open lines are not slots. `stop: turn-cap` is valid only when `turns` is 10.
+`stop` is the first match from the list above. `next` is one line, `/automate-me:outcome`. A second next line, or a bold twin such as `**stop:**`, fails the check. Case does not matter: `DONE` and `PASS` are the same as `done` and `pass`. The map line in the template is required.
 
 Before you write Handoff, run the repo's shared writing check. From this skill that script is `../shared/check_writing.py`. Run `python3 "$SKILL_DIR"/../shared/check_writing.py <decisions.md>`. Fix the lines it flags. Do not change the user's numbers or names. If a fix changes a line, run the check again.
 
@@ -137,6 +143,8 @@ Outcome reads the sections like this.
 | Parked | Parking lot |
 
 Run `python3 "$SKILL_DIR"/check/check_decisions.py <decisions.md>` after you write Handoff. Fix what it flags before you show the file. It checks the shape, and it runs the shared writing check on the file. A `writing: pass` line does not override a writing failure. The four sections are present once, in order. Every Open item ends with one question mark. Each slot is one Decided line or one Open line, with a value. `stop` matches the file. `turns` is a whole number from 1 through 10. No item runs past one line. Handoff names outcome.
+
+A code fence does not hide a heading, a title, or a slot. An unclosed fence fails the check. Prose inside a fence is still part of the writing check.
 
 The reply follows the [writing rules](../shared/writing-rules.md). Inside `decisions.md`, keep the user's numbers and names, and rewrite any line the writing check flags.
 

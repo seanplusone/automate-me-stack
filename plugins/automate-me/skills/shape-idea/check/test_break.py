@@ -1,16 +1,11 @@
 """Run: python3 check/test_break.py
 
-Adversarial decisions.md files. 00_valid_control.md passes.
-22_no_map_line.md passes: the control also has no map line, so a map is not required.
-26_open_6_but_none_cap.md passes: it has five non-slot opens, not six, and stop is done
-with every slot decided. Extra opens do not block done. The open cap is more than five
-non-slot opens, and only for an open-cap stop.
-14_open_and_turncap_ok_but_6_open_items.md fails: the name says six opens can be ok, but
-this file stops open-cap on turn 1. That stop is never valid on turn 1, and it has five
-non-slot opens, which is not more than five.
-lenient.md and the other numbered files fail.
+Each fixture names the check that must fail. A passing fixture maps to None.
+22 has no map line, and the template requires one, so it fails that check.
+14 stops open-cap on turn 1. 26 is a real done stop with five extra opens.
 """
 import os
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -18,43 +13,86 @@ from check_decisions import check  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIXTURES = os.path.join(HERE, "fixtures")
+SCRIPT = os.path.join(HERE, "check_decisions.py")
 
-# Files that are valid under the current rules. See the module docstring.
-PASS = {
-    "00_valid_control.md",
-    "22_no_map_line.md",
-    "26_open_6_but_none_cap.md",
+# None means the file passes. Any other value is a check name that must fail.
+EXPECT = {
+    "00_valid_control.md": None,
+    "01_slot_only_in_parked.md": "every slot is decided or open",
+    "02_turns_0.md": "turn count recorded and at most 10",
+    "03_duplicate_decided.md": "sections present once",
+    "04_open_without_q.md": "every open item ends with a question",
+    "05_done_with_slot_in_open.md": "stop matches the file",
+    "06_missing_writing.md": "handoff says writing pass",
+    "07_writing_fail.md": "handoff says writing pass",
+    "08_slot_in_both_decided_and_open.md": "a slot is not in Decided and Open",
+    "09_duplicate_slot_decided.md": "no duplicate slot",
+    "10_empty_slot_values.md": "slot values are not empty",
+    "11_open_slot_bare_q.md": "slot values are not empty",
+    "12_opencap_with_1_open.md": "stop matches the file",
+    "13_turncap_at_turn_2.md": "stop matches the file",
+    "14_opencap_on_turn_1.md": "stop matches the file",
+    "15_no_title.md": "file has a Decisions title",
+    "16_writing_pass_selfreport_with_slop.md": "prose passes the writing check",
+    "17_wrong_next.md": "handoff names outcome",
+    "18_none_plus_items_open.md": "every open item ends with a question",
+    "19_negative_turns.md": "turn count recorded and at most 10",
+    "20_turns_unicode_digit.md": "turn count recorded and at most 10",
+    "21_open_multi_question.md": "every open item ends with a question",
+    "22_no_map_line.md": "handoff has a map line",
+    "23_unknown_section.md": "no item longer than one line",
+    "24_decided_slot_via_bold.md": "every slot is decided or open",
+    "25_goal_prefix_word.md": "every slot is decided or open",
+    "26_done_with_five_extra_opens.md": None,
+    "lenient.md": "stop matches the file",
+    "open-cap-beats-done.md": "stop is the first match",
+    "turn-cap-beats-open-cap.md": "stop is the first match",
+    "unclosed-fence.md": "code fence is closed",
+    "shadow-handoff.md": "handoff fields are unique",
+    "huge-turn.md": "turn count recorded and at most 10",
+    "fenced-title.md": "file has a Decisions title",
+    "a08_turncap_should_be_done.md": "stop is the first match",
+    "a09_opencap_should_be_done.md": "stop is the first match",
+    "a07_turncap_should_be_opencap.md": "stop is the first match",
+    "a10_turn1_9_opens.md": "turn 1 parks overflow",
+    "a01_slot_space_colon_open.md": "a slot is not in Decided and Open",
+    "a25_dup_next.md": "handoff fields are unique",
 }
 
 FAILS = []
-RAN = []
 
 
-def run(name):
-    path = os.path.join(FIXTURES, name)
-    try:
-        bad = [label for label, items in check(open(path).read()) if items]
-        crashed = None
-    except Exception as exc:
-        bad, crashed = [], exc
-    return bad, crashed
+def names(path):
+    return [label for label, items in check(open(path, encoding="utf-8").read()) if items]
 
 
 for name in sorted(os.listdir(FIXTURES)):
-    if not name.endswith(".md"):
+    if not name.endswith(".md") or name not in EXPECT:
         continue
-    RAN.append(name)
-    bad, crashed = run(name)
-    want_pass = name in PASS
-    if crashed is not None:
-        FAILS.append(f"{name}: crashed: {crashed}")
-        print(f"FAIL {name}: crashed: {crashed}")
+    want = EXPECT[name]
+    try:
+        got = names(os.path.join(FIXTURES, name))
+    except Exception as exc:
+        FAILS.append(f"{name}: crashed: {exc}")
+        print(f"FAIL {name}: crashed: {exc}")
         continue
-    ok = (not bad) if want_pass else bool(bad)
-    print(f"{'PASS' if ok else 'FAIL'} {name}: {'ok' if not bad else ', '.join(bad)}")
+    if want is None:
+        ok = not got
+        detail = "ok" if ok else ", ".join(got)
+    else:
+        ok = want in got
+        detail = want if ok else f"missing {want}; got {', '.join(got)}"
+    print(f"{'PASS' if ok else 'FAIL'} {name}: {detail}")
     if not ok:
-        FAILS.append(f"{name}: wanted {'pass' if want_pass else 'fail'}, got {bad}")
+        FAILS.append(f"{name}: {detail}")
+
+binary = os.path.join(FIXTURES, "a24_binary.bin")
+ran = subprocess.run([sys.executable, SCRIPT, binary], capture_output=True, text=True)
+binary_ok = ran.returncode == 1 and "FAIL file is not UTF-8" in ran.stdout and "Traceback" not in ran.stderr
+print(f"{'PASS' if binary_ok else 'FAIL'} a24_binary.bin: file is not UTF-8")
+if not binary_ok:
+    FAILS.append(f"a24_binary.bin: stdout={ran.stdout!r} stderr={ran.stderr!r}")
 
 if __name__ == "__main__":
-    print(f"{len(RAN) - len(FAILS)}/{len(RAN)} fixtures matched")
+    print(f"{len(EXPECT) + 1 - len(FAILS)}/{len(EXPECT) + 1} fixtures matched")
     sys.exit(1 if FAILS else 0)

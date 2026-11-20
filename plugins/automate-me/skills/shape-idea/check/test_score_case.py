@@ -96,6 +96,12 @@ RICH = """# Decisions: t
 - turns: 3
 - writing: pass
 """
+expect("a slot key with no terms fails", "Decided: goal\n", 1, "needs at least one term")
+expect("two key items cannot share one line",
+       "Open: reminders | reminder | annoying\nOpen: name | call the app | midnight\n",
+       1, "MISSED",
+       decisions=DECISIONS.replace("- Do you want a reminder, or would that be annoying?",
+                                   "- reminder annoying call the app midnight 4am?"))
 expect("keywords on the wrong slot score low",
        "Decided: goal | phone | habit\nDecided: done | 10 seconds | streak\nDecided: constraints | accounts | only me\n",
        1, "FAIL 1/3", decisions=RICH)

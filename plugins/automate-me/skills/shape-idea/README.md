@@ -4,7 +4,7 @@ Part of `automate-me`. Shared writing rules live in `../shared/writing-rules.md`
 
 Brainstorms a vague idea before a brief. Each turn restates the idea, asks one question, and names at most one risk. Decisions are saved to `decisions.md` as they are made. It stops when the five slots are decided, at turn 10, or after turn 1 when more than 5 other gaps stay open. Then it hands the file to outcome. It never builds, runs, or posts.
 
-Status: new. Three synthetic scored cases. Each `run-1` was written by a fresh model that read `SKILL.md` and the case input, not the key. All three stop at `done`: habit-tracker and lunch-poll on turn 3, tidy-downloads on turn 5.
+Status: new. Four synthetic scored cases. Each `run-1` was written by a fresh model that read only `SKILL.md` and that case's `input.md`. The input holds the whole conversation. Keys were written from the input, not from the run. habit-tracker, tidy-downloads, and lunch-poll stop at `done`. bookmark-box stops at `open-cap`.
 
 ## What the checks cover, and what they don't
 
@@ -98,6 +98,7 @@ shape-idea/
       runs/score.md                 why it stopped, and the scorer output
     tidy-downloads/                 stop: done, turn 5. A command line tool for a downloads folder.
     lunch-poll/                     stop: done, turn 3. A team bot that picks a lunch spot.
+    bookmark-box/                   stop: open-cap, turn 2. A phone box for saving links.
                                     each of the last two: input.md, key.md, runs/run-1/decisions.md, runs/score.md
 ```
 
@@ -110,6 +111,8 @@ From `shape-idea/`:
 ```
 python3 check/test_check_decisions.py
 python3 check/test_score_case.py
+python3 check/test_judge.py
+python3 check/test_break.py
 for c in cases/*/; do
   python3 check/check_decisions.py "$c"runs/run-1/decisions.md | tail -1
   python3 check/score_case.py "$c"key.md "$c"runs/run-1/decisions.md | tail -1
@@ -120,4 +123,10 @@ for c in cases/*/; do
 done
 ```
 
-Every `run-1` passes the shape check and the score.
+Every `run-1` passes the shape check and the keyword score. The meaning judge is separate:
+
+```
+python3 check/judge_case.py cases/<name>/key.md cases/<name>/runs/run-1/decisions.md
+```
+
+It runs `codex exec` or `claude -p` when one is on PATH, and prints SKIP and exits 0 when neither is.

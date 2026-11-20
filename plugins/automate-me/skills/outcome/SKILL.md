@@ -13,18 +13,21 @@ Voice is only how the text arrives. The skill works on the transcript, typos and
 
 ## A decisions file
 
-If the user brings a `decisions.md` from [shape-idea](../shape-idea/SKILL.md), map that file. Do not sort it as a ramble.
+If the user brings a `decisions.md` from [shape-idea](../shape-idea/SKILL.md), map that file. Do not sort it as a ramble. Then fill every brief slot. A slot the file does not settle is `unknown: <question>?`. Run `python3 "$SKILL_DIR"/check/check_brief.py` on the brief.
 
 | In the decisions file | In the brief |
 |---|---|
 | The `goal:` line | Goal |
-| The `output:` line | Output |
-| The `verify:` line | Verify |
+| A decided `output:` line | Output |
+| An open `output:` line | Output as `unknown:`, and again under Unknowns |
+| A decided `verify:` line | Verify, plus the evidence sentence |
+| An open `verify:` line | Verify as `unknown:`, and again under Unknowns |
 | `constraints:`, `done:`, and every other Decided line | Must-haves |
-| Each Open line | Unknowns |
-| Parked | Parking lot |
+| A Parked line that says not now or later | Must-haves as `out of scope:`, and Parking lot |
+| Other Parked lines | Parking lot |
+| Each other Open line | Unknowns |
 
-A slot that is still Open is an unknown. It is not a must-have. Then read the brief back. The same traps apply.
+Plan first is the agent's call. Write `none needed` for one brief. Decision is `unknown: What will you decide with the result?` unless a Decided line states it. Context is the other Decided lines, or `unknown: What already exists?`. Taste is `unknown: What should be flagged but not required?` unless a line states a taste. If stuck says report only and do not guess. Skills says none until the user names one. Ask at most 3 of the unknowns. The same traps apply.
 
 ## When to offer it
 

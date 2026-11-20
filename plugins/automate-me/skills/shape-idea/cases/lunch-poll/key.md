@@ -2,14 +2,13 @@
 
 A synthetic case. The bot and every number are invented. Never show this file to the skill.
 
-The run is a fresh model that read SKILL.md, the ramble, and the later replies. It did not see this key. Terms must sit on the named slot line. The close rule and the tie stay open. Dietary tags and the snack drawer are parked.
+Terms come from input.md, including the two replies.
 
 Decided: goal | lunch | vote
 Decided: done | three choices | same chat
-Decided: output | same chat | winner
+Decided: output | winner | same chat
 Decided: verify | three choices | second person
-Decided: constraints | payments | orders
-Decided: size | 12 people
+Decided: constraints | 12 people | payments | orders
 Open: close | 20 minutes | half
 Open: tie | tie break
 Parked: diet | dietary | later

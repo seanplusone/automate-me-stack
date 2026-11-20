@@ -62,8 +62,12 @@ TITLE = re.compile(r"^# Decisions\b", re.M)
 MAX_TURNS = 10
 OPEN_CAP = 5
 SLOTS = ["goal", "done", "output", "verify", "constraints"]
-SLOT_LINE = {slot: re.compile(rf"^{slot}:(.*)$", re.I) for slot in SLOTS}
+# A slot label may have spaces before the colon, and the colon may be full-width.
+# `Output : value` and `output： value` are the output slot. `goalpost:` is not goal.
+SLOT_HEAD = re.compile(r"^(goal|done|output|verify|constraints)\s*[:\uff1a]\s*(.*)$", re.I)
 ASCII_DIGITS = re.compile(r"^[0-9]+$")
+FENCE = re.compile(r"^\s*```")
+HANDOFF_FIELD = re.compile(r"^(next|stop|turns|writing|map)\s*[:\uff1a]\s*(.*)$", re.I)
 
 
 def canon(name):
@@ -79,6 +83,22 @@ def real_items(items):
     if len(items) == 1 and is_none(items[0]):
         return []
     return items
+
+
+def split_fences(text):
+    """Returns (visible, hidden, unclosed). Fence markers themselves are dropped.
+
+    Headings and slots inside a fence are hidden, so they do not count as structure.
+    Hidden prose is still returned so the writing check can see it.
+    """
+    visible, hidden = [], []
+    fenced = False
+    for line in text.splitlines():
+        if FENCE.match(line):
+            fenced = not fenced
+            continue
+        (hidden if fenced else visible).append(line)
+    return "\n".join(visible), "\n".join(hidden), fenced
 
 
 def parse(text):
@@ -108,20 +128,19 @@ def parse(text):
     return sections, counts, positions, extras
 
 
+def slot_match(item):
+    return SLOT_HEAD.match(item.strip())
+
+
 def slot_value(item):
-    """The text after `<slot>:` when item is a slot line, else None."""
-    for pattern in SLOT_LINE.values():
-        match = pattern.match(item)
-        if match:
-            return match.group(1).strip()
-    return None
+    """The text after the slot colon, else None. Spaces and a full-width colon count."""
+    match = slot_match(item)
+    return match.group(2).strip() if match else None
 
 
 def slot_of(item):
-    for slot, pattern in SLOT_LINE.items():
-        if pattern.match(item):
-            return slot
-    return None
+    match = slot_match(item)
+    return match.group(1).lower() if match else None
 
 
 def is_slot_line(item):
@@ -129,16 +148,21 @@ def is_slot_line(item):
 
 
 def has_slot(items, slot):
-    return any(SLOT_LINE[slot].match(item) for item in items)
+    return any(slot_of(item) == slot for item in items)
 
 
-def field(items, label):
-    """Values of Handoff bullets that start with `label:`."""
-    found = []
+def handoff_fields(items):
+    """Handoff fields, with bold markers stripped and the label case-folded.
+
+    `**stop:** open-cap` is a stop field. `writing: PASS` is `pass`.
+    """
+    found = {name: [] for name in ("next", "stop", "turns", "writing", "map")}
     for item in items:
-        match = re.match(rf"^{re.escape(label)}:\s*(.*?)\s*$", item, re.I)
+        plain = item.replace("**", "").strip()
+        plain = re.sub(r"^[\*_]+|[\*_]+$", "", plain).strip()
+        match = HANDOFF_FIELD.match(plain)
         if match:
-            found.append(match.group(1).strip())
+            found[match.group(1).lower()].append(match.group(2).strip())
     return found
 
 
@@ -155,13 +179,15 @@ def prose_fails(text):
 
 
 def check(text):
-    sections, counts, positions, extras = parse(text)
+    visible, hidden, unclosed = split_fences(text)
+    sections, counts, positions, extras = parse(visible)
     results = []
 
     def add(name, fails):
         results.append((name, fails))
 
-    add("file has a Decisions title", [] if TITLE.search(text) else ["missing a `# Decisions` title"])
+    add("code fence is closed", [] if not unclosed else ["a code fence is opened and never closed"])
+    add("file has a Decisions title", [] if TITLE.search(visible) else ["missing a `# Decisions` title"])
 
     present = []
     for name in SECTIONS:
@@ -192,8 +218,8 @@ def check(text):
     both_fails = []
     empty_fails = []
     for slot in SLOTS:
-        in_decided = [item for item in decided if SLOT_LINE[slot].match(item)]
-        in_open = [item for item in opens if SLOT_LINE[slot].match(item)]
+        in_decided = [item for item in decided if slot_of(item) == slot]
+        in_open = [item for item in opens if slot_of(item) == slot]
         if len(in_decided) > 1:
             dup_fails.append(f"slot {slot} is on {len(in_decided)} Decided lines")
         if len(in_open) > 1:
@@ -210,33 +236,56 @@ def check(text):
 
     handoff = sections.get("Handoff", [])
     handoff_ready = counts.get("Handoff") == 1
-    stops = field(handoff, "stop") if handoff_ready else []
+    fields = handoff_fields(handoff) if handoff_ready else {name: [] for name in ("next", "stop", "turns", "writing", "map")}
+    stops = [value.lower() for value in fields["stop"]]
+    unique_fails = []
+    if len(fields["next"]) > 1:
+        unique_fails.append(f"next appears {len(fields['next'])} times")
+    if len(set(stops)) > 1:
+        unique_fails.append("stop lines disagree: " + ", ".join(stops))
+    if len(fields["turns"]) > 1:
+        unique_fails.append(f"turns appears {len(fields['turns'])} times")
+    if len({value.lower() for value in fields["writing"]}) > 1:
+        unique_fails.append("writing lines disagree")
+    add("handoff fields are unique", unique_fails)
+
     stop_fails = []
     if handoff_ready and len(stops) == 0:
         stop_fails.append("stop line is missing; write stop: done, stop: turn-cap, or stop: open-cap")
-    elif len(stops) > 1:
+    elif len(stops) > 1 and len(set(stops)) == 1:
         stop_fails.append(f"stop appears {len(stops)} times")
-    elif stops and stops[0].lower() not in STOPS:
+    elif stops and stops[0] not in STOPS:
         stop_fails.append(f"stop is {stops[0]!r}; use done, turn-cap, or open-cap")
     add("stop reason is done, turn-cap, or open-cap", stop_fails)
 
-    turns = field(handoff, "turns") if handoff_ready else []
+    turns = fields["turns"]
     turn_fails = []
     turn_number = None
     if handoff_ready and len(turns) == 0:
         turn_fails.append("turn count is missing; write turns: <n> in Handoff")
     elif len(turns) > 1:
         turn_fails.append(f"turn count appears {len(turns)} times")
-    elif turns and not ASCII_DIGITS.fullmatch(turns[0]):
-        turn_fails.append(f"turns is {turns[0]!r}; write a whole number from 1 through {MAX_TURNS}")
+    elif turns and (len(turns[0]) > 2 or not ASCII_DIGITS.fullmatch(turns[0])):
+        shown = turns[0] if len(turns[0]) <= 20 else turns[0][:20] + "..."
+        turn_fails.append(f"turns is {shown!r}; write a whole number from 1 through {MAX_TURNS}")
     elif turns:
         turn_number = int(turns[0])
         if turn_number < 1 or turn_number > MAX_TURNS:
             turn_fails.append(f"turns is {turn_number}, write a whole number from 1 through {MAX_TURNS}")
     add("turn count recorded and at most 10", turn_fails)
 
-    stop = stops[0].lower() if len(stops) == 1 and stops[0].lower() in STOPS else None
+    stop = stops[0] if len(stops) == 1 and stops[0] in STOPS else None
     non_slot = [item for item in opens if not is_slot_line(item)]
+    done_applies = all(has_slot(decided, slot) and not has_slot(opens, slot) for slot in SLOTS)
+    open_cap_applies = turn_number is not None and turn_number >= 2 and len(non_slot) > OPEN_CAP
+    if done_applies:
+        first = "done"
+    elif open_cap_applies:
+        first = "open-cap"
+    elif turn_number == MAX_TURNS:
+        first = "turn-cap"
+    else:
+        first = None
     match_fails = []
     if stop == "done":
         for slot in SLOTS:
@@ -253,27 +302,50 @@ def check(text):
     elif stop == "turn-cap" and turn_number != MAX_TURNS:
         match_fails.append(f"turn-cap needs turns: {MAX_TURNS}")
     add("stop matches the file", match_fails)
+    first_fails = []
+    if first and stop and stop != first:
+        first_fails.append(f"stop is {stop} but the first match is {first}")
+    add("stop is the first match", first_fails)
+    overflow = []
+    if turn_number == 1 and len(non_slot) > OPEN_CAP:
+        overflow.append(
+            f"turn 1 has {len(non_slot)} open items that are not slots; park the ones past {OPEN_CAP}")
+    add("turn 1 parks overflow", overflow)
 
     add("no item longer than one line",
         [f"{name}: extra line {text!r}. Each item stays on one line" for name, text in extras])
 
+    nexts = [value.strip() for value in fields["next"]]
     next_fails = []
-    if handoff_ready and not any(item.strip().lower() == NEXT for item in handoff):
-        next_fails.append(f"Handoff has no `{NEXT}` line")
+    if handoff_ready and nexts != ["/automate-me:outcome"]:
+        next_fails.append(f"Handoff next is {nexts!r}; write one `{NEXT}` line")
     add("handoff names outcome", next_fails)
 
-    writing = field(handoff, "writing") if handoff_ready else []
+    maps = fields["map"]
+    map_fails = []
+    if handoff_ready and len(maps) != 1:
+        map_fails.append("Handoff needs one map: line, as the template shows")
+    add("handoff has a map line", map_fails)
+
+    writing = [value.lower() for value in fields["writing"]]
     writing_fails = []
     if handoff_ready and writing != ["pass"]:
         writing_fails.append("Handoff has no single `writing: pass` line. Run the shared writing check first")
     add("handoff says writing pass", writing_fails)
-    add("prose passes the writing check", prose_fails(text))
+    prose = visible if not hidden else visible + "\n" + hidden
+    add("prose passes the writing check", prose_fails(prose))
     return results
 
 
 def main(path):
+    try:
+        text = open(path, encoding="utf-8").read()
+    except UnicodeDecodeError:
+        print("FAIL file is not UTF-8")
+        print(f"FAIL decisions: {path}")
+        return 1
     failed = False
-    for name, fails in check(open(path).read()):
+    for name, fails in check(text):
         print(f"{'FAIL' if fails else 'PASS'} {name}")
         for fail in fails:
             print(f"  {fail}")
