@@ -23,6 +23,6 @@ Output of `python3 check/score_case.py cases/trust-report/key.md cases/trust-rep
 
 ```
 SKIP no agent CLI on PATH
-caught
-PASS caught planted bug
+SKIP meaning
+WEAK location only
 ```

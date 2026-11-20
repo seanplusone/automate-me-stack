@@ -9,9 +9,10 @@ is an error and is never an approve. A file named --x.md must follow --.
 import json
 import os
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from check_attack import norm_location, parse_attack  # noqa: E402
+from check_attack import common_suffix, norm_span, path_suffix, parse_attack  # noqa: E402
 
 
 def _blank(source):
@@ -35,7 +36,7 @@ def merge(paths):
         docs.append(doc)
         if not doc["parsed"]:
             errors.append(source + ": " + (doc["errors"][0] if doc["errors"] else "unparseable output"))
-    groups, order, nulls = {}, [], []
+    groups, order, nulls = [], [], []
     tried, by_input = [], {}
     for doc in docs:
         if not doc["parsed"]:
@@ -49,22 +50,33 @@ def merge(paths):
                 by_input[key]["broke"] = True
                 by_input[key]["observed"] = item["observed"]
         for finding in doc["findings"]:
-            path, line = norm_location(finding["file"], finding["line"])
+            try:
+                path, start, end = norm_span(finding["file"], finding["line"])
+            except ValueError:
+                errors.append(doc["source"] + ": line out of range")
+                continue
             stored = {
-                "file": path, "line": line, "claim": finding["claim"], "repro": finding["repro"],
+                "file": path, "line": start, "claim": finding["claim"], "repro": finding["repro"],
                 "passes": [doc["source"]],
             }
-            if line is None:
+            if start is None:
                 nulls.append(stored)
                 continue
-            key = (path, line)
-            if key not in groups:
-                groups[key] = []
-                order.append(key)
-            groups[key].append(stored)
+            placed = None
+            for group in groups:
+                if group["start"] == start and group["end"] == end and path_suffix(group["path"], path):
+                    placed = group
+                    break
+            if placed is None:
+                placed = {"path": path, "start": start, "end": end, "items": []}
+                groups.append(placed)
+                order.append(placed)
+            placed["items"].append(stored)
+            placed["path"] = common_suffix(placed["path"], path) or placed["path"]
     findings = []
     for key in order:
-        items = groups[key]
+        items = key["items"]
+        key_path = key["path"]
         claims, repros, passes = [], [], []
         for item in items:
             agent = item["passes"][0]
@@ -76,7 +88,7 @@ def merge(paths):
                 if name not in passes:
                     passes.append(name)
         findings.append({
-            "file": items[0]["file"],
+            "file": key_path,
             "line": items[0]["line"],
             "claim": " | ".join(claims),
             "repro": " | ".join(repros),
@@ -160,12 +172,24 @@ def main(argv):
         return 2
     doc = merge(passes)
     if not doc["verdict"]:
+        if os.path.isfile(out):
+            os.remove(out)
         print("FAIL unparseable output, not an approve")
         for item in doc["errors"]:
             print(f"  {item}")
         return 1
-    os.makedirs(os.path.dirname(os.path.abspath(out)) or ".", exist_ok=True)
-    open(out, "w").write(render(doc))
+    directory = os.path.dirname(os.path.abspath(out)) or "."
+    os.makedirs(directory, exist_ok=True)
+    handle = tempfile.NamedTemporaryFile("w", dir=directory, prefix=".merge-", delete=False)
+    try:
+        handle.write(render(doc))
+        handle.close()
+        os.replace(handle.name, out)
+    except Exception:
+        handle.close()
+        if os.path.exists(handle.name):
+            os.remove(handle.name)
+        raise
     if doc["errors"]:
         print("parsed with errors:")
         for item in doc["errors"]:

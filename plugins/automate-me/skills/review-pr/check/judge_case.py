@@ -22,7 +22,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from check_attack import parse_attack  # noqa: E402
 
-ITEM = re.compile(r"^ITEM\s+(\d+)\s*:\s*(yes|no)\s*$", re.I | re.M)
+ITEM = re.compile(r"^ITEM\s+(\d+)\s*:\s*([A-Za-z]+)\b", re.I)
 
 
 def find_cli(environ=None):
@@ -72,12 +72,26 @@ def build_prompt(key_text, findings):
     return "\n".join(lines)
 
 
+def _judge_line(line):
+    """Drop emphasis and backticks so a wrapped answer still counts."""
+    text = line.strip()
+    text = re.sub(r"^[>*_\s`]+", "", text)
+    text = re.sub(r"[*_`]+$", "", text)
+    return text.strip()
+
+
 def parse_verdict(text):
     """True, False, 'conflict' when one item has both answers, or None."""
     found = {}
-    for match in ITEM.finditer(text or ""):
+    for raw in (text or "").split("\n"):
+        match = ITEM.match(_judge_line(raw))
+        if not match:
+            continue
+        word = match.group(2).lower()
+        if word not in ("yes", "no"):
+            continue
         number = int(match.group(1))
-        found.setdefault(number, []).append(match.group(2).lower() == "yes")
+        found.setdefault(number, []).append(word == "yes")
     answers = found.get(1) or []
     if not answers:
         return None

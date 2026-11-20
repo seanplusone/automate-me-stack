@@ -13,9 +13,9 @@ import posixpath
 import re
 import sys
 
-PARSE_LINE = re.compile(r"^Parse:\s*\S", re.I)
-JSON_OPEN = re.compile(r"^(`{3,})json\s*$", re.I)
-FENCE_CLOSE = re.compile(r"^(`{3,})\s*$")
+JSON_OPEN = re.compile(r"^(`{3,}|~{3,})[ \t]*json[ \t]*$", re.I)
+MAX_LINE = 1_000_000
+WINDOW = 2
 
 
 def soften(text):
@@ -44,102 +44,190 @@ def catch_terms(path):
     return terms
 
 
-def norm_location(file, line):
-    """(path, line or None). Strips ./, .., absolute prefixes, :col and #L."""
+def _bounded(text):
+    """An int line, or raise when the digit string is too long to be a line."""
+    if len(text) > 7:
+        raise ValueError("line out of range")
+    value = int(text)
+    if value < 0 or value > MAX_LINE:
+        raise ValueError("line out of range")
+    return value
+
+
+def _explicit_line(line):
+    """A positive line from JSON. 0 and null mean 'use the suffix'. Too big is an error."""
+    if line is None or isinstance(line, bool) or not isinstance(line, int):
+        return None
+    if line > MAX_LINE:
+        raise ValueError("line out of range")
+    if line <= 0:
+        return None
+    return line
+
+
+def norm_span(file, line):
+    """(path, start, end). start is None when the finding names no line."""
     if file is None:
-        return "", None
+        return "", None, None
     text = str(file).strip().replace("\\", "/")
+    text = text.strip("`\"' \t")
     if text.lower() in ("", "none", "null"):
-        return "", None
+        return "", None, None
+    text = re.sub(r"^[A-Za-z]:", "", text)
     embedded = None
-    hash_line = re.search(r"#L(\d+)\s*$", text, re.I)
-    if hash_line:
-        embedded = int(hash_line.group(1))
-        text = text[:hash_line.start()]
-    colon = re.search(r":(\d+)(?::\d+)?$", text)
-    if colon:
-        if embedded is None:
-            embedded = int(colon.group(1))
-        text = text[:colon.start()]
+    hashed = re.search(r"#L(\d+)(?:-L?(\d+))?\s*$", text, re.I)
+    if hashed:
+        start = _bounded(hashed.group(1))
+        end = _bounded(hashed.group(2)) if hashed.group(2) else start
+        embedded = (start, end)
+        text = text[:hashed.start()]
+    else:
+        colon = re.search(r":(\d+)(?::(\d+)|-(\d+))?\s*$", text)
+        if colon:
+            start = _bounded(colon.group(1))
+            end = _bounded(colon.group(3)) if colon.group(3) else start
+            embedded = (start, end)
+            text = text[:colon.start()]
+    if embedded and embedded[1] < embedded[0]:
+        embedded = (embedded[1], embedded[0])
     while text.startswith("./"):
         text = text[2:]
-    if text.startswith("/"):
-        text = posixpath.normpath(text)
-    else:
-        text = posixpath.normpath(text) if text else ""
-    if text in ("", "."):
-        return "", line if isinstance(line, int) and not isinstance(line, bool) else embedded
-    parts = [part for part in text.split("/") if part not in ("", ".")]
-    if text.startswith("/") and "cases" not in parts and "head" not in parts and "base" not in parts:
-        parts = parts[-1:]
-    if len(parts) >= 3 and parts[0] == "cases":
-        parts = parts[2:]
-    last = None
+    text = posixpath.normpath(text) if text not in ("", ".") else ""
+    parts = []
+    for part in text.split("/"):
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if parts:
+                parts.pop()
+            continue
+        parts.append(part)
+    if len(parts) > 1 and parts[0] in ("a", "b"):
+        parts = parts[1:]
+    cut = 0
     for index, part in enumerate(parts):
         if part in ("head", "base"):
-            last = index
-    if last is not None:
-        parts = parts[last + 1:]
-    path = "/".join(parts)
-    if isinstance(line, int) and not isinstance(line, bool):
-        use = line
-    else:
-        use = embedded
-    return path, use
+            cut = index + 1
+        elif part == "cases" and index + 1 < len(parts):
+            cut = index + 2
+    path = "/".join(parts[cut:])
+    given = _explicit_line(line)
+    if given is not None:
+        return path, given, given
+    if embedded:
+        return path, embedded[0], embedded[1]
+    return path, None, None
+
+
+def norm_location(file, line):
+    """(path, first line or None). A range keeps its first line."""
+    path, start, _end = norm_span(file, line)
+    return path, start
+
+
+def path_suffix(left, right):
+    """True when the shorter path is the trailing components of the longer one."""
+    if not left or not right:
+        return False
+    a, b = left.split("/"), right.split("/")
+    if a[-1] != b[-1]:
+        return False
+    short, long = (a, b) if len(a) <= len(b) else (b, a)
+    return long[-len(short):] == short
+
+
+def common_suffix(left, right):
+    """Trailing components shared by both paths."""
+    a, b = left.split("/"), right.split("/")
+    shared = []
+    for index in range(1, min(len(a), len(b)) + 1):
+        if a[-index] != b[-index]:
+            break
+        shared.append(a[-index])
+    return "/".join(reversed(shared))
 
 
 def where_span(text):
     """(path, first, last) for file:4 or file:3-4."""
-    match = re.match(r"^(.*?):(\d+)(?:-(\d+))?$", text.strip().strip("`"))
-    if not match:
+    try:
+        path, start, end = norm_span(text, None)
+    except ValueError:
         return None
-    start, end = int(match.group(2)), int(match.group(3) or match.group(2))
-    if end < start:
-        start, end = end, start
-    path, _line = norm_location(match.group(1), start)
-    if not path:
+    if not path or start is None:
         return None
     return path, start, end
 
 
-def last_json_block(text):
-    """Body of the last ```json fence, or None. A 4-backtick wrapper does not hide it."""
-    lines = text.splitlines()
-    opens = []
-    for index, line in enumerate(lines):
+def json_opens(text):
+    """(line index, fence marker) for every fence whose info string is json."""
+    found = []
+    for index, line in enumerate(text.split("\n")):
         match = JSON_OPEN.match(line.strip())
         if match:
-            opens.append((index, len(match.group(1))))
+            found.append((index, match.group(1)))
+    return found
+
+
+def one_json_body(text):
+    """The single json fence body, a bare object, or (None, error)."""
+    opens = json_opens(text)
+    if len(opens) > 1:
+        return None, "more than one json block"
     if not opens:
-        return None
-    start, width = opens[-1]
+        bare = text.strip()
+        if bare.startswith("{"):
+            return bare, None
+        return None, "missing json block"
+    start, marker = opens[0]
+    lines = text.split("\n")
+    char, width = marker[0], len(marker)
     for index in range(start + 1, len(lines)):
-        close = FENCE_CLOSE.match(lines[index].strip())
+        close = re.match(r"^(%s{3,})[ \t]*$" % re.escape(char), lines[index].strip())
         if close and len(close.group(1)) >= width:
-            return "\n".join(lines[start + 1:index])
-    return None
+            return "\n".join(lines[start + 1:index]), None
+    return None, "unclosed json block"
+
+
+def _pairs(pairs):
+    """object_pairs_hook. A repeated key is an error, not a silent overwrite."""
+    seen = {}
+    for key, value in pairs:
+        if key in seen:
+            raise ValueError("duplicate key")
+        seen[key] = value
+    return seen
+
+
+def _line_ok(value):
+    if value is None:
+        return True
+    if isinstance(value, bool) or not isinstance(value, int):
+        return False
+    if value < 0 or value > MAX_LINE:
+        return False
+    return True
 
 
 def _schema_error(data):
-    if not isinstance(data, dict) or set(data) != {"verdict", "tried", "findings"}:
+    if not isinstance(data, dict) or not {"verdict", "tried", "findings"} <= set(data):
         return "schema keys"
     if data["verdict"] not in ("approve", "needs fixes"):
         return "verdict value"
     if not isinstance(data["tried"], list) or not isinstance(data["findings"], list):
         return "schema types"
     for item in data["tried"]:
-        if not isinstance(item, dict) or set(item) != {"input", "broke", "observed"}:
+        if not isinstance(item, dict) or not {"input", "broke", "observed"} <= set(item):
             return "tried item"
         if not isinstance(item["input"], str) or not isinstance(item["observed"], str):
             return "tried types"
         if not isinstance(item["broke"], bool):
             return "broke type"
     for item in data["findings"]:
-        if not isinstance(item, dict) or set(item) != {"file", "line", "claim", "repro"}:
+        if not isinstance(item, dict) or not {"file", "line", "claim", "repro"} <= set(item):
             return "finding keys"
         if not isinstance(item["file"], str) or not isinstance(item["claim"], str) or not isinstance(item["repro"], str):
             return "finding types"
-        if isinstance(item["line"], bool) or (item["line"] is not None and not isinstance(item["line"], int)):
+        if not _line_ok(item["line"]):
             return "line type"
     return None
 
@@ -162,22 +250,28 @@ def parse_attack(path):
     }
     try:
         text = open(path, "rb").read().decode("utf-8")
+    except FileNotFoundError:
+        doc["errors"].append("missing pass")
+        return doc
     except UnicodeDecodeError:
         doc["errors"].append("file is not UTF-8")
         return doc
-    if not text.strip() or any(PARSE_LINE.match(line.strip()) for line in text.splitlines()):
+    if not text.strip():
         doc["errors"].append("unparseable output")
         return doc
-    raw = last_json_block(text)
-    if raw is None:
-        doc["errors"].append("missing json block")
+    raw, problem = one_json_body(text)
+    if problem or raw is None:
+        doc["errors"].append(problem or "missing json block")
         return doc
     try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
+        data = json.loads(raw, object_pairs_hook=_pairs)
+        problem = _schema_error(data)
+    except (json.JSONDecodeError, ValueError, OverflowError):
         doc["errors"].append("invalid json")
         return doc
-    problem = _schema_error(data)
+    if not isinstance(data, dict):
+        doc["errors"].append("invalid json")
+        return doc
     if problem:
         doc["errors"].append(problem)
         return doc
@@ -190,19 +284,19 @@ def parse_attack(path):
 
 
 def find_key(attack_path):
-    """key.md above an attack file that lives under a cases directory, or None."""
-    directory = os.path.dirname(os.path.abspath(attack_path))
-    for _ in range(8):
-        if f"{os.sep}cases{os.sep}" not in directory + os.sep:
-            return None
-        candidate = os.path.join(directory, "key.md")
-        if os.path.isfile(candidate):
-            return candidate
+    """cases/<name>/key.md for this file. A run-local key.md does not win."""
+    try:
+        directory = os.path.dirname(os.path.realpath(attack_path))
+    except OSError:
+        directory = os.path.dirname(os.path.abspath(attack_path))
+    while True:
         parent = os.path.dirname(directory)
+        if os.path.basename(parent) == "cases":
+            candidate = os.path.join(directory, "key.md")
+            return candidate if os.path.isfile(candidate) else None
         if parent == directory:
             return None
         directory = parent
-    return None
 
 
 def check_attack(path, key_path=None):
@@ -215,8 +309,11 @@ def check_attack(path, key_path=None):
         fails.append("not a valid approve")
     if doc["verdict"] == "approve" and (doc["findings"] or any(item["broke"] for item in doc["tried"])):
         fails.append("approve contradicts a break")
-    if not key_path:
-        key_path = find_key(path)
+    case_key = find_key(path)
+    if case_key:
+        key_path = case_key
+    elif not key_path:
+        key_path = None
     if key_path and planted_bug(key_path) and doc["verdict"] == "approve":
         fails.append("approve on a case with a planted bug")
     return fails
