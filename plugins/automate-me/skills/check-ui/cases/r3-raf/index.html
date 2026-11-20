@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shop</title>
+</head>
+<body style="font:16px/24px Arial,sans-serif">
+
+<main style="padding:16px">
+  <h1 style="margin:0 0 12px">Shop</h1>
+  <p style="margin:0 0 12px">A short line of text for the page.</p>
+  <button id="go" type="button">Buy</button>
+</main>
+<script>
+const go = document.getElementById("go")
+let x = 24
+let dir = 1
+function tick() {
+  x += dir
+  if (x > 36 || x < 24) dir = -dir
+  go.style.transform = "translateX(" + x + "px)"
+  requestAnimationFrame(tick)
+}
+tick()
+</script>
+
+</body>
+</html>

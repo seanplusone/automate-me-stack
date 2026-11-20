@@ -241,7 +241,7 @@ else:
                 assert_schema(name, report)
             continue
         want = 0 if expected is None else 1
-        if not key.get("allowReview"):
+        if not key.get("allowReview") and not key.get("review"):
             check(f"{name} exits {want}", result.returncode == want, detail(result, report))
         if not report:
             check(f"{name} prints JSON", False, result.stdout[:500] + result.stderr[:500])
@@ -272,6 +272,10 @@ else:
                 detail(result, report),
             )
         if loose:
+            if key.get("review"):
+                seen = [rule for _, rule in rows(report) if rule["status"] == "review"]
+                check(f"{name} needs a look", result.returncode == 3 and report["verdict"] == "review" and seen, detail(result, report))
+                continue
             if expected is None:
                 allowed = (0, 3) if key.get("allowReview") else (0,)
                 check(
@@ -407,9 +411,77 @@ button { display: block; width: fit-content; margin: 0; padding: 8px 12px; font:
         result = run(["--url", f"http://127.0.0.1:{port}/missing", "--widths", "390", "--timeout", "8000"])
     finally:
         server.shutdown()
-    check("HTTP 500 exits 2", result.returncode == 2 and '"verdict"' not in result.stdout, result.stderr + result.stdout)
+    check("HTTP 500 exits 2", result.returncode == 2 and '"verdict": "pass"' not in result.stdout, result.stderr + result.stdout)
     result = run(["--url", "http://127.0.0.1:9/", "--widths", "390", "--timeout", "8000"])
     check("a refused connection exits 2", result.returncode == 2 and '"verdict"' not in result.stdout, result.stderr + result.stdout)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        big = os.path.join(tmp, "index.html")
+        cards = "".join(f'<section class="card"><h2>Row {i}</h2><p>{"word " * 30}</p></section>' for i in range(3000))
+        with open(big, "w") as fh:
+            fh.write(f"<!doctype html><main>{cards}</main>")
+        pipe = subprocess.run(
+            ["bash", "-lc", f"node {MEASURE} --url {big} --widths 1280 | (sleep 1; cat)"],
+            cwd=SKILL, text=True, capture_output=True, timeout=120,
+        )
+        try:
+            body = json.loads(pipe.stdout)
+            complete = body.get("verdict") in ("pass", "fail", "review", "inconclusive") and len(pipe.stdout) > 1_000_000
+        except json.JSONDecodeError:
+            complete = False
+        check("a slow reader gets the whole report", pipe.returncode in (0, 1, 3) and complete, f"{pipe.returncode} bytes {len(pipe.stdout)}")
+        shots = os.path.join(tmp, "shots")
+        os.makedirs(shots)
+        shot = run(["--url", os.path.join(CASES, "r2-error-screen", "index.html"), "--out", os.path.join(shots, "report.json"), "--shots", shots, "--widths", "1280"])
+        try:
+            shot_report = json.loads(shot.stdout)
+        except json.JSONDecodeError:
+            shot_report = None
+        pngs = [os.path.join(shots, name) for name in os.listdir(shots) if name.endswith(".png")]
+        check(
+            "every review row has a crop",
+            shot.returncode == 3 and shot_report and shot_report.get("review") and pngs and all(os.path.getsize(p) > 32 for p in pngs) and all(row.get("shot") for row in shot_report.get("review", [])),
+            f"{shot.returncode} png {len(pngs)}",
+        )
+        class JsonHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path.endswith(".json"):
+                    body = b'{"error":"no"}'
+                    code, kind = 200, "application/json"
+                else:
+                    body = b"<html><body><h1>500 Internal Server Error</h1><p>nginx</p></body></html>"
+                    code, kind = 500, "text/html"
+                self.send_response(code)
+                self.send_header("Content-Type", kind)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, fmt, *args):
+                return
+
+        json_server = ThreadingHTTPServer(("127.0.0.1", 0), JsonHandler)
+        json_port = json_server.server_address[1]
+        json_thread = threading.Thread(target=json_server.serve_forever, daemon=True)
+        json_thread.start()
+        try:
+            httpjson = run(["--url", f"http://127.0.0.1:{json_port}/error.json", "--widths", "1280"])
+            nginx = run(["--url", f"http://127.0.0.1:{json_port}/", "--widths", "1280"])
+        finally:
+            json_server.shutdown()
+        check("JSON over HTTP is inconclusive", httpjson.returncode == 2 and '"verdict": "pass"' not in httpjson.stdout, httpjson.stdout[-240:])
+        check("an nginx 500 is inconclusive", nginx.returncode == 2 and '"verdict": "pass"' not in nginx.stdout, nginx.stdout[-240:])
+        json_file = os.path.join(tmp, "error.json")
+        with open(json_file, "w") as fh:
+            fh.write('{"error":"no"}')
+        filed = run(["--url", json_file, "--widths", "1280"])
+        check("a JSON file is inconclusive", filed.returncode == 2 and '"verdict": "pass"' not in filed.stdout, filed.stdout[-240:] + filed.stderr[-240:])
+        huge = os.path.join(tmp, "huge.html")
+        with open(huge, "w") as fh:
+            fh.write("<!doctype html><main>" + "".join(f"<div>Row {i}</div>" for i in range(20000)) + "</main>")
+        slow = run(["--url", huge, "--widths", "1280", "--timeout", "1500"])
+        named = "measuring" in (slow.stderr or "") or "scoring" in (slow.stderr or "") or slow.returncode in (0, 1, 3)
+        check("a heavy page names a timeout, not navigation", named and "navigation" not in (slow.stderr or ""), (slow.stderr or "")[-300:])
 
 print(f"{passed} passed, {failed} failed, browser {'ran' if browser_ran else 'skipped'}")
 sys.exit(1 if failed else 0)

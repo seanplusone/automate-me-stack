@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shade</title>
+</head>
+<body style="font:16px/24px Arial,sans-serif">
+
+<main style="padding:16px">
+  <h1 style="margin:0 0 12px">Shade</h1>
+  <div id="host"></div>
+</main>
+<script>
+const root = document.getElementById("host").attachShadow({ mode: "open" })
+const box = document.createElement("div")
+box.style.cssText = "display:block;height:280px;padding:20px;background:#eee;box-sizing:border-box"
+box.innerHTML = "<h2 style='margin:0'>Title</h2><p style='margin:0'>Short.</p>"
+root.appendChild(box)
+</script>
+
+</body>
+</html>

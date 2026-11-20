@@ -212,7 +212,9 @@ function contentBoxes(card, elements, seen = new Set(), map = null) {
   const boxes = []
   const own = map ? (map.get(card.i) || []).filter((e) => inFlow(e) && (e.rect.width > 0 || e.rect.height > 0)) : kids(elements, card.i)
   for (const child of own) {
-    if (child.stretched) {
+    if (child.tag === "slot" && child.slotted && child.slotted.length) {
+      boxes.push(...child.slotted)
+    } else if (child.stretched) {
       const inner = contentBoxes(child, elements, seen, map)
       boxes.push(...(inner.length ? inner : [marginBox(child)]))
     } else boxes.push(marginBox(child))
@@ -251,8 +253,17 @@ export function cardSlack(card, children, tolerance) {
     contentSpan = px(contentBottom - contentTop)
   }
   const allowed = contentSpan + px(padTop) + px(padBottom) + px(borderTop) + px(borderBottom)
-  const fail = Math.max(0, slackTop) + Math.max(0, slackBottom) > tolerance
-  const measured = { height, contentSpan, slackTop, slackBottom, paddingTop: px(padTop), paddingBottom: px(padBottom) }
+  if (card.hero && (card.minHeight || 0) > 0 && Math.abs(b.height - card.minHeight) <= 1) {
+    slackTop = Math.min(0, slackTop)
+    slackBottom = Math.min(0, slackBottom)
+  }
+  const slack = Math.max(0, slackTop) + Math.max(0, slackBottom)
+  const fail = slack > tolerance
+  const measured = {
+    x: r2(b.left), y: r2(b.top), width: r2(b.width), height,
+    contentSpan, slackTop: r2(slackTop), slackBottom: r2(slackBottom), slack: r2(slack),
+    paddingTop: px(padTop), paddingBottom: px(padBottom),
+  }
   const limit = { whitespacePx: tolerance }
   const message = fail
     ? `Card is ${height}px tall. Content plus padding and border allows ${allowed}px. Tolerance is ${tolerance}px.`
@@ -426,6 +437,7 @@ export function edgeChecks(elements, config) {
     const between = ancestors.filter((a) => a.i !== column.i)
     if (between.some((a) => INDENT_TAG.has(a.tag) || isCard(a, config))) return false
     if (el.controlRow) return false
+    if (/^inline/.test(el.display || "") && elements.some((other) => other.i !== el.i && other.parent === el.parent && overlaps(box(other), box(el)))) return false
     const parent = byIndex[el.parent]
     if (parent && String(parent.display).includes("flex") && parent.flow !== "column" && parent.flow !== "column-reverse") {
       const sibs = elements.filter((other) => other.parent === el.parent && overlaps(box(other), box(el)) && (other.rect.width > 0))
@@ -578,15 +590,21 @@ function columnExemption(column, elements, config) {
   const tree = descendantsOf(column.i, childMap(elements))
   const paragraphs = tree.filter((e) => isBody(e, config))
   const ch = readingCh(column, paragraphs)
-  const cards = tree.filter((e) => isCard(e, config))
-  const blocked = cards.length > 0 || tree.some((e) => e.tag === "table" || e.display === "grid" || e.display === "inline-grid")
+  const callout = (e) => ["aside", "pre", "figure", "blockquote"].includes(e.tag) || (e.classes || []).includes("callout")
+  const cards = tree.filter((e) => isCard(e, config) && !callout(e))
+  const byIndex = new Map(elements.map((e) => [e.i, e]))
+  const bareLinks = tree.filter((e) => e.tag === "a" && (byIndex.get(e.parent) || {}).tag !== "p")
+  const searchList = bareLinks.length >= 4 && bareLinks.length + 1 >= paragraphs.length
+  const blocked = searchList || cards.length > 0 || tree.some((e) => e.tag === "table" || e.display === "grid" || e.display === "inline-grid")
   if (allowed.has("prose") && !blocked && ch >= 55 && ch <= 80 && paragraphs.length >= 1) return { kind: "prose", ch }
   const left = column.rect.x
   const right = (column.viewport || 0) - (column.rect.x + column.rect.width)
   const centered = left >= 24 && right >= 24 && Math.abs(left - right) <= 24
   const password = tree.some((e) => e.password)
   const form = tree.some((e) => e.tag === "form")
-  if (allowed.has("signin") && password && (form || centered)) return { kind: "signin", ch }
+  const nav = tree.some((e) => e.tag === "nav" || e.tag === "header" || e.role === "navigation")
+  const data = tree.some((e) => e.display === "grid" || e.display === "inline-grid" || e.tag === "table") || cards.length > 1
+  if (allowed.has("signin") && password && form && centered && !nav && !data) return { kind: "signin", ch }
   return { kind: "", ch }
 }
 
@@ -609,12 +627,16 @@ function rowAdjusted(card, elements, config, map) {
 export function evaluate(snapshot, config) {
   const elements = snapshot.elements || []
   const rules = []
+  if (snapshot.deadline && Date.now() > snapshot.deadline) throw new Error("timed out while scoring the page")
   const map = childMap(elements)
   const cards = elements.filter((e) => e.tag !== "iframe" && isCard(e, config) && e.rect.height > 0 && (inFlow(e) || e.position === "absolute" || e.position === "fixed"))
   for (const card of cards) {
+    if (snapshot.deadline && Date.now() > snapshot.deadline) throw new Error("timed out while scoring the page")
     const row = cardSlack(card, rowAdjusted(card, elements, config, map), config.whitespacePx)
     const declared = flagged(card, "card") || Boolean(card.dataUi) || (card.classes || []).some((c) => CARD_RE.test(c))
-    if (card.guess === "low" && !declared) {
+    const slack = row.measured.slack || 0
+    const near = row.status === "fail" || slack >= config.whitespacePx
+    if (card.guess === "low" && !declared && near) {
       rules.push({ ...row, status: "review", message: `${row.message} This box was only a guess.` })
     } else rules.push(row)
   }
@@ -658,6 +680,13 @@ export function evaluate(snapshot, config) {
     rules.push(entry("G9", "skip", "html", {}, {}, "G9 runs at 390, which is not in this run."))
   }
   rules.push(scrollCheck(snapshot, config))
+  if (snapshot.moving) {
+    for (let i = 0; i < rules.length; i++) {
+      if (rules[i].status === "fail" && (rules[i].id === "G1" || rules[i].id === "G4")) {
+        rules[i] = { ...rules[i], status: "review", message: `${rules[i].message} Layout was still moving.` }
+      }
+    }
+  }
   for (const frame of snapshot.iframes || []) {
     rules.push(entry("G1", "skip", frame, {}, {}, "Iframes are not measured."))
   }
