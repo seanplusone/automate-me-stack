@@ -5,7 +5,7 @@ Usage: python3 attack_agents.py
 
 Prints one name per line, codex then claude. Prints `none` when neither
 binary is on PATH. --run writes <dir>/<name>.md and <dir>/<name>.err.
-The brief file is the whole prompt, written to the CLI's stdin, not argv.
+The brief file is written to the CLI's stdin, not argv, after the attack-file contract.
 Codex runs sandboxed workspace-write. Claude may run Bash in the checkout
 (acceptEdits), not a bypass of the whole machine. The default wait is 600
 seconds. A timeout writes `Parse: timeout`. A non-zero exit, crash, or
@@ -15,11 +15,50 @@ This script does not decide what to attack, and it does not pick a fallback agen
 """
 import os
 import shutil
+import signal
 import subprocess
 import sys
 
 NAMES = ("codex", "claude")
+OWNED = ("codex.md", "claude.md", "codex.err", "claude.err")
 DEFAULT_TIMEOUT = 600
+
+
+def contract_bytes():
+    """The attack-file rules, appended so a short brief still states the JSON shape."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "references", "attack.md")
+    try:
+        text = open(path, encoding="utf-8").read()
+    except OSError:
+        return b""
+    marker = "## Attack file"
+    if marker not in text:
+        return b""
+    return ("\n\n" + text[text.index(marker):]).encode("utf-8")
+
+
+def clear_owned(out_dir):
+    """Remove only the pass files this script writes. Leave briefs and keys alone."""
+    os.makedirs(out_dir, exist_ok=True)
+    for name in OWNED:
+        path = os.path.join(out_dir, name)
+        if os.path.isfile(path) or os.path.islink(path):
+            os.remove(path)
+
+
+def _kill_group(proc):
+    """Kill the child and every process it started."""
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            proc.kill()
+        except OSError:
+            pass
+    try:
+        proc.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        pass
 def command(binary, name):
     """Argv for one CLI. The brief is not included. It goes on stdin."""
     if name == "codex":
@@ -53,17 +92,28 @@ def detect(search_path=None):
     return found
 
 
+def _run_one(cmd, brief, work, timeout):
+    """(returncode, stdout, stderr). Timeout kills the process group and raises TimeoutExpired."""
+    proc = subprocess.Popen(
+        cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        cwd=work, start_new_session=True,
+    )
+    try:
+        stdout, stderr = proc.communicate(brief, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        _kill_group(proc)
+        raise exc
+    return proc.returncode, stdout, stderr
+
+
 def run_all(brief_path, out_dir, search_path=None, runner=None, timeout=DEFAULT_TIMEOUT, cwd=None):
     """Run each detected CLI. Returns 0, or 1 when a CLI exits non-zero or times out."""
+    clear_owned(out_dir)
     found = detect(search_path)
     if not found:
         print("none")
         return 0
-    os.makedirs(out_dir, exist_ok=True)
-    for name in os.listdir(out_dir):
-        if name.endswith(".md") or name.endswith(".err"):
-            os.remove(os.path.join(out_dir, name))
-    brief = open(brief_path, "rb").read()
+    brief = contract_bytes() + b"\n" + open(brief_path, "rb").read()
     work = cwd if cwd is not None else os.getcwd()
     failed = 0
     for name, binary in found:
@@ -73,9 +123,10 @@ def run_all(brief_path, out_dir, search_path=None, runner=None, timeout=DEFAULT_
         try:
             if runner:
                 result = runner(cmd, brief)
+                code = getattr(result, "returncode", 1)
+                stdout, stderr = getattr(result, "stdout", "") or "", getattr(result, "stderr", "") or ""
             else:
-                result = subprocess.run(
-                    cmd, input=brief, cwd=work, capture_output=True, timeout=timeout)
+                code, stdout, stderr = _run_one(cmd, brief, work, timeout)
         except subprocess.TimeoutExpired as exc:
             failed = 1
             open(err_path, "w").write(as_text(exc.stderr) + f"\ntimed out after {timeout}s\n")
@@ -87,9 +138,8 @@ def run_all(brief_path, out_dir, search_path=None, runner=None, timeout=DEFAULT_
             write_error(out_path, err_path, f"{type(exc).__name__}: {exc}\n")
             print(name)
             continue
-        stdout = as_text(getattr(result, "stdout", "") or "")
-        stderr = as_text(getattr(result, "stderr", "") or "")
-        if getattr(result, "returncode", 1) != 0:
+        stdout, stderr = as_text(stdout), as_text(stderr)
+        if code != 0:
             failed = 1
             write_error(out_path, err_path, stderr + ("\n" if stderr else "") + stdout)
             print(name)

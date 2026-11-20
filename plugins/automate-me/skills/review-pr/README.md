@@ -53,7 +53,7 @@ review-pr/
     post_review.py           posts a checked drafts file to GitHub, only when told
     render_page.py           renders a checked drafts file as the review page
     summary.py               the summary message, as Markdown or Slack mrkdwn
-    score_case.py            scores drafts, or a planted bug by a judge with a keyword fallback
+    score_case.py            scores drafts, or a planted bug by a judge or by location
     test_*.py                plain-script tests: python3 check/test_<name>.py
   cases/
     refund-endpoint/         one Python PR: a line row with Terms, a directory row with a site minimum, a PR-level row

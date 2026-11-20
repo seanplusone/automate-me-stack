@@ -76,6 +76,24 @@ raw = dump_raw("")
 open(raw, "wb").write(b"\xff\xfe")
 expect("non-utf8 is an error", parse_attack(raw)["errors"], ["file is not UTF-8"])
 
+root = tempfile.mkdtemp()
+case = os.path.join(root, "cases", "item-cap")
+deep = os.path.join(case, "runs", "a", "b", "c", "d", "e", "f", "g", "h", "i")
+os.makedirs(deep)
+open(os.path.join(case, "key.md"), "w").write("Planted: yes\nCatch: x\n")
+open(os.path.join(case, "runs", "key.md"), "w").write("Planted: no\n")
+deep_attack = os.path.join(deep, "attack.md")
+open(deep_attack, "w").write(open(dump(approve())).read())
+expect("a deep path uses the case key", check_attack(deep_attack), ["approve on a case with a planted bug"])
+expect(
+    "a run-local key does not win",
+    check_attack(deep_attack, os.path.join(case, "runs", "key.md")),
+    ["approve on a case with a planted bug"],
+)
+link = os.path.join(tempfile.mkdtemp(), "attack.md")
+os.symlink(deep_attack, link)
+expect("a symlink uses the case key", check_attack(link), ["approve on a case with a planted bug"])
+
 if __name__ == "__main__":
     for item in FAILS:
         print(f"FAIL {item}")

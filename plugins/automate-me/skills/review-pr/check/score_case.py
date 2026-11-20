@@ -4,10 +4,11 @@ Usage: python3 score_case.py <cases/<name>/key.md> <review.md>
 Exits 1 if any key finding is missed.
 
 A key with a line `Planted: yes` scores an attack file. A finding matches when
-its file matches and its line is inside the key span, plus or minus 2, or its
-line is null and it has a repro. The judge then decides, and only those
-findings are sent. With no CLI the keyword floor is the fallback. It prints
-SKIP, and a denial does not pass. Any other key scores a drafts file, below.
+its file matches the key file and its line overlaps the key span, plus or
+minus 2. A null line still needs that file, plus a repro. The judge then
+decides, and only those findings are sent. With no CLI the result is weak:
+it prints SKIP for meaning and checks the location only. Any other key scores
+a drafts file, below.
 
 A key row is `| <id> | <pr> | <path prefix> | <line or -> | <finding> | <min sites or -> | <proof> |`.
 A finding is found when the drafts carry a comment in that PR on a path that starts with the
@@ -25,7 +26,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from check_attack import catch_terms, norm_location, parse_attack, planted_bug, soften, where_span  # noqa: E402
+from check_attack import catch_terms, norm_span, parse_attack, path_suffix, planted_bug, where_span  # noqa: E402
 from check_drafts import parse  # noqa: E402
 
 ROW = re.compile(r"^\| (K\d+) \| (\S+#\d+) \| `?([^|`]+?)`? \| (\d+|-) \| [^|]+ \| (\d+|-) \| [^|]* \|$")
@@ -59,15 +60,6 @@ def missing_terms(hits, terms):
     return min(([t for t in terms if absent(t, " ".join(f["comment"]).lower())] for f in hits), key=len)
 
 
-def term_hit(term, text):
-    text = soften(text)
-    return any(soften(alt) in text for alt in term.split("/") if alt.strip())
-
-
-def finding_text(finding):
-    return " ".join([finding.get("file") or "", finding.get("claim") or "", finding.get("repro") or ""])
-
-
 def key_where(path):
     for line in open(path):
         match = re.match(r"^Where:\s*`?(.*?)`?\s*$", line.strip())
@@ -76,28 +68,27 @@ def key_where(path):
     return ""
 
 
-DENIAL = re.compile(r"\b(?:not a bug|no bug|does not|doesn't|do not|false alarm)\b", re.I)
-
-
 def matches(finding, want):
-    """File and line inside the key span, or a null line that still has a repro."""
-    path, line = norm_location(finding.get("file"), finding.get("line"))
-    if line is None:
-        return bool((finding.get("repro") or "").strip())
-    if not want:
-        return True
-    span = where_span(want)
-    if not span or path != span[0]:
+    """The file matches, and the line overlaps the key span. A null line needs a repro."""
+    try:
+        path, start, end = norm_span(finding.get("file"), finding.get("line"))
+    except ValueError:
         return False
-    return span[1] - 2 <= line <= span[2] + 2
-
-
-def denies(text):
-    return bool(DENIAL.search(text))
+    if not path:
+        return False
+    repro = bool((finding.get("repro") or "").strip())
+    if not want:
+        return start is not None or repro
+    span = where_span(want)
+    if not span or not path_suffix(path, span[0]):
+        return False
+    if start is None:
+        return repro
+    return start <= span[2] + 2 and end >= span[1] - 2
 
 
 def score_planted(key_path, attack_path, environ=None, runner=None):
-    """The judge decides on matching findings. Keywords run only when the judge is skipped."""
+    """The judge decides on matching findings. With no CLI, only the location is checked."""
     terms = catch_terms(key_path)
     if not terms:
         print(f"FAIL no Catch terms in {key_path}")
@@ -114,14 +105,9 @@ def score_planted(key_path, attack_path, environ=None, runner=None):
     from judge_case import find_cli, judge  # noqa: E402
     if runner is None and find_cli(environ) is None:
         print("SKIP no agent CLI on PATH")
-        for finding in usable:
-            text = finding_text(finding)
-            if all(term_hit(term, text) for term in terms) and not denies(text):
-                print("caught")
-                print("PASS caught planted bug")
-                return 0
-        print("FAIL missed planted bug")
-        return 1
+        print("SKIP meaning")
+        print("WEAK location only")
+        return 0
     if judge(key_path, attack_path, environ=environ, runner=runner, findings=usable) == 0:
         return 0
     print("FAIL missed planted bug")

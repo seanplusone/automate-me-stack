@@ -3,6 +3,7 @@ import os
 import stat
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from attack_agents import command, detect, main as agent_main, run_all  # noqa: E402
@@ -53,9 +54,9 @@ code = run_all(brief, out, search_path=both)
 expect("run exits 0", code, 0)
 codex_out = open(os.path.join(out, "codex.md")).read()
 claude_out = open(os.path.join(out, "claude.md")).read()
-expect("codex saw the brief", "brief=attack this diff" in codex_out, True)
+expect("codex saw the brief", "attack this diff" in codex_out.split("brief=", 1)[1], True)
 expect("codex was exec", "args=exec --skip-git-repo-check" in codex_out, True)
-expect("claude saw the brief", "brief=attack this diff" in claude_out, True)
+expect("claude saw the brief", "attack this diff" in claude_out.split("brief=", 1)[1], True)
 expect("claude was print mode", "args=-p --permission-mode acceptEdits --allowedTools Bash" in claude_out, True)
 expect("prompt is not an argument", "attack this diff" not in claude_out.split("brief=")[0], True)
 
@@ -109,6 +110,38 @@ run_all(wide, wide_out, search_path=both)
 wide_text = open(os.path.join(wide_out, "claude.md")).read()
 expect("long brief arrives on stdin", wide_text.endswith("A" * 200000), True)
 expect("long brief stays off argv", "AAAA" not in wide_text.split("brief=")[0], True)
+expect("the contract is in the brief", "## Attack file" in wide_text, True)
+
+kept = tempfile.mkdtemp()
+for name in ("attack.md", "key.md"):
+    open(os.path.join(kept, name), "w").write("KEEP\n")
+open(os.path.join(kept, "notes.err"), "w").write("KEEP\n")
+open(os.path.join(kept, "codex.md"), "w").write("STALE\n")
+run_all(brief, kept, search_path=both)
+expect("attack.md stays", open(os.path.join(kept, "attack.md")).read(), "KEEP\n")
+expect("key.md stays", open(os.path.join(kept, "key.md")).read(), "KEEP\n")
+expect("another err stays", open(os.path.join(kept, "notes.err")).read(), "KEEP\n")
+expect("the owned pass is replaced", "STALE" not in open(os.path.join(kept, "codex.md")).read(), True)
+
+quiet = tempfile.mkdtemp()
+open(os.path.join(quiet, "codex.md"), "w").write("STALE\n")
+open(os.path.join(quiet, "attack.md"), "w").write("KEEP\n")
+expect("no cli still returns 0", run_all(brief, quiet, search_path=tempfile.mkdtemp()), 0)
+expect("a stale pass is cleared with no cli", os.path.exists(os.path.join(quiet, "codex.md")), False)
+expect("attack.md stays with no cli", open(os.path.join(quiet, "attack.md")).read(), "KEEP\n")
+
+marker = os.path.join(tempfile.mkdtemp(), "late.txt")
+group = tempfile.mkdtemp()
+open(os.path.join(group, "codex"), "w").write(
+    "#!/usr/bin/python3\nimport os, time\npath = %r\n"
+    "if os.fork() == 0:\n    time.sleep(1.5)\n    open(path, 'w').write('late')\n    os._exit(0)\n"
+    "time.sleep(30)\n" % marker
+)
+os.chmod(os.path.join(group, "codex"), os.stat(os.path.join(group, "codex")).st_mode | stat.S_IEXEC)
+group_out = tempfile.mkdtemp()
+expect("a timeout kills the group", run_all(brief, group_out, search_path=group, timeout=0.3), 1)
+time.sleep(2)
+expect("a child does not write after the timeout", os.path.exists(marker), False)
 
 stale = tempfile.mkdtemp()
 open(os.path.join(stale, "claude.md"), "w").write("STALE\n")
