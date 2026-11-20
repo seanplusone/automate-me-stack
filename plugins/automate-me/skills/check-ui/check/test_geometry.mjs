@@ -6,6 +6,7 @@ import {
   columnShare,
   evaluate,
   isCard,
+  isGroup,
   kindKey,
   mergeConfig,
   scrollCheck,
@@ -47,6 +48,8 @@ function boxEl(over) {
     border: over.border ?? border(0),
     text: over.text ?? null,
     match: over.match ?? {},
+    ch: over.ch ?? 0,
+    cardLike: over.cardLike ?? false,
   }
 }
 
@@ -211,7 +214,7 @@ floated.elements.push(boxEl({
   i: 40, parent: 0, tag: "article", classes: ["card"], dataUi: "card", selector: "#float",
   position: "absolute", rect: { x: 16, y: 96, width: 100, height: 400 }, padding: pad(16), border: border(1),
 }))
-checkClean("an absolute card is not an in-flow card", evaluate(floated, cfg))
+checkOnly("a tall absolute card fails only G1", evaluate(floated, cfg), "G1")
 
 const manual = {
   viewportWidth: 800,
@@ -263,6 +266,61 @@ const report = buildReport("page.html", [
 check("report verdict passes when rules pass", report.verdict === "pass" && report.page === "page.html" && report.widths.length === 2)
 const failedReport = buildReport("bad.html", [{ width: 390, rules: [{ id: "G9", status: "fail" }] }])
 check("report verdict fails when any rule fails", failedReport.verdict === "fail")
+
+check("padding spread of 4 fails G3", badIds(evaluate(layout({ loose: 20 }), cfg)).includes("G3"))
+const edge = layout()
+edge.elements[2].rect = { ...edge.elements[2].rect, x: 20 }
+checkOnly("edges 4px apart fail only G4", evaluate(edge, cfg), "G4")
+check("bare group class is not a layout group", isGroup({ classes: ["group"], dataUi: "", match: {} }, cfg) === false)
+check("card-group is a layout group", isGroup({ classes: ["card-group"], dataUi: "", match: {} }, cfg) === true)
+check("padding utilities share a kind", kindKey({ classes: ["card", "p-4"], role: "" }) === kindKey({ classes: ["card", "p-10", "featured"], role: "" }))
+check("infinity config is rejected", (() => { try { mergeConfig({ whitespacePx: 1e309 }); return false } catch (e) { return e instanceof ConfigError } })())
+check("negative config is rejected", (() => { try { mergeConfig({ alignPx: -1 }); return false } catch (e) { return e instanceof ConfigError } })())
+const skipped = buildReport("empty.html", [{ width: 390, rules: [{ id: "G9", status: "skip", element: "html", measured: {}, limit: {}, message: "No." }] }])
+function readingPage(width, extra) {
+  const x = (1280 - width) / 2
+  const elements = [
+    boxEl({ i: 0, tag: "main", selector: "main", rect: { x, y: 0, width, height: 500 }, ch: 9, cardLike: Boolean(extra && extra.cardLike) }),
+    boxEl({ i: 1, parent: 0, tag: "h1", selector: "h1", rect: { x: x + 16, y: 16, width: 200, height: 32 } }),
+    boxEl({ i: 2, parent: 0, tag: "p", selector: "p", rect: { x: x + 16, y: 64, width: 240, height: 48 } }),
+  ]
+  if (extra && extra.cards) {
+    for (let n = 0; n < extra.cards; n++) {
+      elements.push(boxEl({
+        i: 10 + n, parent: 0, tag: "article", classes: ["card"], selector: `#c${n}`,
+        rect: { x: x + 16, y: 140 + n * 100, width: 200, height: 90 }, padding: pad(16), border: border(1),
+      }))
+      elements.push(boxEl({
+        i: 40 + n, parent: 10 + n, tag: "p", selector: `#c${n} p`,
+        rect: { x: x + 33, y: 157 + n * 100, width: 120, height: 56 },
+      }))
+    }
+  }
+  if (extra && extra.form) {
+    elements.push(boxEl({ i: 3, parent: 0, tag: "form", selector: "form", rect: { x: x + 16, y: 16, width: width - 32, height: 220 } }))
+  }
+  return { viewportWidth: 1280, scrollWidth: 1280, requestedWidth: 1280, widths: [1280], elements }
+}
+
+const proseRules = evaluate(readingPage(680), cfg)
+check(
+  "a 680px reading column is an exempt skip",
+  proseRules.some((r) => r.status === "skip" && r.measured.exemption === "prose") && badIds(proseRules).length === 0,
+  JSON.stringify(proseRules.filter((r) => r.status !== "pass"), null, 2),
+)
+const signinRules = evaluate(readingPage(360, { form: true }), cfg)
+check(
+  "a centered sign-in card is an exempt skip",
+  signinRules.some((r) => r.status === "skip" && r.measured.exemption === "signin") && badIds(signinRules).length === 0,
+  JSON.stringify(signinRules.filter((r) => r.status !== "pass"), null, 2),
+)
+checkOnly("a half-width dashboard still fails G1", evaluate(readingPage(640, { cards: 3 }), cfg), "G1")
+check(
+  "clearing exemptions judges the reading column",
+  badIds(evaluate(readingPage(680), mergeConfig({ columnExemptions: [] }))).includes("G1"),
+)
+check("all skips are inconclusive", skipped.verdict === "inconclusive")
+check("a page error is inconclusive", buildReport("bad.html", [{ width: 390, rules: [{ id: "G9", status: "pass", element: "html", measured: {}, limit: {}, message: "No sideways scroll." }] }], { pageError: true }).verdict === "inconclusive")
 
 console.log(`${passed} passed, ${failed} failed`)
 process.exit(failed ? 1 : 0)

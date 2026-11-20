@@ -5,7 +5,7 @@
   "required": ["page", "widths", "verdict"],
   "properties": {
     "page": { "type": "string", "minLength": 1 },
-    "verdict": { "enum": ["pass", "fail"] },
+    "verdict": { "enum": ["pass", "fail", "inconclusive"] },
     "widths": {
       "type": "array",
       "minItems": 1,
@@ -26,8 +26,8 @@
                 "id": { "enum": ["G1", "G2", "G3", "G4", "G9"] },
                 "status": { "enum": ["pass", "fail", "skip"] },
                 "element": { "type": "string" },
-                "measured": { "type": "object" },
-                "limit": { "type": "object" },
+                "measured": { "type": "object", "additionalProperties": { "type": ["number", "string", "boolean", "null"] } },
+                "limit": { "type": "object", "additionalProperties": { "type": ["number", "string", "boolean", "null"] } },
                 "message": { "type": "string", "minLength": 1 }
               }
             }

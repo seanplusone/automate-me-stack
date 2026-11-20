@@ -1,8 +1,11 @@
 export class ConfigError extends Error {}
 
 const CARD_RE = /^(card|tile|panel|.*-(card|tile|panel))$/
-const GROUP_RE = /^(group|.*-group)$/
+const GROUP_RE = /^.+-group$/
 const BUTTON_RE = /^(btn|button|.*-(btn|button))$/
+const PAD_CLASS = /^(p|px|py|pt|pr|pb|pl|m|mx|my|mt|mr|mb|ml)-[\w.]+$/
+const DROP_CLASS = new Set(["featured", "primary", "secondary", "compact", "loose", "highlighted", "large", "small", "muted", "active", "open", "selected", "disabled", "hover", "focus", "sm", "md", "lg", "xl", "2xl"])
+const EXEMPT = new Set(["prose", "signin"])
 
 const NUMBER_RULES = {
   whitespacePx: (n) => n >= 0,
@@ -25,6 +28,8 @@ export const DEFAULT_CONFIG = {
   betweenOverInside: 2,
   minWidthRatio: 0.6,
   columnAtWidth: 1280,
+  columnExemptions: ["prose", "signin"],
+  explicitSelectors: [],
   selectors: {
     cards: "[data-ui='card'], [data-ui='tile'], [data-ui='panel']",
     groups: "[data-ui='group']",
@@ -40,7 +45,7 @@ export function mergeConfig(file) {
   const config = structuredClone(DEFAULT_CONFIG)
   if (file == null) return config
   if (typeof file !== "object" || Array.isArray(file)) throw new ConfigError("config must be an object")
-  const known = new Set(["auto", "selectors", ...Object.keys(NUMBER_RULES)])
+  const known = new Set(["auto", "selectors", "columnExemptions", ...Object.keys(NUMBER_RULES)])
   for (const key of Object.keys(file)) {
     if (!known.has(key)) throw new ConfigError(`unknown config key: ${key}`)
   }
@@ -51,10 +56,17 @@ export function mergeConfig(file) {
   for (const key of Object.keys(NUMBER_RULES)) {
     if (!(key in file)) continue
     const n = file[key]
-    if (typeof n !== "number" || Number.isNaN(n) || !NUMBER_RULES[key](n)) {
+    if (typeof n !== "number" || !Number.isFinite(n) || !NUMBER_RULES[key](n)) {
       throw new ConfigError(`bad ${key}`)
     }
     config[key] = n
+  }
+  if ("columnExemptions" in file) {
+    const list = file.columnExemptions
+    if (!Array.isArray(list) || list.some((item) => typeof item !== "string" || !EXEMPT.has(item))) {
+      throw new ConfigError("bad columnExemptions")
+    }
+    config.columnExemptions = [...list]
   }
   if ("selectors" in file) {
     const sel = file.selectors
@@ -66,6 +78,7 @@ export function mergeConfig(file) {
       if (typeof sel[key] !== "string") throw new ConfigError(`selector ${key} must be a string`)
       config.selectors[key] = sel[key]
     }
+    config.explicitSelectors = Object.keys(sel)
   }
   return config
 }
@@ -78,7 +91,8 @@ export function isCard(el, config) {
   if (flagged(el, "card")) return true
   if (el.dataUi === "card" || el.dataUi === "tile" || el.dataUi === "panel") return true
   if (config.auto === false) return false
-  return (el.classes || []).some((c) => CARD_RE.test(c))
+  if ((el.classes || []).some((c) => CARD_RE.test(c))) return true
+  return Boolean(el.cardLike)
 }
 
 export function isGroup(el, config) {
@@ -127,10 +141,19 @@ export function inFlow(el) {
   return p === "static" || p === "relative" || p === "sticky"
 }
 
+function keptClasses(classes) {
+  return (classes || []).filter((c) => {
+    if (DROP_CLASS.has(c) || PAD_CLASS.test(c)) return false
+    if (c.startsWith("is-") || c.startsWith("has-")) return false
+    return true
+  })
+}
+
 export function kindKey(el) {
-  const classes = [...(el.classes || [])].sort()
+  const classes = keptClasses(el.classes).sort()
   if (el.role || classes.length) return `${el.role || ""}|${classes.join(".")}`
   if (el.dataUi) return `data-ui:${el.dataUi}`
+  if (el.cardLike) return "card-like"
   return ""
 }
 
@@ -177,8 +200,23 @@ function kids(elements, parentI) {
   return elements.filter((e) => e.parent === parentI && inFlow(e) && (e.rect.width > 0 || e.rect.height > 0))
 }
 
-function contentBoxes(card, elements) {
-  const boxes = kids(elements, card.i).map(box)
+function marginBox(el) {
+  const b = box(el)
+  const top = el.margin?.top || 0
+  const bottom = el.margin?.bottom || 0
+  return { left: b.left, right: b.right, top: b.top - top, bottom: b.bottom + bottom, width: b.width, height: b.height + top + bottom }
+}
+
+function contentBoxes(card, elements, seen = new Set()) {
+  if (seen.has(card.i)) return []
+  seen.add(card.i)
+  const boxes = []
+  for (const child of kids(elements, card.i)) {
+    if (child.stretched) {
+      const inner = contentBoxes(child, elements, seen)
+      boxes.push(...(inner.length ? inner : [marginBox(child)]))
+    } else boxes.push(marginBox(child))
+  }
   if (card.text && (card.text.width > 0 || card.text.height > 0)) {
     boxes.push({
       left: card.text.x,
@@ -213,7 +251,7 @@ export function cardSlack(card, children, tolerance) {
     contentSpan = px(contentBottom - contentTop)
   }
   const allowed = contentSpan + px(padTop) + px(padBottom) + px(borderTop) + px(borderBottom)
-  const fail = slackTop > tolerance || slackBottom > tolerance
+  const fail = Math.max(0, slackTop) + Math.max(0, slackBottom) > tolerance
   const measured = { height, contentSpan, slackTop, slackBottom, paddingTop: px(padTop), paddingBottom: px(padBottom) }
   const limit = { whitespacePx: tolerance }
   const message = fail
@@ -310,13 +348,6 @@ export function gapChecks(elements, config) {
   return out
 }
 
-function median(values) {
-  const s = [...values].sort((a, b) => a - b)
-  const mid = Math.floor(s.length / 2)
-  if (s.length % 2) return s[mid]
-  return (s[mid - 1] + s[mid]) / 2
-}
-
 export function paddingChecks(elements, config) {
   const items = elements.filter((e) => isContainer(e, config) && inFlow(e) && kindKey(e))
   const byKind = new Map()
@@ -336,38 +367,22 @@ export function paddingChecks(elements, config) {
       spread[s] = Math.max(...vals) - Math.min(...vals)
     }
     const worst = Math.max(...sides.map((s) => spread[s]))
+    const measured = { kind: key, spreadTop: spread.top, spreadRight: spread.right, spreadBottom: spread.bottom, spreadLeft: spread.left }
     if (worst <= config.paddingPx) {
-      out.push(entry(
-        "G3",
-        "pass",
-        group[0].selector,
-        { kind: key, spreadTop: spread.top, spreadRight: spread.right, spreadBottom: spread.bottom, spreadLeft: spread.left },
-        { paddingPx: config.paddingPx },
-        "Padding matches other containers of this kind.",
-      ))
+      out.push(entry("G3", "pass", group[0].selector, measured, { paddingPx: config.paddingPx }, "Padding matches other containers of this kind."))
       continue
     }
-    const mid = Object.fromEntries(sides.map((s) => [s, median(pads.map((p) => p[s]))]))
+    const floor = Object.fromEntries(sides.map((s) => [s, Math.min(...pads.map((p) => p[s]))]))
     for (let i = 0; i < group.length; i++) {
-      const delta = Math.max(...sides.map((s) => Math.abs(pads[i][s] - mid[s])))
+      const delta = Math.max(...sides.map((s) => pads[i][s] - floor[s]))
       if (delta <= config.paddingPx) continue
       out.push(entry(
         "G3",
         "fail",
         group[i].selector,
-        {
-          kind: key,
-          paddingTop: pads[i].top,
-          paddingRight: pads[i].right,
-          paddingBottom: pads[i].bottom,
-          paddingLeft: pads[i].left,
-          spreadTop: spread.top,
-          spreadRight: spread.right,
-          spreadBottom: spread.bottom,
-          spreadLeft: spread.left,
-        },
+        { ...measured, paddingTop: pads[i].top, paddingRight: pads[i].right, paddingBottom: pads[i].bottom, paddingLeft: pads[i].left },
         { paddingPx: config.paddingPx },
-        `Padding differs by ${px(delta)}px from other containers of this kind. Limit is ${config.paddingPx}px.`,
+        `Padding spread is ${px(worst)}px. Limit is ${config.paddingPx}px.`,
       ))
     }
   }
@@ -376,6 +391,8 @@ export function paddingChecks(elements, config) {
   }
   return out
 }
+
+const INDENT_TAG = new Set(["blockquote", "li", "dd", "td", "th", "aside", "nav", "header", "footer"])
 
 function ancestorChain(el, byIndex) {
   const out = []
@@ -392,15 +409,19 @@ function overlaps(a, b) {
 }
 
 export function edgeChecks(elements, config) {
-  const column = primaryColumn(elements, config)
+  const column = primaryColumn(elements, config) || elements.find((e) => e.tag === "body") || null
   if (!column) return [entry("G4", "skip", "", {}, {}, "No main column to align.")]
   const byIndex = Object.fromEntries(elements.map((e) => [e.i, e]))
   const candidates = elements.filter((el) => {
     if (el.i === column.i || !inFlow(el)) return false
+    if (el.align === "center" || el.align === "end") return false
+    if (INDENT_TAG.has(el.tag)) return false
     if (!(isHeading(el, config) || isBody(el, config) || isCard(el, config) || isButton(el, config))) return false
     const ancestors = ancestorChain(el, byIndex)
     if (!ancestors.some((a) => a.i === column.i)) return false
-    if (ancestors.some((a) => isCard(a, config))) return false
+    const between = ancestors.filter((a) => a.i !== column.i)
+    if (between.some((a) => INDENT_TAG.has(a.tag) || isCard(a, config) || isContainer(a, config))) return false
+    if (between.some((a) => (a.padding?.left || 0) > config.alignPx || (a.border?.left || 0) > 0)) return false
     return el.rect.width > 0 || el.rect.height > 0
   })
   if (candidates.length < 2) {
@@ -424,7 +445,8 @@ export function edgeChecks(elements, config) {
     }
   }
   const lefts = bands.map((b) => px(b.left))
-  const spread = Math.max(...lefts) - Math.min(...lefts)
+  const shared = Math.min(...lefts)
+  const spread = Math.max(...lefts) - shared
   if (spread <= config.alignPx) {
     return [entry(
       "G4",
@@ -435,21 +457,18 @@ export function edgeChecks(elements, config) {
       "Headings, text, cards, and buttons share a left edge.",
     )]
   }
-  const mid = median(lefts)
-  const fails = []
-  for (let i = 0; i < bands.length; i++) {
-    const delta = Math.abs(lefts[i] - mid)
-    if (delta <= config.alignPx) continue
-    fails.push(entry(
+  return bands.flatMap((band, i) => {
+    const delta = lefts[i] - shared
+    if (delta <= config.alignPx) return []
+    return [entry(
       "G4",
       "fail",
-      bands[i].selector,
-      { left: lefts[i], sharedLeft: r2(mid), delta: px(delta) },
+      band.selector,
+      { left: lefts[i], sharedLeft: shared, delta, spread },
       { alignPx: config.alignPx },
-      `Left edge is ${px(delta)}px off the shared line. Limit is ${config.alignPx}px.`,
-    ))
-  }
-  return fails.length ? fails : [entry("G4", "pass", column.selector, { spread }, { alignPx: config.alignPx }, "Headings, text, cards, and buttons share a left edge.")]
+      `Left edge is ${delta}px off the shared line. Limit is ${config.alignPx}px.`,
+    )]
+  })
 }
 
 export function scrollCheck(snapshot, config) {
@@ -469,31 +488,130 @@ export function scrollCheck(snapshot, config) {
   )
 }
 
+function childMap(elements) {
+  const map = new Map()
+  for (const el of elements) {
+    if (!map.has(el.parent)) map.set(el.parent, [])
+    map.get(el.parent).push(el)
+  }
+  return map
+}
+
+function descendantsOf(id, map, out = []) {
+  for (const child of map.get(id) || []) {
+    out.push(child)
+    descendantsOf(child.i, map, out)
+  }
+  return out
+}
+
+function effectiveColumn(column, elements) {
+  if (!column) return null
+  if (column.display !== "contents" && column.rect.width >= 1) return column
+  const boxes = descendantsOf(column.i, childMap(elements)).filter((e) => e.display !== "contents" && e.rect.width > 0)
+  if (!boxes.length) return column
+  const left = Math.min(...boxes.map((e) => e.rect.x))
+  const right = Math.max(...boxes.map((e) => e.rect.x + e.rect.width))
+  const top = Math.min(...boxes.map((e) => e.rect.y))
+  const bottom = Math.max(...boxes.map((e) => e.rect.y + e.rect.height))
+  return { ...column, rect: { x: left, y: top, width: right - left, height: bottom - top } }
+}
+
+function readingCh(column) {
+  if (!column.ch) return 0
+  const inner = column.rect.width - (column.padding?.left || 0) - (column.padding?.right || 0) - (column.border?.left || 0) - (column.border?.right || 0)
+  return inner / column.ch
+}
+
+function columnExemption(column, elements, config, viewport) {
+  const allowed = new Set(config.columnExemptions || [])
+  if (!allowed.size || !column) return ""
+  const tree = descendantsOf(column.i, childMap(elements))
+  const cards = tree.filter((e) => isCard(e, config))
+  const forms = tree.filter((e) => e.tag === "form")
+  const paragraphs = tree.filter((e) => isBody(e, config))
+  const ch = readingCh(column)
+  if (allowed.has("prose") && ch >= 55 && ch <= 80 && paragraphs.length >= 1 && cards.length === 0) return "prose"
+  const left = column.rect.x
+  const right = viewport - (column.rect.x + column.rect.width)
+  const centered = left >= 24 && right >= 24 && Math.abs(left - right) <= Math.max(24, viewport * 0.04)
+  const selfCard = isCard(column, config)
+  const singleCard = (selfCard && cards.length === 0) || cards.length === 1
+  const singleForm = forms.length === 1 && cards.length <= 1
+  if (allowed.has("signin") && centered && (singleForm || singleCard) && cards.length <= 1) return "signin"
+  return ""
+}
+
+function rowAdjusted(card, elements, config) {
+  const boxes = contentBoxes(card, elements)
+  if (!card.stretched || !boxes.length) return boxes
+  const siblings = elements.filter((e) => e.parent === card.parent && e.i !== card.i && isCard(e, config) && e.rect.height > 0)
+  const row = siblings.filter((e) => overlaps(box(e), box(card)))
+  let maxBottom = Math.max(...boxes.map((item) => item.bottom))
+  for (const sib of row) {
+    const sibBoxes = contentBoxes(sib, elements)
+    if (sibBoxes.length) maxBottom = Math.max(maxBottom, ...sibBoxes.map((item) => item.bottom))
+  }
+  const innerBottom = card.rect.y + card.rect.height - (card.border?.bottom || 0) - (card.padding?.bottom || 0)
+  const target = Math.min(maxBottom, innerBottom)
+  return boxes.map((item) => (item.bottom >= target ? item : { ...item, bottom: item.bottom === Math.max(...boxes.map((b) => b.bottom)) ? target : item.bottom }))
+}
+
 export function evaluate(snapshot, config) {
   const elements = snapshot.elements || []
   const rules = []
-  const cards = elements.filter((e) => isCard(e, config) && inFlow(e) && e.rect.height > 0)
-  for (const card of cards) rules.push(cardSlack(card, contentBoxes(card, elements), config.whitespacePx))
+  const cards = elements.filter((e) => isCard(e, config) && e.rect.height > 0 && (inFlow(e) || e.position === "absolute" || e.position === "fixed"))
+  for (const card of cards) rules.push(cardSlack(card, rowAdjusted(card, elements, config), config.whitespacePx))
   const width = snapshot.requestedWidth ?? px(snapshot.viewportWidth)
+  const widths = snapshot.widths
   if (width === config.columnAtWidth) {
-    const column = primaryColumn(elements, config)
-    if (column) rules.push(columnShare(column, snapshot.viewportWidth, config.minWidthRatio))
-    else rules.push(entry("G1", "skip", "", {}, {}, "No main column to measure."))
+    const column = effectiveColumn(primaryColumn(elements, config) || elements.find((e) => e.tag === "body") || null, elements)
+    if (!column) rules.push(entry("G1", "skip", "", {}, {}, config.auto ? "No main column to measure." : "auto is off and no column was marked."))
+    else {
+      const share = columnShare(column, snapshot.viewportWidth, config.minWidthRatio)
+      const exempt = share.status === "fail" ? columnExemption(column, elements, config, snapshot.viewportWidth) : ""
+      if (exempt) {
+        const ch = r2(readingCh(column))
+        const message = exempt === "prose"
+          ? `Exempt: prose, a reading column ${ch}ch wide.`
+          : "Exempt: signin, a centered card or form."
+        rules.push(entry("G1", "skip", column.selector, { width: px(column.rect.width), viewport: px(snapshot.viewportWidth), ch, exemption: exempt }, { minWidthRatio: config.minWidthRatio }, message))
+      } else rules.push(share)
+    }
+  } else if (widths && !widths.includes(config.columnAtWidth) && width === widths[0]) {
+    rules.push(entry("G1", "skip", "", { columnAtWidth: config.columnAtWidth }, {}, `Column width is checked at ${config.columnAtWidth}px, which is not in this run.`))
   }
-  if (!cards.length && width !== config.columnAtWidth) {
-    rules.push(entry("G1", "skip", "", {}, {}, "No card to measure at this width."))
+  if (!cards.length && !rules.some((rule) => rule.id === "G1")) {
+    rules.push(entry("G1", "skip", "", {}, {}, config.auto ? "No card to measure at this width." : "auto is off and no card was marked."))
+  }
+  for (const key of config.explicitSelectors || []) {
+    if ((snapshot.hits || {})[key]) continue
+    const id = key === "groups" ? "G2" : key === "headings" || key === "body" || key === "buttons" ? "G4" : "G1"
+    rules.push(entry(id, "skip", config.selectors[key] || "", {}, {}, "Selector matched nothing."))
   }
   rules.push(...gapChecks(elements, config))
   rules.push(...paddingChecks(elements, config))
   rules.push(...edgeChecks(elements, config))
+  if (widths && !widths.includes(390) && width === widths[0]) {
+    rules.push(entry("G9", "skip", "html", {}, {}, "G9 runs at 390, which is not in this run."))
+  }
   rules.push(scrollCheck(snapshot, config))
+  for (const frame of snapshot.iframes || []) {
+    rules.push(entry("G1", "skip", frame, {}, {}, "Iframes are not measured."))
+  }
   return rules
 }
 
 export function verdictOf(widthReports) {
-  return widthReports.some((w) => w.rules.some((r) => r.status === "fail")) ? "fail" : "pass"
+  const rules = widthReports.flatMap((w) => w.rules)
+  if (rules.some((rule) => rule.status === "fail")) return "fail"
+  if (!rules.some((rule) => rule.status === "pass")) return "inconclusive"
+  return "pass"
 }
 
-export function buildReport(page, widthReports) {
-  return { page, widths: widthReports, verdict: verdictOf(widthReports) }
+export function buildReport(page, widthReports, flags = {}) {
+  const widths = widthReports.map((w) => ({ width: w.width, rules: w.rules }))
+  let verdict = verdictOf(widths)
+  if (flags.empty || flags.pageError || flags.jsonError || flags.navError) verdict = "inconclusive"
+  return { page, widths, verdict }
 }

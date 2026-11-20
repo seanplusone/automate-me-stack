@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Layout</title>
+</head>
+<body style="font:16px/24px Arial,sans-serif">
+
+<main>
+  <h1>Layout</h1>
+  <article class="card" style="display:flex;flex-direction:column;height:280px;padding:16px;border:1px solid #ccc">
+    <div style="flex:1"><p style="margin:0">Short.</p></div>
+  </article>
+  <div style="position:relative;height:24px">
+    <article class="card" id="abs-card" style="position:absolute;left:0;top:0;width:280px;min-height:240px;padding:16px;border:1px solid #ccc">
+      <h2 style="margin:0">Float</h2>
+      <p style="margin:0">Short.</p>
+    </article>
+  </div>
+  <button type="button">Save</button>
+</main>
+
+</body>
+</html>
