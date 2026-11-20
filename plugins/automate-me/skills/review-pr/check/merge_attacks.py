@@ -11,7 +11,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from check_attack import has_location, has_repro, norm, norm_where, parse_attack  # noqa: E402
+from check_attack import classify, has_location, has_repro, norm, norm_where, parse_attack  # noqa: E402
 
 
 def finding_key(finding):
@@ -29,6 +29,10 @@ def merge(paths):
         source = os.path.splitext(os.path.basename(path))[0]
         if not os.path.isfile(path):
             errors.append(source + ": missing pass")
+            docs.append({
+                "parsed": False, "tried": [], "findings": [], "verdicts": [],
+                "source": source, "title": "", "findingish": False, "errors": ["missing pass"],
+            })
             continue
         doc = parse_attack(path)
         doc["source"] = source
@@ -77,14 +81,15 @@ def merge(paths):
             "observed": observed,
             "passes": passes,
         })
-    broke = any(item["broke"] == "yes" for doc in docs if doc["parsed"] for item in doc["tried"])
-    said_fixes = any(doc["parsed"] and doc["verdict"] == "needs fixes" for doc in docs)
-    if kept or broke or said_fixes:
-        verdict = "needs fixes"
-    elif errors:
-        verdict = ""
-    else:
+    classes = ["error" if not doc["parsed"] else classify(doc) for doc in docs]
+    if errors and not docs:
+        classes.append("error")
+    if classes and all(kind == "approve" for kind in classes):
         verdict = "approve"
+    elif any(kind == "needs fixes" for kind in classes) or kept:
+        verdict = "needs fixes"
+    else:
+        verdict = ""
     tried, by_input = [], {}
     for doc in docs:
         if not doc["parsed"]:
@@ -148,17 +153,30 @@ def main(argv):
     if any(a in ("-h", "--help") for a in argv[1:]):
         print((__doc__ or "").strip())
         return 0
-    if "--out" not in argv[1:]:
-        print((__doc__ or "").strip(), file=sys.stderr)
-        return 2
-    out_at = argv.index("--out")
-    if out_at + 1 >= len(argv):
-        print((__doc__ or "").strip(), file=sys.stderr)
-        return 2
-    out = argv[out_at + 1]
-    skip = {out_at, out_at + 1}
-    passes = [a for i, a in enumerate(argv) if i not in skip and i > 0 and not a.startswith("--")]
-    if not passes:
+    out, passes, ended = None, [], False
+    i = 1
+    while i < len(argv):
+        arg = argv[i]
+        if ended:
+            passes.append(arg)
+        elif arg == "--":
+            ended = True
+        elif arg == "--out":
+            if out is not None:
+                print("repeated --out", file=sys.stderr)
+                return 2
+            if i + 1 >= len(argv):
+                print((__doc__ or "").strip(), file=sys.stderr)
+                return 2
+            out = argv[i + 1]
+            i += 1
+        elif arg.startswith("--"):
+            print(f"unknown option {arg}. Put pass files after --", file=sys.stderr)
+            return 2
+        else:
+            passes.append(arg)
+        i += 1
+    if not out or not passes:
         print((__doc__ or "").strip(), file=sys.stderr)
         return 2
     doc = merge(passes)

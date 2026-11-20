@@ -80,6 +80,9 @@ def run_all(brief_path, out_dir, search_path=None, runner=None, timeout=DEFAULT_
         print("none")
         return 0
     os.makedirs(out_dir, exist_ok=True)
+    for name in os.listdir(out_dir):
+        if name.endswith(".md") or name.endswith(".err"):
+            os.remove(os.path.join(out_dir, name))
     brief = open(brief_path, "rb").read()
     work = cwd if cwd is not None else os.getcwd()
     failed = 0
@@ -128,12 +131,22 @@ def main(argv):
     if "--brief" not in argv or "--out" not in argv:
         print((__doc__ or "").strip(), file=sys.stderr)
         return 2
+    if any(argv[1:].count(flag) > 1 for flag in ("--brief", "--out", "--cwd", "--timeout")):
+        print("repeated option", file=sys.stderr)
+        return 2
     brief = argv[argv.index("--brief") + 1]
     out = argv[argv.index("--out") + 1]
     cwd = argv[argv.index("--cwd") + 1] if "--cwd" in argv else None
     timeout = DEFAULT_TIMEOUT
     if "--timeout" in argv:
-        timeout = int(argv[argv.index("--timeout") + 1])
+        try:
+            timeout = float(argv[argv.index("--timeout") + 1])
+        except ValueError:
+            print("timeout must be a positive number of seconds", file=sys.stderr)
+            return 2
+        if timeout <= 0:
+            print("timeout must be a positive number of seconds", file=sys.stderr)
+            return 2
     return run_all(brief, out, timeout=timeout, cwd=cwd)
 
 

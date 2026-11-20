@@ -35,10 +35,20 @@ def soften(text):
     return re.sub(r"\s+", " ", text).strip()
 
 
+def strip_marks(line):
+    """Drop bold, backticks, and a leading heading marker."""
+    text = line.strip().replace("**", "").replace("__", "").replace("`", "")
+    return re.sub(r"^#+\s*", "", text).strip()
+
+
 def planted_bug(path):
-    """True when the key marks a case that hides a bug the review must not approve."""
-    for line in open(path):
-        if line.strip().lower() == "planted: yes":
+    """True when the key marks a case that hides a bug the review must not approve.
+
+    `Planted: yes.` counts. Trailing punctuation does not hide it.
+    """
+    for line in open(path, "rb").read().decode("utf-8", "replace").splitlines():
+        cleaned = strip_marks(line).lower().rstrip(" .;:")
+        if re.match(r"^planted:\s*yes\b", cleaned):
             return True
     return False
 
@@ -85,18 +95,30 @@ def norm_where(where):
     return ("/".join(parts), line)
 
 
-def parse_finding_heading(line):
-    """A finding heading in the shapes agents actually write, or None.
+def heading_depth(line):
+    """How many leading # the line has, after a wrapping bold marker is removed."""
+    probe = line.strip().replace("**", "").replace("__", "")
+    depth = 0
+    for char in probe:
+        if char == "#":
+            depth += 1
+        else:
+            break
+    return depth
 
-    Accepts ### or ####, a colon or a pipe, bold markers, `(passes: name)`,
-    and `cap.py line 3` as well as `cap.py:3`.
+
+def parse_finding_heading(line):
+    """A real finding heading, or None.
+
+    A finding heading has at least three hashes: ### or ####, not a ## section.
+    Also accepts a colon or a pipe, bold markers, `(passes: name)`, and
+    `cap.py line 3`. Lines longer than 500 characters are not headings.
     """
     raw = line.strip()
-    if not raw:
+    if not raw or len(raw) > 500 or heading_depth(raw) < 3:
         return None
-    looks = raw.startswith("#") or raw.startswith("**") or raw.startswith("__")
-    cleaned = raw.replace("**", "").replace("__", "").replace("`", "")
-    cleaned = re.sub(r"^#+\s*", "", cleaned).strip()
+    looks = True
+    cleaned = strip_marks(raw)
     if not looks and not cleaned[:1].isalnum():
         return None
     passes = []
@@ -152,39 +174,102 @@ def find_key(attack_path):
     return None
 
 
+def outside_fences(lines):
+    """Lines that are not inside a fenced code block."""
+    kept, fenced = [], False
+    for line in lines:
+        if line.strip().startswith("```"):
+            fenced = not fenced
+            continue
+        if not fenced:
+            kept.append(line)
+    return kept
+
+
+def finding_like(line):
+    """True when the line names a file and line, a 'line N', or an F<digit> heading.
+
+    The scan is bounded so a huge line cannot blow up the matcher.
+    """
+    if len(line) > 500:
+        line = line[:500]
+    if re.search(r"(?<![A-Za-z0-9])F\d+\b", line):
+        return True
+    if re.search(r"(?i)(?<![A-Za-z0-9])line\s+\d+\b", line):
+        return True
+    if re.search(r"(?<![A-Za-z0-9_])[A-Za-z0-9_./\\-]{1,180}:\d+\b", line):
+        return True
+    return False
+
+
+def classify(doc):
+    """approve only for one explicit approve, tried inputs that all held, and no finding.
+
+    Anything else that parsed is needs fixes. An unparsed pass is error.
+    """
+    if not doc.get("parsed", False):
+        return "error"
+    verdicts = doc.get("verdicts") or []
+    tried = [item for item in doc["tried"] if item["input"] and item.get("observed")]
+    clean = (
+        verdicts == ["approve"]
+        and tried
+        and all(item.get("broke") == "no" for item in tried)
+        and not doc.get("findingish")
+        and not doc.get("findings")
+    )
+    return "approve" if clean else "needs fixes"
+
+
 def parse_attack(path):
     """An attack file: verdict, tried inputs, findings, and inputs that held.
 
-    A file with no verdict, no tried input, and no finding does not parse.
-    A line `Parse: timeout` (or any Parse: line) does not parse. Broke accepts
-    yes or no in any case, with words after it.
+    Verdict and Broke lines may be bold. Section names may use ## or ###.
+    Lines inside ``` fences are examples, not the review. A `Parse:` line,
+    an empty file, or a non-UTF-8 file does not parse. Broke accepts yes or
+    no in any case, with words after it.
     """
     doc = {
-        "title": "", "verdict": "", "tried": [], "findings": [], "held": [],
-        "held_text": [], "errors": [], "parsed": True,
+        "title": "", "verdict": "", "verdicts": [], "tried": [], "findings": [],
+        "held": [], "held_text": [], "errors": [], "parsed": True, "findingish": False,
     }
-    section, cur = None, None
-    raw_lines = open(path).read().splitlines()
-    if any(PARSE_LINE.match(line.strip()) for line in raw_lines) or not "".join(raw_lines).strip():
+    try:
+        raw_lines = open(path, "rb").read().decode("utf-8").splitlines()
+    except UnicodeDecodeError:
+        doc["parsed"] = False
+        doc["errors"].append("file is not UTF-8")
+        return doc
+    if any(PARSE_LINE.match(strip_marks(line)) for line in raw_lines) or not "".join(raw_lines).strip():
         doc["parsed"] = False
         doc["errors"].append("unparseable output")
         return doc
+    visible = outside_fences(raw_lines)
+    doc["findingish"] = any(finding_like(line) for line in visible)
+    section, cur, fenced = None, None, False
     for line in raw_lines:
-        if line.startswith("# ") and not line.startswith("## "):
-            doc["title"] = line[2:].strip()
+        if line.strip().startswith("```"):
+            fenced = not fenced
             continue
-        m = VERDICT.match(line.strip())
-        if m and doc["verdict"] == "":
-            doc["verdict"] = m.group(1).lower()
+        if fenced:
             continue
-        head = line.strip().lower()
-        if head.startswith("## tried"):
+        if line.startswith("# ") and not line.startswith("##"):
+            doc["title"] = strip_marks(line)
+            continue
+        cleaned = strip_marks(line)
+        low = cleaned.lower()
+        if re.match(r"^verdict:\s*approve\b", low):
+            doc["verdicts"].append("approve")
+            continue
+        if re.match(r"^verdict:\s*needs fixes\b", low):
+            doc["verdicts"].append("needs fixes")
+            continue
+        if heading_depth(line) >= 2 and low.startswith("tried"):
             section, cur = "tried", None
             continue
-        if head.startswith("## findings"):
+        if heading_depth(line) >= 2 and low.startswith("findings"):
             section, cur = "findings", None
             continue
-        if head.startswith("## held"):
+        if heading_depth(line) >= 2 and low.startswith("held"):
             section, cur = "held", None
             continue
         if section == "held":
@@ -201,9 +286,9 @@ def parse_attack(path):
             if m:
                 cur["observed"] = m.group(1).strip()
                 continue
-            m = BROKE.match(line)
-            if m and section == "tried":
-                cur["broke"] = m.group(1).lower()
+            broke = re.match(r"^broke:\s*(yes|no)\b", low)
+            if broke and section == "tried":
+                cur["broke"] = broke.group(1).lower()
             continue
         if section != "findings":
             continue
@@ -236,7 +321,13 @@ def parse_attack(path):
                 }
                 doc["findings"].append(cur)
             cur["claim"].append(line.strip())
-    if not doc["verdict"] and not doc["tried"] and not doc["findings"]:
+    if "needs fixes" in doc["verdicts"]:
+        doc["verdict"] = "needs fixes"
+    elif doc["verdicts"] == ["approve"]:
+        doc["verdict"] = "approve"
+    else:
+        doc["verdict"] = ""
+    if not doc["verdict"] and not doc["tried"] and not doc["findings"] and not doc["findingish"]:
         doc["parsed"] = False
         doc["errors"].append("unparseable output")
     return doc
@@ -274,9 +365,11 @@ def check_attack(path, key_path=None):
     for item in tried:
         if item["broke"] == "no" and not held_covers(item, doc["held"], doc["held_text"]):
             fails.append("held list omits an input that did not break: " + item["input"])
+    if doc["verdict"] == "approve" and classify(doc) != "approve":
+        fails.append("not a valid approve")
     located = any(has_location(finding) for finding in doc["findings"])
     broke_yes = any(item["broke"] == "yes" for item in tried)
-    if doc["verdict"] == "approve" and (located or broke_yes):
+    if doc["verdict"] == "approve" and (located or broke_yes or doc.get("findingish")):
         fails.append("approve contradicts a break")
     if not key_path:
         key_path = find_key(path)
