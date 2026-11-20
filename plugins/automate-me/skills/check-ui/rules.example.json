@@ -7,6 +7,7 @@
   "betweenOverInside": 2,
   "minWidthRatio": 0.6,
   "columnAtWidth": 1280,
+  "columnExemptions": ["prose", "signin"],
   "selectors": {
     "cards": "[data-ui='card'], [data-ui='tile'], [data-ui='panel']",
     "groups": "[data-ui='group']",

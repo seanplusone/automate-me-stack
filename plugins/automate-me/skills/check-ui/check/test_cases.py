@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -34,11 +35,35 @@ def check(name, ok, detail=""):
         print("    " + detail.replace("\n", "\n    "))
 
 
+def type_ok(instance, kind):
+    kinds = kind if isinstance(kind, list) else [kind]
+    for item in kinds:
+        if item == "object" and isinstance(instance, dict):
+            return True
+        if item == "array" and isinstance(instance, list):
+            return True
+        if item == "string" and isinstance(instance, str):
+            return True
+        if item == "boolean" and isinstance(instance, bool):
+            return True
+        if item == "null" and instance is None:
+            return True
+        if item == "integer" and isinstance(instance, int) and not isinstance(instance, bool):
+            return True
+        if item == "number" and isinstance(instance, (int, float)) and not isinstance(instance, bool):
+            return True
+    return False
+
+
 def validate(instance, schema, path="$"):
     errors = []
     if "enum" in schema and instance not in schema["enum"]:
         errors.append(f"{path} not in {schema['enum']}")
     kind = schema.get("type")
+    if isinstance(kind, list):
+        if not type_ok(instance, kind):
+            errors.append(f"{path} bad type")
+        return errors
     if kind == "object":
         if not isinstance(instance, dict):
             return errors + [f"{path} not object"]
@@ -46,10 +71,15 @@ def validate(instance, schema, path="$"):
         for key in schema.get("required", []):
             if key not in instance:
                 errors.append(f"{path}.{key} missing")
-        if schema.get("additionalProperties") is False:
+        extra = schema.get("additionalProperties", True)
+        if extra is False:
             for key in instance:
                 if key not in props:
                     errors.append(f"{path}.{key} extra")
+        elif isinstance(extra, dict):
+            for key in instance:
+                if key not in props:
+                    errors.extend(validate(instance[key], extra, f"{path}.{key}"))
         for key, sub in props.items():
             if key in instance:
                 errors.extend(validate(instance[key], sub, f"{path}.{key}"))
@@ -181,19 +211,35 @@ if probe.returncode == 2 and ENV_ERROR.search(probe.stderr or ""):
     browser_ran = False
     skip_browser(probe.stderr.strip().splitlines()[0] if probe.stderr.strip() else "browser unavailable")
 else:
+    legacy = {"clean", "g1-tall-card", "g2-gaps", "g3-padding", "g4-edge", "g9-scroll"}
     cases = sorted(
         name for name in os.listdir(CASES)
         if os.path.isfile(os.path.join(CASES, name, "index.html")) and os.path.isfile(os.path.join(CASES, name, "key.json"))
     )
-    check("case set is the clean page plus one page per rule", cases == [
-        "clean", "g1-tall-card", "g2-gaps", "g3-padding", "g4-edge", "g9-scroll",
-    ], " ".join(cases))
+    check("legacy cases are still present", legacy <= set(cases), " ".join(cases))
+    real = []
     for name in cases:
         folder = os.path.join(CASES, name)
         key = json.load(open(os.path.join(folder, "key.json")))
         expected = key["fail"]
-        result = probe if name == "clean" else run(["--url", os.path.join(folder, "index.html"), "--widths", "390,1280"])
+        loose = key.get("loose", False)
+        widths = ["--widths", "390,1280"]
+        timeout = ["--timeout", str(key["timeout"])] if key.get("timeout") else []
+        started = time.time()
+        result = probe if name == "clean" and not timeout else run(["--url", os.path.join(folder, "index.html"), *widths, *timeout])
+        elapsed = time.time() - started
         report = report_of(result)
+        if expected == "inconclusive":
+            check(
+                f"{name} is inconclusive",
+                result.returncode == 2 and '"verdict": "pass"' not in result.stdout and (not report or report.get("verdict") == "inconclusive"),
+                detail(result, report),
+            )
+            if key.get("maxSeconds"):
+                check(f"{name} finishes within {key['maxSeconds']}s", elapsed < key["maxSeconds"], f"{elapsed:.1f}s")
+            if report:
+                assert_schema(name, report)
+            continue
         want = 0 if expected is None else 1
         check(f"{name} exits {want}", result.returncode == want, detail(result, report))
         if not report:
@@ -203,20 +249,12 @@ else:
         check(f"{name} widths are 390 and 1280", [w["width"] for w in report["widths"]] == [390, 1280], detail(result, report))
         got = fail_ids(report)
         want_ids = set() if expected is None else {expected}
-        check(f"{name} fails {expected or 'nothing'}", got == want_ids, detail(result, report))
-        if expected is None:
-            bad = other_rules_pass(report, None)
-            check("clean passes every rule at both widths", bad == [], "\n".join(bad))
-        else:
-            bad = other_rules_pass(report, expected)
-            check(f"{name} leaves every other rule passing", bad == [], "\n".join(bad))
-            check(
-                f"{name} verdict is fail",
-                report["verdict"] == "fail",
-                report["verdict"],
-            )
-        if name == "clean":
-            check("clean verdict is pass", report["verdict"] == "pass", report.get("verdict"))
+        messages = " ".join(rule["message"] for _, rule in rows(report))
+        if key.get("exemption"):
+            named = any(rule.get("measured", {}).get("exemption") == key["exemption"] and rule["status"] == "skip" for _, rule in rows(report))
+            check(f"{name} skips for {key['exemption']}", named, messages)
+        if key.get("notExempt"):
+            check(f"{name} is not exempt", "Exempt:" not in messages, messages)
         if name == "g1-tall-card":
             elements = [rule["element"] for _, rule in rows(report, "fail")]
             check("G1 names the tall plan", elements == ["#tall-plan"] * len(elements) and len(elements) >= 1, " ".join(elements))
@@ -232,6 +270,24 @@ else:
                 statuses(report, 390, "G9") == {"fail"} and statuses(report, 1280, "G9") == {"pass"},
                 detail(result, report),
             )
+        if loose:
+            if expected is None:
+                check(f"{name} passes", result.returncode == 0 and report["verdict"] == "pass" and not got, detail(result, report))
+                if key.get("real"):
+                    real.append(name)
+            else:
+                check(f"{name} fails {expected}", expected in got and report["verdict"] == "fail", detail(result, report))
+            continue
+        check(f"{name} fails {expected or 'nothing'}", got == want_ids, detail(result, report))
+        if expected is None:
+            bad = other_rules_pass(report, None)
+            check("clean passes every rule at both widths", bad == [], "\n".join(bad))
+            check("clean verdict is pass", report["verdict"] == "pass", report.get("verdict"))
+        else:
+            bad = other_rules_pass(report, expected)
+            check(f"{name} leaves every other rule passing", bad == [], "\n".join(bad))
+            check(f"{name} verdict is fail", report["verdict"] == "fail", report["verdict"])
+    check("real pages pass", len(real) >= 4, " ".join(real))
 
     with tempfile.TemporaryDirectory() as tmp:
         strict = os.path.join(tmp, "strict.json")

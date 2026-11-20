@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Board</title>
+</head>
+<body style="font:16px/24px Arial,sans-serif">
+
+<main>
+  <h1>Board</h1>
+  <p>Waiting for the rest of the page.</p>
+  <button type="button">Save</button>
+</main>
+<script>
+setTimeout(function () {
+  var bar = document.createElement("div");
+  bar.id = "late-bar";
+  bar.style.cssText = "width:3000px;height:20px";
+  document.body.appendChild(bar);
+  var card = document.createElement("article");
+  card.className = "card";
+  card.id = "late-card";
+  card.style.cssText = "padding:16px;border:1px solid #ccc;min-height:320px";
+  card.innerHTML = "<h2 style=\"margin:0\">Late</h2><p style=\"margin:0\">Short.</p>";
+  document.body.appendChild(card);
+}, 500);
+</script>
+
+</body>
+</html>

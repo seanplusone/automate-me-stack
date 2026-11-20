@@ -34,12 +34,12 @@ Always measure both widths. 390 is a phone. 1280 is a desktop.
 
 ```
 node "$SKILL_DIR"/check/measure.mjs --url page.html --widths 390,1280
-node "$SKILL_DIR"/check/measure.mjs --url https://127.0.0.1:3000/settings --widths 390,1280 --config rules.json --out report.json
+node "$SKILL_DIR"/check/measure.mjs --url http://127.0.0.1:3000/settings --widths 390,1280 --config rules.json --out report.json
 ```
 
 `--url` is an http or https URL, or a path to an HTML file. `--widths` defaults to 390 and 1280. `--config` is optional. `--out` writes the same JSON the command prints.
 
-Exit 0 when every rule passes. Exit 1 when a rule fails. The report is still printed. Exit 2 when the arguments are wrong, the browser is missing, or the page does not load. A page that does not load is never a pass. `--help` prints usage and exits 0.
+Exit 0 when every rule passes. Exit 1 when a rule fails. The report is still printed. Exit 2 when the arguments are wrong, the browser is missing, the page does not load, or the run is inconclusive. A blank page, a script error, or a page where every rule skips is inconclusive. It is not a pass. `--help` prints usage and exits 0.
 
 ## Rules
 
@@ -47,15 +47,15 @@ Both widths, on every run.
 
 | Id | What it measures |
 |---|---|
-| G1 | A card is no taller than its content plus its own padding and border. Tolerance is 4px. At 1280 the main column is at least 60 percent of the viewport. |
+| G1 | A card is no taller than its content plus its own padding, border, and the child margins. Tolerance is 4px in total, not per side. At 1280 the main column is at least 60 percent of the viewport. |
 | G2 | The gap between groups is at least 2 times the gap inside a group. Design notes often use 3 or 4 times. Raise the ratio for that. |
 | G3 | Containers of one kind share padding within 2px. Kind is the role plus the class list. |
-| G4 | Headings, paragraphs, cards, and buttons in a column share a left edge within 2px. A horizontal row counts as one edge, the leftmost item. |
+| G4 | Headings, paragraphs, cards, and buttons in a column share a left edge within 2px. The check uses the spread, not the distance from the middle. A horizontal row counts as one edge, the leftmost item. Right-aligned and centered items are ignored. |
 | G9 | The document scroll width is not wider than the viewport. This includes the 390px width. |
 
-A card is an element with `data-ui` of `card`, `tile`, or `panel`, or a class token `card`, `tile`, `panel`, or one ending in `-card`, `-tile`, or `-panel`. A group uses `data-ui="group"` or a class token `group` or ending in `-group`. The column is `data-ui="column"` or `data-ui="main"`. With neither, the column is the `main` element.
+A card is an element with `data-ui` of `card`, `tile`, or `panel`, or a class token `card`, `tile`, `panel`, or one ending in `-card`, `-tile`, or `-panel`. A box with padding plus a border, background, or shadow is also a card. A group uses `data-ui="group"` or a class ending in `-group`. The bare class `group` is not a group. The column is `data-ui="column"` or `data-ui="main"`, then the `main` element, then the body.
 
-Text and controls inside a card are not part of the column's left edge. Fixed and absolute boxes are left out of the gap check and the left-edge check.
+Text inside a card, a padded box, a list, or a quote is not part of the column's left edge. Open shadow roots are measured. Iframes are skipped and named in the report.
 
 ## Report
 
@@ -83,7 +83,7 @@ The command prints one JSON object. The shape is [check/report.schema.json](chec
 }
 ```
 
-`status` is `pass`, `fail`, or `skip`. `verdict` is `fail` when any row is `fail`. A skip means the page had nothing for that rule to measure. Skips do not fail the verdict. Read the rows before treating an all-skip report as a clean page.
+`status` is `pass`, `fail`, or `skip`. `verdict` is `fail` when any row is `fail`. A skip means the page had nothing for that rule to measure. If every row is a skip, the verdict is `inconclusive` and the command exits 2.
 
 ## Config
 
@@ -97,7 +97,8 @@ Copy [rules.example.json](rules.example.json) into the project and pass it with 
 | scrollPx | 0 | Extra pixels allowed past the viewport before G9 fails. |
 | betweenOverInside | 2 | Minimum ratio of the between-group gap to the inside gap. |
 | minWidthRatio | 0.6 | Minimum main-column width, as a fraction of the viewport, at columnAtWidth. |
-| columnAtWidth | 1280 | Viewport width at which the column ratio runs. |
+| columnAtWidth | 1280 | Viewport width at which the column ratio runs. A run that omits it records a skip. |
+| columnExemptions | prose, signin | Reading columns of 55 to 80ch, and a single centered sign-in card or form. Set this to [] to turn both off. The 0.6 default stays. |
 | auto | true | Class-name guesses. data-ui and selectors still apply when this is false. |
 | selectors | see the example | CSS selectors for cards, groups, columns, headings, body, buttons, and containers. They add matches. |
 
@@ -117,9 +118,9 @@ Mark an element in the page when the guess is wrong.
 
 These five rules do not pass a page. They catch a few layout defects. A later check will diff regions of the page against a mockup. Contrast, type, token lint, craft rules, and per-project preferences are not in this version.
 
-The column check uses `main`, unless a selector or `data-ui="column"` names a tighter box. A full-bleed main with a narrow inner wrapper can pass until that wrapper is marked.
+The column check uses `main`, unless a selector or `data-ui="column"` names a tighter box. A full-bleed main with a narrow inner wrapper can pass until that wrapper is marked. A reading column of about 55 to 80ch, and a single centered sign-in card or form, are skips. The skip names the exemption. A dashboard column under 60 percent still fails.
 
-A card with only text and no child element is measured from that text. A card taller than that text still fails G1.
+A card with only text is measured from its line box, not the ink. Child margins count as content. A grid or flex row is compared with the tallest text in that row.
 
 ## Checks
 
@@ -128,7 +129,7 @@ node "$SKILL_DIR"/check/test_geometry.mjs
 python3 "$SKILL_DIR"/check/test_cases.py
 ```
 
-`test_geometry.mjs` feeds plain boxes to the rules. It does not open a browser. `test_cases.py` runs measure on `cases/`. One page passes every rule at both widths. Each other page fails the rule named in its `key.json` and no other rule. The report is checked against the schema. A page that does not load exits 2.
+`test_geometry.mjs` feeds plain boxes to the rules. It does not open a browser. `test_cases.py` runs measure on `cases/`. The clean page passes every rule at both widths. Planted pages fail the rule named in `key.json`. Pages that cannot be judged exit 2. The report is checked against the schema. A page that does not load exits 2.
 
 If Playwright or Chromium is missing, `test_cases.py` prints SKIP and exits 0. That is not a pass of the pages. Install with the commands above and run it again.
 

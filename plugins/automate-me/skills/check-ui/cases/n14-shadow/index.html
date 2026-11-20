@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Host</title>
+</head>
+<body style="font:16px/24px Arial,sans-serif">
+
+<main>
+  <h1>Host</h1>
+  <p>The card lives in an open shadow root.</p>
+  <div id="host"></div>
+  <iframe title="Extra" src="about:blank" style="width:200px;height:40px;border:0"></iframe>
+  <button type="button">Save</button>
+</main>
+<script>
+var root = document.getElementById("host").attachShadow({mode: "open"});
+var card = document.createElement("article");
+card.className = "card";
+card.id = "shadow-card";
+card.style.cssText = "display:block;padding:16px;border:1px solid #ccc;min-height:300px";
+card.innerHTML = "<h2 style=\"margin:0\">Inside</h2><p style=\"margin:0\">Short.</p>";
+root.appendChild(card);
+</script>
+
+</body>
+</html>
