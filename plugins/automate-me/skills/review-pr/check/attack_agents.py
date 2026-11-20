@@ -13,12 +13,14 @@ undecodable output writes `Parse: error`. A merge does not treat either as
 an approve.
 This script does not decide what to attack, and it does not pick a fallback agent.
 """
+import json
 import os
 import shutil
 import signal
 import subprocess
 import sys
 import tempfile
+import time
 
 NAMES = ("codex", "claude")
 OWNED = ("codex.md", "claude.md", "codex.err", "claude.err")
@@ -33,6 +35,13 @@ ENV_ALLOW = (
     "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE",
     "NODE_EXTRA_CA_CERTS",
 )
+CODEX_FILES = ("auth.json", "config.toml")
+CLAUDE_FILES = (".credentials.json",)
+CLAUDE_JSON_KEEP = (
+    "hasCompletedOnboarding", "lastOnboardingVersion", "oauthAccount", "userID",
+    "numStartups", "installMethod", "autoUpdates", "theme", "primaryApiKey",
+)
+STALE_SECONDS = 3600
 LIVE = []
 
 
@@ -166,17 +175,106 @@ def _copy_tree(src, dst, root):
         shutil.copy2(source, target, follow_symlinks=False)
 
 
+def practice_roots(path):
+    """Case directories whose key.md is this path, above it, or anywhere under it."""
+    found, seen = [], set()
+
+    def add(directory):
+        if not directory:
+            return
+        real = os.path.realpath(directory)
+        if real in seen or not os.path.isfile(os.path.join(real, "key.md")):
+            return
+        seen.add(real)
+        found.append(real)
+
+    add(_case_root(path))
+    start = path if os.path.isdir(path) else os.path.dirname(path or "")
+    if os.path.isdir(start):
+        for dirpath, dirnames, filenames in os.walk(start, followlinks=False):
+            dirnames[:] = [name for name in dirnames if name not in (".git", "node_modules") and not name.startswith(".")]
+            if "key.md" in filenames:
+                add(dirpath)
+    return found
+
+
 def agent_cwd(cwd):
-    """(directory, created). A planted case is copied so the key stays out."""
-    root = _case_root(cwd)
-    if not root:
+    """(directory, created). Practice trees are copied without their key.md."""
+    cases = practice_roots(cwd)
+    if not cases:
         return cwd, False
     temp = tempfile.mkdtemp(prefix="attack-cwd-")
-    for name in ("head", "base"):
-        src = os.path.join(root, name)
-        if os.path.isdir(src):
-            _copy_tree(src, os.path.join(temp, name), src)
+    single = len(cases) == 1
+    for case in cases:
+        label = "" if single else os.path.basename(case)
+        for name in ("head", "base"):
+            src = os.path.join(case, name)
+            if not os.path.isdir(src):
+                continue
+            dest = os.path.join(temp, name) if not label else os.path.join(temp, label, name)
+            _copy_tree(src, dest, src)
     return temp, True
+
+
+def _host_codex_dir():
+    return os.environ.get("CODEX_HOME") or os.path.join(os.path.expanduser("~"), ".codex")
+
+
+def _host_claude_dir():
+    return os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+
+
+def _copy_file(src, dest):
+    if not os.path.isfile(src) or os.path.islink(src):
+        return
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    shutil.copy2(src, dest)
+
+
+def _strip_claude_json(src, dest):
+    try:
+        data = json.loads(open(src, encoding="utf-8").read())
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return
+    if not isinstance(data, dict):
+        return
+    kept = {key: data[key] for key in CLAUDE_JSON_KEEP if key in data}
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    open(dest, "w", encoding="utf-8").write(json.dumps(kept))
+
+
+def stage_home():
+    """A fresh home with only the login files. Session transcripts stay on the host."""
+    home = tempfile.mkdtemp(prefix="attack-home-")
+    codex = _host_codex_dir()
+    for name in CODEX_FILES:
+        _copy_file(os.path.join(codex, name), os.path.join(home, ".codex", name))
+    claude = _host_claude_dir()
+    for name in CLAUDE_FILES:
+        _copy_file(os.path.join(claude, name), os.path.join(home, ".claude", name))
+    raw = os.path.join(os.path.expanduser("~"), ".claude.json")
+    if os.path.isfile(raw) and not os.path.islink(raw):
+        _strip_claude_json(raw, os.path.join(home, ".claude.json"))
+    return home
+
+
+def cleanup_stale():
+    """Remove sandbox copies a killed run left behind for more than an hour."""
+    now = time.time()
+    root = tempfile.gettempdir()
+    try:
+        names = os.listdir(root)
+    except OSError:
+        return
+    for name in names:
+        if not (name.startswith("attack-cwd-") or name.startswith("attack-home-")):
+            continue
+        path = os.path.join(root, name)
+        try:
+            if now - os.path.getmtime(path) > STALE_SECONDS:
+                shutil.rmtree(path, ignore_errors=True)
+        except OSError:
+            continue
 
 
 def _exposes(path, forbidden):
@@ -213,38 +311,37 @@ def resolve_sandbox(choice):
     return "missing"
 
 
-def _sandbox_env(name):
-    """The only environment the agent gets inside the sandbox."""
+def _sandbox_env():
+    """The only environment the agent gets. API keys are copied by name and never printed."""
     env = {
         "PATH": "/usr/local/bin:/usr/bin:/bin",
         "HOME": "/home/agent",
         "PWD": "/work",
         "LANG": os.environ.get("LANG") or "C.UTF-8",
         "TERM": os.environ.get("TERM") or "dumb",
+        "CODEX_HOME": "/home/agent/.codex",
+        "CLAUDE_CONFIG_DIR": "/home/agent/.claude",
     }
     for key in ENV_ALLOW:
-        if os.environ.get(key):
-            env[key] = os.environ[key]
+        value = os.environ.get(key)
+        if value:
+            env[key] = value
     return env
 
 
-def _auth_paths(name, binary):
-    """The CLI file and its auth dir. A path that would reveal the case is left out."""
-    home = os.path.expanduser("~")
-    paths = [os.path.realpath(binary)]
-    if os.path.abspath(binary) != os.path.realpath(binary):
-        paths.append(os.path.abspath(binary))
-    if name == "codex":
-        paths.append(os.path.join(home, ".codex"))
-    if name == "claude":
-        paths.append(os.path.join(home, ".claude"))
-        paths.append(os.path.join(home, ".local", "share", "claude"))
-        real = os.path.realpath(binary)
-        parts = real.split(os.sep)
-        if "claude" in parts:
-            index = len(parts) - 1 - parts[::-1].index("claude")
-            paths.append(os.sep.join(parts[:index + 1]))
-    return [path for path in paths if path and os.path.exists(path)]
+def _binary_paths(binary):
+    """The CLI file, and its install directory when that directory is not already in /usr."""
+    real = os.path.realpath(binary)
+    if not os.path.exists(real):
+        return []
+    paths = [real]
+    absolute = os.path.abspath(binary)
+    if os.path.exists(absolute) and absolute not in paths:
+        paths.append(absolute)
+    parent = os.path.dirname(real)
+    if parent and not (parent.startswith("/usr/") or parent.startswith("/bin") or parent.startswith("/lib")):
+        paths.append(parent)
+    return paths
 
 
 def _ro_bind(argv, src, dest, seen_dirs, forbidden):
@@ -262,13 +359,14 @@ def _ro_bind(argv, src, dest, seen_dirs, forbidden):
     argv += ["--ro-bind", src, dest]
 
 
-def bwrap_command(cmd, binary, name, work, forbidden):
-    """Argv that runs cmd with only system dirs and /work visible."""
+def bwrap_command(cmd, binary, work, forbidden, home):
+    """Argv that runs cmd with system dirs, /work, and a fresh home visible."""
     tool = shutil.which("bwrap") or "bwrap"
     argv = [
         tool,
         "--unshare-all", "--share-net", "--die-with-parent", "--new-session",
         "--tmpfs", "/",
+        "--tmpfs", "/tmp",
     ]
     for path in ("/usr", "/lib", "/lib64", "/bin"):
         if os.path.exists(path) and not _exposes(path, forbidden):
@@ -276,20 +374,20 @@ def bwrap_command(cmd, binary, name, work, forbidden):
     argv += ["--dir", "/etc"]
     for path in (
         "/etc/resolv.conf", "/etc/hosts", "/etc/passwd", "/etc/group", "/etc/nsswitch.conf",
-        "/etc/ssl", "/etc/ssl/certs", "/etc/ca-certificates", "/etc/pki",
+        "/etc/ssl", "/etc/ca-certificates", "/etc/pki",
     ):
         if os.path.exists(path) and not _exposes(path, forbidden):
             argv += ["--ro-bind", path, path]
     argv += ["--proc", "/proc", "--dev", "/dev"]
     argv += ["--bind", work, "/work", "--chdir", "/work"]
-    argv += ["--tmpfs", "/home", "--dir", "/home/agent"]
-    seen = {"/", "/etc", "/home", "/home/agent", "/work"}
-    for path in _auth_paths(name, binary):
-        if path == os.path.realpath(work) or _inside(path, work):
+    argv += ["--bind", home, "/home/agent"]
+    seen = {"/", "/etc", "/tmp", "/work", "/home/agent"}
+    for path in _binary_paths(binary):
+        if path == os.path.realpath(work) or _inside(path, work) or _inside(path, home):
             continue
         _ro_bind(argv, path, path, seen, forbidden)
     argv += ["--clearenv"]
-    for key, value in _sandbox_env(name).items():
+    for key, value in _sandbox_env().items():
         argv += ["--setenv", key, value]
     argv += cmd
     return argv
@@ -315,10 +413,11 @@ def _agent_env(work, hide):
         env[key] = value
     env["PWD"] = os.path.abspath(work)
     return env
-def command(binary, name):
+def command(binary, name, outer_sandbox=False):
     """Argv for one CLI. The brief is not included. It goes on stdin."""
     if name == "codex":
-        return [binary, "exec", "--skip-git-repo-check", "--sandbox", "workspace-write"]
+        mode = "danger-full-access" if outer_sandbox else "workspace-write"
+        return [binary, "exec", "--skip-git-repo-check", "--sandbox", mode]
     if name == "claude":
         return [binary, "-p", "--permission-mode", "acceptEdits", "--allowedTools", "Bash"]
     raise SystemExit(f"unknown agent {name}")
@@ -371,6 +470,7 @@ def _run_one(cmd, brief, work, timeout, env):
 
 def run_all(brief_path, out_dir, search_path=None, runner=None, timeout=DEFAULT_TIMEOUT, cwd=None, sandbox="auto"):
     """Run each detected CLI. Returns 0, or 1 when a CLI exits non-zero or times out."""
+    cleanup_stale()
     for name in OWNED:
         if _same(brief_path, os.path.join(out_dir, name)):
             print("refusing to delete the brief", file=sys.stderr)
@@ -392,7 +492,7 @@ def run_all(brief_path, out_dir, search_path=None, runner=None, timeout=DEFAULT_
     if chosen == "bad":
         print((__doc__ or "").strip(), file=sys.stderr)
         return 2
-    planted = _case_root(origin) is not None
+    planted = bool(practice_roots(origin))
     if (sandbox or "auto") == "auto" and not planted:
         chosen = "none"
     if chosen == "docker":
@@ -405,27 +505,31 @@ def run_all(brief_path, out_dir, search_path=None, runner=None, timeout=DEFAULT_
         print("warning: running unsandboxed. There is no practice key to hide.", file=sys.stderr)
         chosen = "none"
     work, made = agent_cwd(origin)
-    env = _agent_env(work, [origin, _case_root(origin)])
+    home = stage_home() if chosen == "bwrap" else None
+    env = _agent_env(work, [origin] + practice_roots(origin))
     previous = {sig: signal.signal(sig, _on_stop) for sig in _stop_signals()}
     try:
-        return _run_found(found, brief, work, out_dir, runner, timeout, env, chosen, origin)
+        return _run_found(found, brief, work, out_dir, runner, timeout, env, chosen, origin, home)
     finally:
         _kill_live()
         for sig, old in previous.items():
             signal.signal(sig, old)
         if made:
             shutil.rmtree(work, ignore_errors=True)
+        if home:
+            shutil.rmtree(home, ignore_errors=True)
 
 
-def _run_found(found, brief, work, out_dir, runner, timeout, env, sandbox_name, origin):
+def _run_found(found, brief, work, out_dir, runner, timeout, env, sandbox_name, origin, home):
     failed = 0
-    forbidden = [origin, _case_root(origin)]
+    forbidden = [origin] + practice_roots(origin)
+    outer = sandbox_name == "bwrap"
     for name, binary in found:
-        cmd = command(binary, name)
+        cmd = command(binary, name, outer)
         launch_env = env
-        if sandbox_name == "bwrap":
-            cmd = bwrap_command(cmd, binary, name, work, forbidden)
-            launch_env = _sandbox_env(name)
+        if outer:
+            cmd = bwrap_command(cmd, binary, work, forbidden, home)
+            launch_env = _sandbox_env()
         out_path = os.path.join(out_dir, name + ".md")
         err_path = os.path.join(out_dir, name + ".err")
         try:
