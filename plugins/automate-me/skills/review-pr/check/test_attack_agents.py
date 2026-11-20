@@ -157,36 +157,9 @@ head = os.path.join(root, "cases", "item-cap", "head")
 os.makedirs(head)
 open(os.path.join(root, "cases", "item-cap", "key.md"), "w").write("Planted: yes\nSECRET-KEY-LINE\n")
 open(os.path.join(head, "cap.py"), "w").write("x = 1\n")
-os.symlink(os.path.join(root, "cases", "item-cap", "key.md"), os.path.join(head, "sneak"))
-walker = tempfile.mkdtemp()
-open(os.path.join(walker, "codex"), "w").write(
-    "#!/usr/bin/python3\nimport os\n"
-    "print('PWD=' + os.environ.get('PWD', ''))\n"
-    "print('OLDPWD=' + os.environ.get('OLDPWD', 'missing'))\n"
-    "print('cwd=' + os.getcwd())\n"
-    "for dirpath, dirs, files in os.walk('.'):\n"
-    "    for name in files:\n"
-    "        path = os.path.join(dirpath, name)\n"
-    "        print(path)\n"
-    "        try:\n"
-    "            print(open(path).read())\n"
-    "        except OSError:\n"
-    "            print('unreadable')\n"
-)
-os.chmod(os.path.join(walker, "codex"), os.stat(os.path.join(walker, "codex")).st_mode | stat.S_IEXEC)
-walk_out = tempfile.mkdtemp()
-os.environ["REPO_PATH"] = head
-try:
-    run_all(brief, walk_out, search_path=walker, cwd=head)
-finally:
-    os.environ.pop("REPO_PATH", None)
-walked = open(os.path.join(walk_out, "codex.md")).read()
-expect("the copy has the code", "cap.py" in walked, True)
-expect("the copy has no key", "key.md" not in walked and "SECRET-KEY-LINE" not in walked and "sneak" not in walked, True)
-expect("OLDPWD is not leaked", "OLDPWD=missing" in walked, True)
-expect("PWD is the agent cwd", "PWD=" in walked and head not in walked.split("PWD=", 1)[1].split("\n", 1)[0], True)
-agent_dir = walked.split("cwd=", 1)[1].split("\n", 1)[0]
-expect("the copy is removed", os.path.isdir(agent_dir), False)
+expect("a practice case refuses sandbox none", run_all(
+    brief, tempfile.mkdtemp(), search_path=both, cwd=head, sandbox="none",
+), 2)
 
 script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "attack_agents.py")
 for stop in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGQUIT):

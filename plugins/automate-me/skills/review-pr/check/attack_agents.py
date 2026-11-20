@@ -1,7 +1,7 @@
 """Find codex and claude on PATH and run one headless pass with each.
 
 Usage: python3 attack_agents.py
-       python3 attack_agents.py --run --brief <file> --out <dir> [--cwd <dir>] [--timeout <seconds>]
+       python3 attack_agents.py --run --brief <file> --out <dir> [--cwd <dir>] [--timeout <seconds>] [--sandbox auto|bwrap|docker|none]
 
 Prints one name per line, codex then claude. Prints `none` when neither
 binary is on PATH. --run writes <dir>/<name>.md and <dir>/<name>.err.
@@ -23,6 +23,16 @@ import tempfile
 NAMES = ("codex", "claude")
 OWNED = ("codex.md", "claude.md", "codex.err", "claude.err")
 DEFAULT_TIMEOUT = 600
+SANDBOXES = ("auto", "bwrap", "docker", "none")
+ENV_ALLOW = (
+    "OPENAI_API_KEY", "CODEX_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
+    "CLAUDE_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN",
+    "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
+    "AWS_REGION", "AWS_DEFAULT_REGION",
+    "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy",
+    "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE",
+    "NODE_EXTRA_CA_CERTS",
+)
 LIVE = []
 
 
@@ -162,16 +172,127 @@ def agent_cwd(cwd):
     if not root:
         return cwd, False
     temp = tempfile.mkdtemp(prefix="attack-cwd-")
-    real = os.path.realpath(cwd)
-    if os.path.basename(real) in ("head", "base") and os.path.dirname(real) == root:
-        _copy_tree(real, temp, real)
-    else:
-        for name in ("head", "base"):
-            src = os.path.join(root, name)
-            if os.path.isdir(src):
-                _copy_tree(src, os.path.join(temp, name), src)
-    print("warning: agents run outside the case so they cannot read key.md", file=sys.stderr)
+    for name in ("head", "base"):
+        src = os.path.join(root, name)
+        if os.path.isdir(src):
+            _copy_tree(src, os.path.join(temp, name), src)
     return temp, True
+
+
+def _exposes(path, forbidden):
+    """True when binding this path would show a forbidden tree or sit inside one."""
+    try:
+        real = os.path.realpath(path)
+    except OSError:
+        return True
+    for item in forbidden:
+        if not item:
+            continue
+        try:
+            bad = os.path.realpath(item)
+        except OSError:
+            continue
+        if real == bad or real.startswith(bad + os.sep) or bad.startswith(real + os.sep):
+            return True
+    return False
+
+
+def resolve_sandbox(choice):
+    """auto, bwrap, docker, none, missing, or bad. Only bwrap is a real backend."""
+    choice = (choice or "auto").strip().lower()
+    if choice not in SANDBOXES:
+        return "bad"
+    if choice == "none":
+        return "none"
+    if choice == "docker":
+        return "docker"
+    if choice == "bwrap":
+        return "bwrap" if shutil.which("bwrap") else "missing"
+    if shutil.which("bwrap"):
+        return "bwrap"
+    return "missing"
+
+
+def _sandbox_env(name):
+    """The only environment the agent gets inside the sandbox."""
+    env = {
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "HOME": "/home/agent",
+        "PWD": "/work",
+        "LANG": os.environ.get("LANG") or "C.UTF-8",
+        "TERM": os.environ.get("TERM") or "dumb",
+    }
+    for key in ENV_ALLOW:
+        if os.environ.get(key):
+            env[key] = os.environ[key]
+    return env
+
+
+def _auth_paths(name, binary):
+    """The CLI file and its auth dir. A path that would reveal the case is left out."""
+    home = os.path.expanduser("~")
+    paths = [os.path.realpath(binary)]
+    if os.path.abspath(binary) != os.path.realpath(binary):
+        paths.append(os.path.abspath(binary))
+    if name == "codex":
+        paths.append(os.path.join(home, ".codex"))
+    if name == "claude":
+        paths.append(os.path.join(home, ".claude"))
+        paths.append(os.path.join(home, ".local", "share", "claude"))
+        real = os.path.realpath(binary)
+        parts = real.split(os.sep)
+        if "claude" in parts:
+            index = len(parts) - 1 - parts[::-1].index("claude")
+            paths.append(os.sep.join(parts[:index + 1]))
+    return [path for path in paths if path and os.path.exists(path)]
+
+
+def _ro_bind(argv, src, dest, seen_dirs, forbidden):
+    if not os.path.exists(src) or _exposes(src, forbidden):
+        return
+    parent = os.path.dirname(dest)
+    chain = []
+    while parent and parent != "/":
+        chain.append(parent)
+        parent = os.path.dirname(parent)
+    for directory in reversed(chain):
+        if directory not in seen_dirs:
+            argv += ["--dir", directory]
+            seen_dirs.add(directory)
+    argv += ["--ro-bind", src, dest]
+
+
+def bwrap_command(cmd, binary, name, work, forbidden):
+    """Argv that runs cmd with only system dirs and /work visible."""
+    tool = shutil.which("bwrap") or "bwrap"
+    argv = [
+        tool,
+        "--unshare-all", "--share-net", "--die-with-parent", "--new-session",
+        "--tmpfs", "/",
+    ]
+    for path in ("/usr", "/lib", "/lib64", "/bin"):
+        if os.path.exists(path) and not _exposes(path, forbidden):
+            argv += ["--ro-bind", path, path]
+    argv += ["--dir", "/etc"]
+    for path in (
+        "/etc/resolv.conf", "/etc/hosts", "/etc/passwd", "/etc/group", "/etc/nsswitch.conf",
+        "/etc/ssl", "/etc/ssl/certs", "/etc/ca-certificates", "/etc/pki",
+    ):
+        if os.path.exists(path) and not _exposes(path, forbidden):
+            argv += ["--ro-bind", path, path]
+    argv += ["--proc", "/proc", "--dev", "/dev"]
+    argv += ["--bind", work, "/work", "--chdir", "/work"]
+    argv += ["--tmpfs", "/home", "--dir", "/home/agent"]
+    seen = {"/", "/etc", "/home", "/home/agent", "/work"}
+    for path in _auth_paths(name, binary):
+        if path == os.path.realpath(work) or _inside(path, work):
+            continue
+        _ro_bind(argv, path, path, seen, forbidden)
+    argv += ["--clearenv"]
+    for key, value in _sandbox_env(name).items():
+        argv += ["--setenv", key, value]
+    argv += cmd
+    return argv
 
 
 def _agent_env(work, hide):
@@ -248,7 +369,7 @@ def _run_one(cmd, brief, work, timeout, env):
             LIVE.remove(proc)
 
 
-def run_all(brief_path, out_dir, search_path=None, runner=None, timeout=DEFAULT_TIMEOUT, cwd=None):
+def run_all(brief_path, out_dir, search_path=None, runner=None, timeout=DEFAULT_TIMEOUT, cwd=None, sandbox="auto"):
     """Run each detected CLI. Returns 0, or 1 when a CLI exits non-zero or times out."""
     for name in OWNED:
         if _same(brief_path, os.path.join(out_dir, name)):
@@ -267,11 +388,27 @@ def run_all(brief_path, out_dir, search_path=None, runner=None, timeout=DEFAULT_
         return 2
     brief = contract_bytes() + b"\n" + brief_body
     origin = cwd if cwd is not None else os.getcwd()
+    chosen = resolve_sandbox(sandbox)
+    if chosen == "bad":
+        print((__doc__ or "").strip(), file=sys.stderr)
+        return 2
+    planted = _case_root(origin) is not None
+    if (sandbox or "auto") == "auto" and not planted:
+        chosen = "none"
+    if chosen == "docker":
+        print("error: the docker sandbox is not implemented. bwrap is the reference.", file=sys.stderr)
+        chosen = "missing" if planted else "none"
+    if planted and chosen != "bwrap":
+        print("error: a practice case needs bwrap. Refusing to run without a sandbox.", file=sys.stderr)
+        return 2
+    if chosen != "bwrap":
+        print("warning: running unsandboxed. There is no practice key to hide.", file=sys.stderr)
+        chosen = "none"
     work, made = agent_cwd(origin)
     env = _agent_env(work, [origin, _case_root(origin)])
     previous = {sig: signal.signal(sig, _on_stop) for sig in _stop_signals()}
     try:
-        return _run_found(found, brief, work, out_dir, runner, timeout, env)
+        return _run_found(found, brief, work, out_dir, runner, timeout, env, chosen, origin)
     finally:
         _kill_live()
         for sig, old in previous.items():
@@ -280,10 +417,15 @@ def run_all(brief_path, out_dir, search_path=None, runner=None, timeout=DEFAULT_
             shutil.rmtree(work, ignore_errors=True)
 
 
-def _run_found(found, brief, work, out_dir, runner, timeout, env):
+def _run_found(found, brief, work, out_dir, runner, timeout, env, sandbox_name, origin):
     failed = 0
+    forbidden = [origin, _case_root(origin)]
     for name, binary in found:
         cmd = command(binary, name)
+        launch_env = env
+        if sandbox_name == "bwrap":
+            cmd = bwrap_command(cmd, binary, name, work, forbidden)
+            launch_env = _sandbox_env(name)
         out_path = os.path.join(out_dir, name + ".md")
         err_path = os.path.join(out_dir, name + ".err")
         try:
@@ -292,7 +434,7 @@ def _run_found(found, brief, work, out_dir, runner, timeout, env):
                 code = getattr(result, "returncode", 1)
                 stdout, stderr = getattr(result, "stdout", "") or "", getattr(result, "stderr", "") or ""
             else:
-                code, stdout, stderr = _run_one(cmd, brief, work, timeout, env)
+                code, stdout, stderr = _run_one(cmd, brief, work, timeout, launch_env)
         except subprocess.TimeoutExpired as exc:
             failed = 1
             open(err_path, "w").write(as_text(exc.stderr) + f"\ntimed out after {timeout}s\n")
@@ -324,14 +466,14 @@ def _main(argv):
         names = [name for name, _binary in detect()]
         print("\n".join(names) if names else "none")
         return 0
-    known = {"--run", "--brief", "--out", "--cwd", "--timeout", "--help", "-h"}
+    known = {"--run", "--brief", "--out", "--cwd", "--timeout", "--sandbox", "--help", "-h"}
     if any(arg.startswith("--") and arg not in known for arg in argv[1:]):
         print((__doc__ or "").strip(), file=sys.stderr)
         return 2
     if "--brief" not in argv or "--out" not in argv:
         print((__doc__ or "").strip(), file=sys.stderr)
         return 2
-    if any(argv[1:].count(flag) > 1 for flag in ("--brief", "--out", "--cwd", "--timeout")):
+    if any(argv[1:].count(flag) > 1 for flag in ("--brief", "--out", "--cwd", "--timeout", "--sandbox")):
         print((__doc__ or "").strip(), file=sys.stderr)
         return 2
 
@@ -350,6 +492,9 @@ def _main(argv):
     if "--cwd" in argv and cwd is None:
         return 2
     timeout = DEFAULT_TIMEOUT
+    sandbox = _value("--sandbox") if "--sandbox" in argv else "auto"
+    if "--sandbox" in argv and sandbox is None:
+        return 2
     if "--timeout" in argv:
         try:
             timeout = float(argv[argv.index("--timeout") + 1])
@@ -359,7 +504,7 @@ def _main(argv):
         if timeout <= 0:
             print("timeout must be a positive number of seconds", file=sys.stderr)
             return 2
-    return run_all(brief, out, timeout=timeout, cwd=cwd)
+    return run_all(brief, out, timeout=timeout, cwd=cwd, sandbox=sandbox)
 
 
 def main(argv):
