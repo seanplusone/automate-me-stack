@@ -8,7 +8,7 @@ Fails when:
 - a shared/skills/<name>/SKILL.md has no description, or its name is not <name>;
 - a command that runs a script (`python3`, `python`, `sh` or `bash` then a path ending in .py or .sh) does not write the path as "$SKILL_DIR"/<path>;
 - that path, with $SKILL_DIR set to the file's skill folder, is not a file.
-Practice cases and README.md files are skipped. A README.md is a maintainer doc that runs from the skills folder. Prints PASS or FAIL and exits 1 on FAIL.
+Practice cases, README.md files, and anything under node_modules are skipped. A README.md is a maintainer doc that runs from the skills folder. Prints PASS or FAIL and exits 1 on FAIL.
 """
 import glob
 import os
@@ -85,8 +85,10 @@ def check_frontmatter(skills):
 
 
 def check_shared(skills):
-    files = sorted(os.path.relpath(f, skills) for f in glob.glob(os.path.join(skills, "**", "*.md"), recursive=True)
-                   if f"{os.sep}cases{os.sep}" not in f)
+    files = sorted(
+        os.path.relpath(f, skills) for f in glob.glob(os.path.join(skills, "**", "*.md"), recursive=True)
+        if f"{os.sep}cases{os.sep}" not in f and f"{os.sep}node_modules{os.sep}" not in f
+    )
     fails = check_paths(skills, files) + check_script_paths(skills, files) + check_no_callers(skills, files) + check_frontmatter(skills)
     report(f"shared: {len(files)} files checked", fails)
     return fails
