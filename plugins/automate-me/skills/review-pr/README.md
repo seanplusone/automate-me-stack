@@ -6,7 +6,7 @@ Reviews one PR, or a set of linked PRs, and drafts short inline comments with a 
 
 Status: working. The review attacks by default. It re-runs claims and keeps a finding only with a file and line or a breaking input it ran. Five synthetic scored cases. `cases/refund-endpoint` and `cases/auth-header` score comment drafts. `cases/trust-report`, `cases/word-score` and `cases/item-cap` each hide one planted bug, and `check/score_case.py` passes only when the attack file catches it. The original comment cases came from real reviews on a production codebase and were replaced with synthetic ones for public release.
 
-A copy of the checkout keeps a practice key out of the agent tree. That copy is not a sandbox. An agent with a shell can still read other files. The planted key is only for scoring a practice case.
+A practice case runs only in a sandbox. `bwrap` is the reference. The agent sees system libraries and the copied `head` and `base`, not the case key. Without `bwrap`, that run is refused. A real pull request has no planted key and may run with a warning. The docker backend is a stub.
 
 ## What keeps it short
 
