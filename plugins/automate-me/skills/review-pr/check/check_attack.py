@@ -70,11 +70,14 @@ def norm_span(file, line):
     """(path, start, end). start is None when the finding names no line."""
     if file is None:
         return "", None, None
-    text = str(file).strip().replace("\\", "/")
-    text = text.strip("`\"' \t")
+    text = str(file).strip().replace("\\", "/").replace("`", "")
+    text = text.strip("\"' \t")
     if text.lower() in ("", "none", "null"):
         return "", None, None
     text = re.sub(r"^[A-Za-z]:", "", text)
+    symbol = re.search(r"::[A-Za-z_][\w.]*\s*$", text)
+    if symbol:
+        text = text[:symbol.start()]
     embedded = None
     hashed = re.search(r"#L(\d+)(?:-L?(\d+))?\s*$", text, re.I)
     if hashed:
@@ -112,6 +115,8 @@ def norm_span(file, line):
         elif part == "cases" and index + 1 < len(parts):
             cut = index + 2
     path = "/".join(parts[cut:])
+    if embedded and embedded[0] != embedded[1]:
+        return path, embedded[0], embedded[1]
     given = _explicit_line(line)
     if given is not None:
         return path, given, given
@@ -249,6 +254,28 @@ def _line_ok(value):
     return True
 
 
+def _coerce(data):
+    """Fold verdict case and accept a numeric line written as a string."""
+    if not isinstance(data, dict):
+        return
+    verdict = data.get("verdict")
+    if isinstance(verdict, str):
+        folded = verdict.strip().lower()
+        if folded in ("approve", "needs fixes"):
+            data["verdict"] = folded
+    findings = data.get("findings")
+    if not isinstance(findings, list):
+        return
+    for item in findings:
+        if not isinstance(item, dict):
+            continue
+        line = item.get("line")
+        if isinstance(line, str) and re.fullmatch(r"\d+", line.strip()):
+            number = int(line.strip())
+            if 0 <= number <= MAX_LINE:
+                item["line"] = number
+
+
 def _schema_error(data):
     if not isinstance(data, dict) or not {"verdict", "tried", "findings"} <= set(data):
         return "schema keys"
@@ -291,12 +318,15 @@ def parse_attack(path):
     }
     try:
         text = open(path, "rb").read().decode("utf-8")
-    except FileNotFoundError:
+    except (FileNotFoundError, IsADirectoryError, OSError):
         doc["errors"].append("missing pass")
         return doc
     except UnicodeDecodeError:
         doc["errors"].append("file is not UTF-8")
         return doc
+    if text.startswith("\ufeff"):
+        text = text[1:]
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     if not text.strip():
         doc["errors"].append("unparseable output")
         return doc
@@ -306,6 +336,7 @@ def parse_attack(path):
         return doc
     try:
         data = json.loads(raw, object_pairs_hook=_pairs)
+        _coerce(data)
         problem = _schema_error(data)
     except (json.JSONDecodeError, ValueError, OverflowError):
         doc["errors"].append("invalid json")
@@ -372,7 +403,7 @@ def check_attack(path, key_path=None):
     return fails
 
 
-def main(argv):
+def _main(argv):
     from cli import usage_or_exit
     if any(arg in ("-h", "--help") for arg in argv[1:]):
         print((__doc__ or "").strip())
@@ -401,6 +432,16 @@ def main(argv):
     for item in fails:
         print(f"  {item}")
     return 1 if fails else 0
+
+
+def main(argv):
+    try:
+        return _main(argv)
+    except SystemExit:
+        raise
+    except Exception:
+        print((__doc__ or "").strip(), file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

@@ -87,6 +87,48 @@ def matches(finding, want):
     return start <= span[2] + 2 and end >= span[1] - 2
 
 
+def _symbol_only(finding):
+    """A file::symbol suffix names the file and leaves the line to the judge."""
+    if "::" not in str(finding.get("file") or ""):
+        return False
+    try:
+        _path, start, _end = finding_span(finding)
+    except ValueError:
+        return False
+    return start is None
+
+
+def _for_judge(finding, want):
+    if not _symbol_only(finding):
+        return False
+    try:
+        path, _start, _end = finding_span(finding)
+    except ValueError:
+        return False
+    if not path:
+        return False
+    if not want:
+        return True
+    span = where_span(want)
+    return bool(span and path_suffix(path, span[0]))
+
+
+def _broke_rows(doc):
+    """A break with no finding is evidence for the judge, not a location hit."""
+    rows = []
+    for item in doc.get("tried") or []:
+        if item.get("broke") is not True:
+            continue
+        rows.append({
+            "file": "",
+            "line": None,
+            "claim": item.get("observed") or "",
+            "repro": item.get("input") or "",
+            "observed": item.get("observed") or "",
+        })
+    return rows
+
+
 def repro_mentions(finding, want):
     """An empty file can still name the key file in its repro."""
     try:
@@ -116,9 +158,14 @@ def score_planted(key_path, attack_path, environ=None, runner=None):
         print("FAIL missed planted bug")
         return 1
     want = key_where(key_path)
-    located = [finding for finding in doc["findings"] if matches(finding, want)]
+    located = [
+        finding for finding in doc["findings"]
+        if matches(finding, want) and not _symbol_only(finding)
+    ]
+    symbols = [finding for finding in doc["findings"] if _for_judge(finding, want)]
     mentioned = [finding for finding in doc["findings"] if repro_mentions(finding, want)]
-    usable = located + [finding for finding in mentioned if finding not in located]
+    broke_rows = _broke_rows(doc) if not doc["findings"] else []
+    usable = located + symbols + mentioned + broke_rows
     if not usable:
         print("FAIL missed planted bug")
         return 1
@@ -169,6 +216,12 @@ def score(key_path, drafts_path, environ=None, runner=None):
 
 
 if __name__ == "__main__":
-    from cli import usage_or_exit
-    usage_or_exit(__doc__, sys.argv, 2)
-    sys.exit(score(sys.argv[1], sys.argv[2]))
+    try:
+        from cli import usage_or_exit
+        usage_or_exit(__doc__, sys.argv, 2)
+        sys.exit(score(sys.argv[1], sys.argv[2]))
+    except SystemExit:
+        raise
+    except Exception:
+        print((__doc__ or "").strip(), file=sys.stderr)
+        sys.exit(2)

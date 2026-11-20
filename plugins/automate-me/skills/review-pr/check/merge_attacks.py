@@ -161,7 +161,7 @@ def render(doc):
     return "\n".join(lines)
 
 
-def main(argv):
+def _main(argv):
     if any(arg in ("-h", "--help") for arg in argv[1:]):
         print((__doc__ or "").strip())
         return 0
@@ -174,10 +174,7 @@ def main(argv):
         elif arg == "--":
             ended = True
         elif arg == "--out":
-            if out is not None:
-                print("repeated --out", file=sys.stderr)
-                return 2
-            if index + 1 >= len(argv):
+            if out is not None or index + 1 >= len(argv) or argv[index + 1].startswith("--"):
                 print((__doc__ or "").strip(), file=sys.stderr)
                 return 2
             out = argv[index + 1]
@@ -220,6 +217,16 @@ def main(argv):
             print(f"  {item}")
     print(f"wrote {out}")
     return 0
+
+
+def main(argv):
+    try:
+        return _main(argv)
+    except SystemExit:
+        raise
+    except Exception:
+        print((__doc__ or "").strip(), file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

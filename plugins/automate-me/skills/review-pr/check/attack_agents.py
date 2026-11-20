@@ -75,8 +75,32 @@ def _kill_live():
         _kill_group(proc)
 
 
+def _stop_signals():
+    found = []
+    for name in ("SIGTERM", "SIGINT", "SIGHUP", "SIGQUIT"):
+        sig = getattr(signal, name, None)
+        if sig is not None:
+            found.append(sig)
+    return found
+
+
+def _preexec():
+    """On Linux, die if the parent dies, including when the parent is SIGKILL'd."""
+    if sys.platform != "linux":
+        return
+    try:
+        import ctypes
+        libc = ctypes.CDLL(None, use_errno=True)
+        if libc.prctl(1, int(signal.SIGKILL)) != 0:
+            return
+        if os.getppid() == 1:
+            os.kill(os.getpid(), signal.SIGKILL)
+    except Exception:
+        return
+
+
 def _on_stop(signum, _frame):
-    """SIGTERM and SIGINT kill the agent group, then this process exits."""
+    """Stop signals kill the agent group, then this process exits."""
     _kill_live()
     raise SystemExit(128 + signum)
 
@@ -104,31 +128,72 @@ def _case_root(path):
         directory = parent
 
 
+def _inside(path, root):
+    try:
+        target = os.path.realpath(path)
+        base = os.path.realpath(root)
+    except OSError:
+        return False
+    return target == base or target.startswith(base + os.sep)
+
+
+def _copy_tree(src, dst, root):
+    """Copy a tree. A symlink that points outside the tree is skipped."""
+    os.makedirs(dst, exist_ok=True)
+    for name in os.listdir(src):
+        if name == "key.md":
+            continue
+        source = os.path.join(src, name)
+        target = os.path.join(dst, name)
+        if os.path.islink(source):
+            if not _inside(source, root):
+                continue
+            os.symlink(os.readlink(source), target)
+            continue
+        if os.path.isdir(source):
+            _copy_tree(source, target, root)
+            continue
+        shutil.copy2(source, target, follow_symlinks=False)
+
+
 def agent_cwd(cwd):
-    """A copy of the checkout when cwd is a planted case. The key stays out."""
+    """(directory, created). A planted case is copied so the key stays out."""
     root = _case_root(cwd)
     if not root:
-        return cwd
+        return cwd, False
     temp = tempfile.mkdtemp(prefix="attack-cwd-")
     real = os.path.realpath(cwd)
     if os.path.basename(real) in ("head", "base") and os.path.dirname(real) == root:
-        source = real
-        for name in os.listdir(source):
-            if name == "key.md":
-                continue
-            src = os.path.join(source, name)
-            dst = os.path.join(temp, name)
-            if os.path.isdir(src):
-                shutil.copytree(src, dst, symlinks=True)
-            else:
-                shutil.copy2(src, dst, follow_symlinks=True)
+        _copy_tree(real, temp, real)
     else:
         for name in ("head", "base"):
             src = os.path.join(root, name)
             if os.path.isdir(src):
-                shutil.copytree(src, os.path.join(temp, name), symlinks=True)
+                _copy_tree(src, os.path.join(temp, name), src)
     print("warning: agents run outside the case so they cannot read key.md", file=sys.stderr)
-    return temp
+    return temp, True
+
+
+def _agent_env(work, hide):
+    """PWD is the agent directory. Drop OLDPWD and any value that names a hidden path."""
+    hidden = []
+    for path in hide:
+        if not path:
+            continue
+        hidden.append(os.path.abspath(path))
+        try:
+            hidden.append(os.path.realpath(path))
+        except OSError:
+            pass
+    env = {}
+    for key, value in os.environ.items():
+        if key in ("OLDPWD", "PWD"):
+            continue
+        if any(item and item in str(value) for item in hidden):
+            continue
+        env[key] = value
+    env["PWD"] = os.path.abspath(work)
+    return env
 def command(binary, name):
     """Argv for one CLI. The brief is not included. It goes on stdin."""
     if name == "codex":
@@ -162,11 +227,11 @@ def detect(search_path=None):
     return found
 
 
-def _run_one(cmd, brief, work, timeout):
-    """(returncode, stdout, stderr). The child is its own process group."""
+def _run_one(cmd, brief, work, timeout, env):
+    """(returncode, stdout, stderr). The child dies with this process, and its group is killable."""
     proc = subprocess.Popen(
         cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        cwd=work, start_new_session=True,
+        cwd=work, env=env, start_new_session=True, preexec_fn=_preexec,
     )
     LIVE.append(proc)
     try:
@@ -201,20 +266,21 @@ def run_all(brief_path, out_dir, search_path=None, runner=None, timeout=DEFAULT_
         print("brief: missing file", file=sys.stderr)
         return 2
     brief = contract_bytes() + b"\n" + brief_body
-    work = agent_cwd(cwd if cwd is not None else os.getcwd())
-    previous = {
-        signal.SIGTERM: signal.signal(signal.SIGTERM, _on_stop),
-        signal.SIGINT: signal.signal(signal.SIGINT, _on_stop),
-    }
+    origin = cwd if cwd is not None else os.getcwd()
+    work, made = agent_cwd(origin)
+    env = _agent_env(work, [origin, _case_root(origin)])
+    previous = {sig: signal.signal(sig, _on_stop) for sig in _stop_signals()}
     try:
-        return _run_found(found, brief, work, out_dir, runner, timeout)
+        return _run_found(found, brief, work, out_dir, runner, timeout, env)
     finally:
         _kill_live()
         for sig, old in previous.items():
             signal.signal(sig, old)
+        if made:
+            shutil.rmtree(work, ignore_errors=True)
 
 
-def _run_found(found, brief, work, out_dir, runner, timeout):
+def _run_found(found, brief, work, out_dir, runner, timeout, env):
     failed = 0
     for name, binary in found:
         cmd = command(binary, name)
@@ -226,7 +292,7 @@ def _run_found(found, brief, work, out_dir, runner, timeout):
                 code = getattr(result, "returncode", 1)
                 stdout, stderr = getattr(result, "stdout", "") or "", getattr(result, "stderr", "") or ""
             else:
-                code, stdout, stderr = _run_one(cmd, brief, work, timeout)
+                code, stdout, stderr = _run_one(cmd, brief, work, timeout, env)
         except subprocess.TimeoutExpired as exc:
             failed = 1
             open(err_path, "w").write(as_text(exc.stderr) + f"\ntimed out after {timeout}s\n")
@@ -250,7 +316,7 @@ def _run_found(found, brief, work, out_dir, runner, timeout):
     return failed
 
 
-def main(argv):
+def _main(argv):
     if any(a in ("-h", "--help") for a in argv[1:]):
         print((__doc__ or "").strip())
         return 0
@@ -266,7 +332,7 @@ def main(argv):
         print((__doc__ or "").strip(), file=sys.stderr)
         return 2
     if any(argv[1:].count(flag) > 1 for flag in ("--brief", "--out", "--cwd", "--timeout")):
-        print("repeated option", file=sys.stderr)
+        print((__doc__ or "").strip(), file=sys.stderr)
         return 2
 
     def _value(flag):
@@ -294,6 +360,16 @@ def main(argv):
             print("timeout must be a positive number of seconds", file=sys.stderr)
             return 2
     return run_all(brief, out, timeout=timeout, cwd=cwd)
+
+
+def main(argv):
+    try:
+        return _main(argv)
+    except SystemExit:
+        raise
+    except Exception:
+        print((__doc__ or "").strip(), file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

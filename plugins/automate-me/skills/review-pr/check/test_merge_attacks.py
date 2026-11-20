@@ -106,6 +106,12 @@ ran = subprocess.run(
     capture_output=True, text=True,
 )
 expect("help exits 0", ran.returncode, 0)
+bad_out = subprocess.run(
+    [sys.executable, os.path.join(HERE, "merge_attacks.py"), "--out", "--out", "file.md"],
+    capture_output=True, text=True,
+)
+expect("a doubled out is usage", bad_out.returncode, 2)
+expect("a doubled out has no traceback", "Traceback" not in bad_out.stderr, True)
 
 if __name__ == "__main__":
     for item in FAILS:

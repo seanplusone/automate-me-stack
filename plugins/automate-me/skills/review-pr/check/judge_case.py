@@ -115,21 +115,71 @@ def _timeout(timeout):
     return float(raw)
 
 
-def run_cli(argv, prompt, timeout):
-    proc = subprocess.Popen(
-        argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True, start_new_session=True,
-    )
+LIVE = []
+
+
+def _preexec():
+    """On Linux, die if the parent dies, including when the parent is SIGKILL'd."""
+    if sys.platform != "linux":
+        return
     try:
-        stdout, _stderr = proc.communicate(prompt, timeout=timeout)
-    except subprocess.TimeoutExpired:
+        import ctypes
+        libc = ctypes.CDLL(None, use_errno=True)
+        if libc.prctl(1, int(signal.SIGKILL)) != 0:
+            return
+        if os.getppid() == 1:
+            os.kill(os.getpid(), signal.SIGKILL)
+    except Exception:
+        return
+
+
+def _kill_live():
+    for proc in list(LIVE):
         try:
             os.killpg(proc.pid, signal.SIGKILL)
         except OSError:
-            proc.kill()
-        proc.communicate()
-        raise
-    return proc.returncode, stdout
+            try:
+                proc.kill()
+            except OSError:
+                pass
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+
+
+def _on_stop(signum, _frame):
+    _kill_live()
+    raise SystemExit(128 + signum)
+
+
+def _stop_signals():
+    found = []
+    for name in ("SIGTERM", "SIGINT", "SIGHUP"):
+        sig = getattr(signal, name, None)
+        if sig is not None:
+            found.append(sig)
+    return found
+
+
+def run_cli(argv, prompt, timeout):
+    proc = subprocess.Popen(
+        argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, start_new_session=True, preexec_fn=_preexec,
+    )
+    LIVE.append(proc)
+    try:
+        try:
+            stdout, _stderr = proc.communicate(prompt, timeout=timeout)
+        except BaseException:
+            _kill_live()
+            raise
+        return proc.returncode, stdout
+    finally:
+        if proc.poll() is None:
+            _kill_live()
+        if proc in LIVE:
+            LIVE.remove(proc)
 
 
 def judge(key_path, attack_path, environ=None, runner=None, findings=None, timeout=None):
@@ -141,6 +191,16 @@ def judge(key_path, attack_path, environ=None, runner=None, findings=None, timeo
     if argv is None and runner is None:
         print("SKIP no agent CLI on PATH")
         return 0
+    previous = {sig: signal.signal(sig, _on_stop) for sig in _stop_signals()}
+    try:
+        return _judge_run(key_path, argv, prompt, runner, timeout)
+    finally:
+        _kill_live()
+        for sig, old in previous.items():
+            signal.signal(sig, old)
+
+
+def _judge_run(key_path, argv, prompt, runner, timeout):
     if runner:
         out = runner(prompt)
         if isinstance(out, tuple):
@@ -160,6 +220,9 @@ def judge(key_path, attack_path, environ=None, runner=None, findings=None, timeo
         print("SKIP judge exited non-zero")
         return 2
     ok = parse_verdict(stdout)
+    if ok is None:
+        print("SKIP judge reply")
+        return 2
     if ok is True:
         print("PASS judge caught planted bug")
         return 0
@@ -168,7 +231,13 @@ def judge(key_path, attack_path, environ=None, runner=None, findings=None, timeo
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3 or sys.argv[1] in ("-h", "--help"):
-        print((__doc__ or "").strip())
-        sys.exit(0 if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help") else 2)
-    sys.exit(judge(sys.argv[1], sys.argv[2]))
+    try:
+        if len(sys.argv) != 3 or sys.argv[1] in ("-h", "--help"):
+            print((__doc__ or "").strip())
+            sys.exit(0 if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help") else 2)
+        sys.exit(judge(sys.argv[1], sys.argv[2]))
+    except SystemExit:
+        raise
+    except Exception:
+        print((__doc__ or "").strip(), file=sys.stderr)
+        sys.exit(2)
