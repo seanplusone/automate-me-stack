@@ -3,13 +3,11 @@
 Usage: python3 score_case.py <cases/<name>/key.md> <review.md>
 Exits 1 if any key finding is missed.
 
-A key with a line `Planted: yes` scores an attack file. Quotes, backticks and
-case are ignored. It passes when a finding on the key's file and line contains every `Catch:`
-term. A term written `a/b` matches either side. A finding on another file
-does not count. When the terms miss, `judge_case.py` asks codex or claude,
-with the prompt on stdin. A non-zero judge exit is SKIP, not a pass. Two
-answers for one item fail. With neither CLI it prints SKIP and the keyword
-result stands. Any other key scores a drafts file, below.
+A key with a line `Planted: yes` scores an attack file. A finding matches when
+its file matches and its line is inside the key span, plus or minus 2, or its
+line is null and it has a repro. The judge then decides, and only those
+findings are sent. With no CLI the keyword floor is the fallback. It prints
+SKIP, and a denial does not pass. Any other key scores a drafts file, below.
 
 A key row is `| <id> | <pr> | <path prefix> | <line or -> | <finding> | <min sites or -> | <proof> |`.
 A finding is found when the drafts carry a comment in that PR on a path that starts with the
@@ -27,7 +25,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from check_attack import catch_terms, has_location, has_repro, norm_where, parse_attack, planted_bug, soften  # noqa: E402
+from check_attack import catch_terms, norm_location, parse_attack, planted_bug, soften, where_span  # noqa: E402
 from check_drafts import parse  # noqa: E402
 
 ROW = re.compile(r"^\| (K\d+) \| (\S+#\d+) \| `?([^|`]+?)`? \| (\d+|-) \| [^|]+ \| (\d+|-) \| [^|]* \|$")
@@ -67,9 +65,7 @@ def term_hit(term, text):
 
 
 def finding_text(finding):
-    return " ".join(
-        [finding["where"], " ".join(finding["claim"]), finding["repro"], finding["observed"]]
-    )
+    return " ".join([finding.get("file") or "", finding.get("claim") or "", finding.get("repro") or ""])
 
 
 def key_where(path):
@@ -80,34 +76,20 @@ def key_where(path):
     return ""
 
 
-WINDOW = 2
 DENIAL = re.compile(r"\b(?:not a bug|no bug|does not|doesn't|do not|false alarm)\b", re.I)
 
 
-def where_span(text):
-    """(path, first line, last line) for `file:4` or `file:3-4`."""
-    match = re.match(r"^(.*?):(\d+)(?:-(\d+))?$", text.strip().strip("`"))
-    if not match:
-        return None
-    start, end = int(match.group(2)), int(match.group(3) or match.group(2))
-    if end < start:
-        start, end = end, start
-    located = norm_where(f"{match.group(1)}:{start}")
-    if not located:
-        return None
-    return located[0], start, end
-
-
-def on_key_line(finding, want):
-    """True when the key names no line, or the finding is within 2 lines of that span."""
+def matches(finding, want):
+    """File and line inside the key span, or a null line that still has a repro."""
+    path, line = norm_location(finding.get("file"), finding.get("line"))
+    if line is None:
+        return bool((finding.get("repro") or "").strip())
     if not want:
         return True
     span = where_span(want)
-    got = norm_where(finding["where"])
-    if not span or not got or got[0] != span[0]:
+    if not span or path != span[0]:
         return False
-    line = int(got[1])
-    return span[1] - WINDOW <= line <= span[2] + WINDOW
+    return span[1] - 2 <= line <= span[2] + 2
 
 
 def denies(text):
@@ -115,38 +97,32 @@ def denies(text):
 
 
 def score_planted(key_path, attack_path, environ=None, runner=None):
-    """Pass when catch terms hit on the key line, or the judge agrees and exits 0."""
+    """The judge decides on matching findings. Keywords run only when the judge is skipped."""
     terms = catch_terms(key_path)
     if not terms:
         print(f"FAIL no Catch terms in {key_path}")
         return 1
     doc = parse_attack(attack_path)
+    if not doc["parsed"]:
+        print("FAIL missed planted bug")
+        return 1
     want = key_where(key_path)
-    caught = None
-    usable = []
-    for finding in doc["findings"]:
-        if not has_location(finding) and not has_repro(finding):
-            continue
-        if not on_key_line(finding, want):
-            continue
-        usable.append(finding)
-        text = finding_text(finding)
-        if all(term_hit(term, text) for term in terms) and not denies(text):
-            caught = finding["id"]
-            break
-    if caught:
-        print(f"{caught} caught")
-        print("PASS caught planted bug")
-        return 0
+    usable = [finding for finding in doc["findings"] if matches(finding, want)]
     if not usable:
         print("FAIL missed planted bug")
         return 1
     from judge_case import find_cli, judge  # noqa: E402
     if runner is None and find_cli(environ) is None:
         print("SKIP no agent CLI on PATH")
+        for finding in usable:
+            text = finding_text(finding)
+            if all(term_hit(term, text) for term in terms) and not denies(text):
+                print("caught")
+                print("PASS caught planted bug")
+                return 0
         print("FAIL missed planted bug")
         return 1
-    if judge(key_path, attack_path, environ=environ, runner=runner) == 0:
+    if judge(key_path, attack_path, environ=environ, runner=runner, findings=usable) == 0:
         return 0
     print("FAIL missed planted bug")
     return 1

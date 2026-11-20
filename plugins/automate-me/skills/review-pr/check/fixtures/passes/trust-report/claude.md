@@ -1,22 +1,19 @@
-# Attack review: report check
-
 Synthetic stand-in for a claude pass. The path includes the case directory.
 
-Verdict: needs fixes
-
-## Tried
-- Input: {'passed': True, 'cases': [{'name': 'a', 'ok': False}]}
-  Observed: True
-  Broke: Yes
-- Input: {}
-  Observed: False
-  Broke: no
-
-## Findings
-### F1 | cases/trust-report/head/report.py:4 | passes: claude
-The summary field is trusted, so a failed case is accepted.
-Repro: passed true with ok false
-Observed: True
-
-## Held
-The empty report was rejected. Input {} observed False.
+```json
+{
+  "verdict": "needs fixes",
+  "tried": [
+    {"input": "{'passed': True, 'ok': False}", "broke": true, "observed": "True"},
+    {"input": "{}", "broke": false, "observed": "False"}
+  ],
+  "findings": [
+    {
+      "file": "cases/trust-report/head/report.py",
+      "line": 3,
+      "claim": "The summary field is trusted, so a failed case is accepted.",
+      "repro": "passed true with ok false"
+    }
+  ]
+}
+```

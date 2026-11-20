@@ -1,72 +1,88 @@
 """Run: python3 check/test_merge_fixtures.py
 
-Fixtures stand in for two agent passes on the planted cases. Paths differ
-on purpose (head/cap.py vs cap.py). The merge must keep each planted bug.
+Merges the JSON fixture passes and checks the verdict against each key.
 """
 import os
+import subprocess
 import sys
-
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import tempfile
 
-from check_attack import check_attack, norm_where  # noqa: E402
-from merge_attacks import merge, render  # noqa: E402
-
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.join(HERE, "fixtures", "passes")
+SKILL = os.path.dirname(HERE)
+sys.path.insert(0, HERE)
+from check_attack import norm_location, parse_attack  # noqa: E402
+
 FAILS = []
-PLANTED = {
-    "item-cap": ("cap.py", "3"),
-    "trust-report": ("report.py", "4"),
-    "word-score": ("score_review.py", "6"),
-}
+CHECKS = []
+CASES = ("item-cap", "trust-report", "word-score")
+LINES = {"item-cap": ("cap.py", 3), "trust-report": ("report.py", 4), "word-score": ("score_review.py", 6)}
 
 
 def expect(name, got, want):
+    CHECKS.append(name)
     if got != want:
         FAILS.append(f"{name}: wanted {want!r}, got {got!r}")
 
 
-def paths(case):
-    folder = os.path.join(ROOT, case)
-    return [os.path.join(folder, name) for name in ("codex.md", "claude.md")]
+def run(args):
+    return subprocess.run(
+        [sys.executable, os.path.join(HERE, "merge_attacks.py")] + args,
+        capture_output=True, text=True,
+    )
 
 
-for case, where in PLANTED.items():
-    doc = merge(paths(case))
-    expect(case + " needs fixes", doc["verdict"], "needs fixes")
-    kept = [norm_where(f["where"]) for f in doc["findings"]]
-    expect(case + " keeps the planted line", where in kept, True)
-    agents = []
-    for finding in doc["findings"]:
-        if norm_where(finding["where"]) == where:
-            agents = finding["passes"]
-    expect(case + " keeps both agents", agents, ["codex", "claude"])
-
-raw_cap = open(os.path.join(ROOT, "item-cap", "codex.md")).read()
-raw_other = open(os.path.join(ROOT, "item-cap", "claude.md")).read()
-expect("fixture paths differ", "head/cap.py:3" in raw_cap and "cap.py:3" in raw_other, True)
-
-clean = merge(paths("clean"))
-expect("a clean pair approves", clean["verdict"], "approve")
-expect("a clean pair has no finding", clean["findings"], [])
-
-garbage = os.path.join(ROOT, "breaks", "garbage.md")
-expect("unparseable output is not an approve", merge([garbage, paths("clean")[0]])["verdict"], "")
-timeout = os.path.join(ROOT, "breaks", "timeout.md")
-late = merge([timeout, paths("item-cap")[0]])
-expect("a timeout keeps the other bug", late["verdict"], "needs fixes")
-expect("a timeout keeps the planted line", norm_where(late["findings"][0]["where"]), ("cap.py", "3"))
-
-for case in list(PLANTED) + ["clean"]:
-    text = render(merge(paths(case)))
+def merged(paths):
     out = os.path.join(tempfile.mkdtemp(), "attack.md")
-    open(out, "w").write(text)
-    expect(case + " merge passes check_attack", check_attack(out), [])
+    ran = run(["--out", out] + paths)
+    expect("merge " + os.path.basename(os.path.dirname(paths[0])), ran.returncode, 0)
+    return parse_attack(out)
+
+
+for case in CASES:
+    folder = os.path.join(HERE, "fixtures", "passes", case)
+    doc = merged([os.path.join(folder, "codex.md"), os.path.join(folder, "claude.md")])
+    expect(case + " needs fixes", doc["verdict"], "needs fixes")
+    want = LINES[case]
+    if case == "trust-report":
+        lines = sorted(item["line"] for item in doc["findings"] if item["file"] == "report.py")
+        expect("trust-report keeps both lines", lines, [3, 4])
+    else:
+        hits = [
+            item for item in doc["findings"]
+            if norm_location(item["file"], item["line"]) == want
+        ]
+        expect(case + " is one finding", len(hits), 1)
+        expect(case + " keeps both claims", " | " in hits[0]["claim"], True)
+    out = os.path.join(tempfile.mkdtemp(), "attack.md")
+    run(["--out", out, os.path.join(folder, "codex.md"), os.path.join(folder, "claude.md")])
+    checked = subprocess.run(
+        [sys.executable, os.path.join(HERE, "check_attack.py"), out,
+         "--key", os.path.join(SKILL, "cases", case, "key.md")],
+        capture_output=True, text=True,
+    )
+    expect(case + " check passes a needs-fixes file", checked.returncode, 0)
+
+clean = os.path.join(HERE, "fixtures", "passes", "clean")
+doc = merged([os.path.join(clean, "codex.md"), os.path.join(clean, "claude.md")])
+expect("two clean passes approve", doc["verdict"], "approve")
+expect("prose about a path is ignored", doc["findings"], [])
+
+ran = run([
+    "--out", os.path.join(tempfile.mkdtemp(), "a.md"),
+    os.path.join(HERE, "fixtures", "passes", "breaks", "garbage.md"),
+    os.path.join(clean, "codex.md"),
+])
+expect("garbage plus clean is not an approve", ran.returncode, 1)
+
+ran = run([
+    "--out", os.path.join(tempfile.mkdtemp(), "a.md"),
+    os.path.join(HERE, "fixtures", "passes", "breaks", "raw-markdown.md"),
+    os.path.join(HERE, "fixtures", "passes", "item-cap", "codex.md"),
+])
+expect("raw markdown plus a bug still merges", ran.returncode, 0)
 
 if __name__ == "__main__":
     for item in FAILS:
         print(f"FAIL {item}")
-    total = 19
-    print(f"{total - len(FAILS)}/{total} passed")
+    print(f"{len(CHECKS) - len(FAILS)}/{len(CHECKS)} passed")
     sys.exit(1 if FAILS else 0)

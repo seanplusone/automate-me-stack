@@ -1,162 +1,141 @@
-"""Dedupe attack passes. A finding from either pass is kept.
+"""Union attack passes that end in a JSON block.
 
-Usage: python3 merge_attacks.py --out <attack.md> <pass.md> [<pass.md> ...]
-Findings match on the file and the line. head/cap.py:3, ./cap.py:3 and
-cap.py:3 are one finding. Wording and repro text do not split them. Both
-passes' evidence is kept. A pass that does not parse is not an empty review:
-the merge does not approve unless every pass parsed and none kept a finding.
-Held lists every tried input that did not break.
+Usage: python3 merge_attacks.py --out <attack.md> [--] <pass.md> [...]
+Findings on the same normalized file and line are one finding. A null line
+is kept on its own and is never dropped. Both passes' claims are kept.
+A merged approve requires every pass to be a valid approve. Invalid JSON
+is an error and is never an approve. A file named --x.md must follow --.
 """
+import json
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from check_attack import classify, has_location, has_repro, norm, norm_where, parse_attack  # noqa: E402
+from check_attack import norm_location, parse_attack  # noqa: E402
 
 
-def finding_key(finding):
-    """Same normalized file and line. With no line, the same repro matches."""
-    loc = norm_where(finding["where"])
-    if loc:
-        return ("where", loc)
-    return ("repro", norm(finding["repro"]))
+def _blank(source):
+    return {
+        "parsed": False, "tried": [], "findings": [], "verdict": "", "stated": "",
+        "source": source, "errors": ["missing pass"],
+    }
 
 
 def merge(paths):
-    """The merged review dict from pass files, in the order they were given."""
+    """The merged review dict. verdict is approve, needs fixes, or "" when it must not approve."""
     docs, errors = [], []
     for path in paths:
         source = os.path.splitext(os.path.basename(path))[0]
         if not os.path.isfile(path):
             errors.append(source + ": missing pass")
-            docs.append({
-                "parsed": False, "tried": [], "findings": [], "verdicts": [],
-                "source": source, "title": "", "findingish": False, "errors": ["missing pass"],
-            })
+            docs.append(_blank(source))
             continue
         doc = parse_attack(path)
         doc["source"] = source
         docs.append(doc)
         if not doc["parsed"]:
             errors.append(source + ": " + (doc["errors"][0] if doc["errors"] else "unparseable output"))
-    groups, order = {}, []
-    for doc in docs:
-        if not doc["parsed"]:
-            continue
-        for finding in doc["findings"]:
-            if not finding["passes"]:
-                finding["passes"] = [doc["source"]]
-            if not finding.get("raw") and not has_location(finding) and not has_repro(finding):
-                continue
-            key = finding_key(finding)
-            if key not in groups:
-                groups[key] = []
-                order.append(key)
-            groups[key].append(finding)
-    kept = []
-    for key in order:
-        items = groups[key]
-        claims, repros, observed, passes = [], [], "", []
-        where = ""
-        for item in items:
-            loc = norm_where(item["where"])
-            shown = f"{loc[0]}:{loc[1]}" if loc else item["where"]
-            if not where or (loc and len(shown) < len(where)):
-                where = shown
-            agent = ", ".join(item["passes"]) or "pass"
-            text = " ".join(item["claim"]).strip()
-            if text:
-                claims.append(f"{agent}: {text}")
-            if has_repro(item) and item["repro"] not in repros:
-                repros.append(item["repro"])
-            if not observed and item["observed"] not in ("", "none"):
-                observed = item["observed"]
-            for name in item["passes"]:
-                if name not in passes:
-                    passes.append(name)
-        kept.append({
-            "where": where or items[0]["where"],
-            "claim": claims or items[0]["claim"],
-            "repro": " | ".join(repros),
-            "observed": observed,
-            "passes": passes,
-        })
-    classes = ["error" if not doc["parsed"] else classify(doc) for doc in docs]
-    if errors and not docs:
-        classes.append("error")
-    if classes and all(kind == "approve" for kind in classes):
-        verdict = "approve"
-    elif any(kind == "needs fixes" for kind in classes) or kept:
-        verdict = "needs fixes"
-    else:
-        verdict = ""
+    groups, order, nulls = {}, [], []
     tried, by_input = [], {}
     for doc in docs:
         if not doc["parsed"]:
             continue
         for item in doc["tried"]:
-            if not item["input"] or not item["observed"]:
-                continue
             key = item["input"]
             if key not in by_input:
-                by_input[key] = {"input": item["input"], "observed": item["observed"], "broke": item["broke"]}
+                by_input[key] = {"input": item["input"], "broke": item["broke"], "observed": item["observed"]}
                 tried.append(by_input[key])
-            elif item["broke"] == "yes":
-                by_input[key]["broke"] = "yes"
+            elif item["broke"]:
+                by_input[key]["broke"] = True
                 by_input[key]["observed"] = item["observed"]
-    title = docs[0]["title"] if docs else "Attack review"
+        for finding in doc["findings"]:
+            path, line = norm_location(finding["file"], finding["line"])
+            stored = {
+                "file": path, "line": line, "claim": finding["claim"], "repro": finding["repro"],
+                "passes": [doc["source"]],
+            }
+            if line is None:
+                nulls.append(stored)
+                continue
+            key = (path, line)
+            if key not in groups:
+                groups[key] = []
+                order.append(key)
+            groups[key].append(stored)
+    findings = []
+    for key in order:
+        items = groups[key]
+        claims, repros, passes = [], [], []
+        for item in items:
+            agent = item["passes"][0]
+            if item["claim"]:
+                claims.append(f"{agent}: {item['claim']}")
+            if item["repro"] and item["repro"] not in repros:
+                repros.append(item["repro"])
+            for name in item["passes"]:
+                if name not in passes:
+                    passes.append(name)
+        findings.append({
+            "file": items[0]["file"],
+            "line": items[0]["line"],
+            "claim": " | ".join(claims),
+            "repro": " | ".join(repros),
+            "passes": passes,
+        })
+    findings.extend(nulls)
+    parsed = [doc for doc in docs if doc["parsed"]]
+    needs = any(doc["verdict"] == "needs fixes" for doc in parsed) or bool(findings) or any(
+        item["broke"] for item in tried)
+    if parsed and all(doc["verdict"] == "approve" for doc in parsed) and not errors and not needs:
+        verdict = "approve"
+    elif needs:
+        verdict = "needs fixes"
+    else:
+        verdict = ""
+    title = "Attack review"
     return {
-        "title": title or "Attack review",
+        "title": title,
         "verdict": verdict,
         "tried": tried,
-        "findings": kept,
-        "held": [item for item in tried if item["broke"] == "no"],
+        "findings": findings,
         "errors": errors,
     }
 
 
 def render(doc):
-    """The merged review in the attack file shape."""
-    lines = [f"# {doc['title']}", "", f"Verdict: {doc['verdict']}", "", "## Tried"]
-    if not doc["tried"]:
-        lines.append("")
-    for item in doc["tried"]:
-        lines += [f"- Input: {item['input']}", f"  Observed: {item['observed']}"]
-        if item["broke"]:
-            lines.append(f"  Broke: {item['broke']}")
-        lines.append("")
-    lines.append("## Findings")
-    if not doc["findings"]:
-        lines.append("")
-    for i, finding in enumerate(doc["findings"], 1):
-        passes = ", ".join(finding["passes"]) or "unspecified"
-        lines.append(f"### F{i} | {finding['where']} | passes: {passes}")
-        claims = [c for c in finding["claim"] if c.strip()]
-        if claims:
-            lines.extend(claims)
-        else:
-            lines.append("See the repro.")
-        lines += [
-            f"Repro: {finding['repro'] or 'none'}",
-            f"Observed: {finding['observed'] or 'none'}",
-            "",
-        ]
-    lines.append("## Held")
-    if not doc["held"]:
-        lines += ["None", ""]
-    for item in doc["held"]:
-        lines += [f"- Input: {item['input']}", f"  Observed: {item['observed']}", ""]
-    return "\n".join(lines).rstrip() + "\n"
+    """Markdown summary plus one json block. The checker reads the json."""
+    data = {
+        "verdict": doc["verdict"],
+        "tried": [
+            {"input": item["input"], "broke": bool(item["broke"]), "observed": item["observed"]}
+            for item in doc["tried"]
+        ],
+        "findings": [
+            {"file": item["file"], "line": item["line"], "claim": item["claim"], "repro": item["repro"]}
+            for item in doc["findings"]
+        ],
+    }
+    lines = [
+        f"# {doc['title']}",
+        "",
+        f"Verdict: {doc['verdict']}",
+        "",
+        "```json",
+        json.dumps(data, indent=2),
+        "```",
+        "",
+    ]
+    return "\n".join(lines)
 
 
 def main(argv):
-    if any(a in ("-h", "--help") for a in argv[1:]):
+    if any(arg in ("-h", "--help") for arg in argv[1:]):
         print((__doc__ or "").strip())
         return 0
     out, passes, ended = None, [], False
-    i = 1
-    while i < len(argv):
-        arg = argv[i]
+    index = 1
+    while index < len(argv):
+        arg = argv[index]
         if ended:
             passes.append(arg)
         elif arg == "--":
@@ -165,17 +144,17 @@ def main(argv):
             if out is not None:
                 print("repeated --out", file=sys.stderr)
                 return 2
-            if i + 1 >= len(argv):
+            if index + 1 >= len(argv):
                 print((__doc__ or "").strip(), file=sys.stderr)
                 return 2
-            out = argv[i + 1]
-            i += 1
+            out = argv[index + 1]
+            index += 1
         elif arg.startswith("--"):
             print(f"unknown option {arg}. Put pass files after --", file=sys.stderr)
             return 2
         else:
             passes.append(arg)
-        i += 1
+        index += 1
     if not out or not passes:
         print((__doc__ or "").strip(), file=sys.stderr)
         return 2

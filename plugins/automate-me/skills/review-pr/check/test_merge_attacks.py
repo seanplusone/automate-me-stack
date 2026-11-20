@@ -1,242 +1,114 @@
 """Run: python3 check/test_merge_attacks.py"""
+import json
 import os
+import subprocess
 import sys
 import tempfile
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
 from check_attack import check_attack, parse_attack  # noqa: E402
-from merge_attacks import merge, render  # noqa: E402
+from merge_attacks import main as merge_main, merge  # noqa: E402
 
 FAILS = []
+CHECKS = []
 
 
-def write(name, text):
+def expect(name, got, want):
+    CHECKS.append(name)
+    if got != want:
+        FAILS.append(f"{name}: wanted {want!r}, got {got!r}")
+
+
+def write(text, name="pass.md"):
     path = os.path.join(tempfile.mkdtemp(), name)
     open(path, "w").write(text)
     return path
 
 
-def passage(agent, where, repro, observed, broke="yes", claim="accept returns True for a failed case."):
-    return "\n".join([
-        "# Attack review: sample",
-        "",
-        "Verdict: needs fixes",
-        "",
-        "## Tried",
-        f"- Input: {repro}",
-        f"  Observed: {observed}",
-        f"  Broke: {broke}",
-        "- Input: {\"passed\": false}",
-        "  Observed: False",
-        "  Broke: no",
-        "",
-        "## Findings",
-        f"### F1 | {where} | passes: {agent}",
-        claim,
-        f"Repro: {repro}",
-        f"Observed: {observed}",
-        "",
-        "## Held",
-        "- Input: {\"passed\": false}",
-        "  Observed: False",
-        "",
-    ])
+def block(data, name="pass.md"):
+    return write("\n```json\n" + json.dumps(data) + "\n```\n", name)
 
 
-def expect(name, got, want):
-    if got != want:
-        FAILS.append(f"{name}: wanted {want!r}, got {got!r}")
+def finding(file, line, claim, repro):
+    return {"file": file, "line": line, "claim": claim, "repro": repro}
 
 
-one = merge([write("a.md", passage("current", "report.py:4", "{\"ok\": false}", "True"))])
-expect("one pass keeps the finding", len(one["findings"]), 1)
-expect("one pass needs fixes", one["verdict"], "needs fixes")
-expect("one pass lists what held", [item["input"] for item in one["held"]], ["{\"passed\": false}"])
+def bug(file="cap.py", line=3, claim="rejects 5", repro="within_cap(5)"):
+    return {
+        "verdict": "needs fixes",
+        "tried": [
+            {"input": "within_cap(5)", "broke": True, "observed": "False"},
+            {"input": "within_cap(4)", "broke": False, "observed": "True"},
+        ],
+        "findings": [finding(file, line, claim, repro)],
+    }
 
-shared = "{\"ok\": false}"
-kept = merge([
-    write("a.md", passage("codex", "report.py:4", shared, "True")),
-    write("b.md", passage("claude", "report.py:4", shared, "True")),
+
+def clean():
+    return {
+        "verdict": "approve",
+        "tried": [{"input": "empty", "broke": False, "observed": "ok"}],
+        "findings": [],
+    }
+
+
+doc = merge([
+    block(bug("head/cap.py", 3, "the comparison rejects 5", "within_cap(5)"), "codex.md"),
+    block(bug("cap.py", 3, "five is outside the cap", "call within_cap on 5"), "claude.md"),
 ])
-expect("two passes keep a shared line", len(kept["findings"]), 1)
-expect("passes are unioned", kept["findings"][0]["passes"], ["codex", "claude"])
+expect("two paths are one finding", len(doc["findings"]), 1)
+expect("both claims are kept", "the comparison rejects 5" in doc["findings"][0]["claim"] and "five is outside the cap" in doc["findings"][0]["claim"], True)
+expect("both agents are kept", doc["findings"][0]["passes"], ["codex", "claude"])
+expect("a bug is needs fixes", doc["verdict"], "needs fixes")
 
-split = merge([
-    write("a.md", passage("codex", "report.py:4", shared, "True")),
-    write("b.md", passage("claude", "cap.py:3", "within_cap(5)", "False", claim="within_cap returns False for 5.")),
+nulled = merge([
+    block(bug("cap.py", 3, "rejects 5", "within_cap(5)")),
+    block({
+        "verdict": "needs fixes",
+        "tried": [],
+        "findings": [finding("none", None, "the cap is wrong", "within_cap(5)")],
+    }),
 ])
-expect("either pass keeps its own line", len(split["findings"]), 2)
-expect("either pass needs fixes", split["verdict"], "needs fixes")
+expect("a null line is not dropped", any(item["line"] is None for item in nulled["findings"]), True)
 
-same_repro = merge([
-    write("a.md", passage("codex", "none", "bug line bug line", "True", claim="passes returns True.")),
-    write("b.md", passage("claude", "none", "bug line bug line", "True", claim="passes returns True.")),
-])
-expect("same repro with no line is one finding", len(same_repro["findings"]), 1)
+out = os.path.join(tempfile.mkdtemp(), "attack.md")
+expect("the merge writes", merge_main(["merge", "--out", out, block(bug()), block(clean())]), 0)
+expect("the merged file checks", check_attack(out), [])
+expect("one bug and one approve is needs fixes", parse_attack(out)["verdict"], "needs fixes")
 
-first = passage("current", "score_review.py:6", "bug line bug line", "True", claim="passes returns True.")
-second = (
-    "### F2 | score_review.py:6 | passes: current\n"
-    "passes returns False for a real note.\n"
-    "Repro: accept returns True at report.py:4 for input x\n"
-    "Observed: False\n\n"
+expect("garbage plus a clean pass is not an approve", merge_main([
+    "merge", "--out", os.path.join(tempfile.mkdtemp(), "a.md"),
+    write("Ship it. The tests pass.\n"), block(clean()),
+]), 1)
+expect("a timeout plus a bug stays needs fixes", merge_main([
+    "merge", "--out", os.path.join(tempfile.mkdtemp(), "a.md"),
+    write("Parse: timeout\n"), block(bug()),
+]), 0)
+expect("a missing pass is not an approve", merge_main([
+    "merge", "--out", os.path.join(tempfile.mkdtemp(), "a.md"),
+    os.path.join(tempfile.mkdtemp(), "missing.md"), block(clean()),
+]), 1)
+
+bad = os.path.join(tempfile.mkdtemp(), "bad.md")
+open(bad, "wb").write(b"\xff\xfe")
+expect("non-utf8 is not an approve", merge_main([
+    "merge", "--out", os.path.join(tempfile.mkdtemp(), "a.md"), bad, block(clean()),
+]), 1)
+expect("an option-like name is an error", merge_main(["merge", "--out", out, "--x.md"]), 2)
+expect("a name after -- is a pass", merge_main([
+    "merge", "--out", os.path.join(tempfile.mkdtemp(), "a.md"), "--", block(clean(), "--x.md"),
+]), 0)
+expect("a repeated out is an error", merge_main(["merge", "--out", out, "--out", out, block(clean())]), 2)
+
+ran = subprocess.run(
+    [sys.executable, os.path.join(HERE, "merge_attacks.py"), "--help"],
+    capture_output=True, text=True,
 )
-both = merge([write("c.md", first.replace("## Held", second + "## Held"))])
-expect("two repros on one line are one finding", len(both["findings"]), 1)
-expect("both repros are kept", "bug line bug line" in both["findings"][0]["repro"] and "report.py:4" in both["findings"][0]["repro"], True)
-
-paths = merge([
-    write("a.md", passage("codex", "head/cap.py:3", "within_cap(5)", "False", claim="The cap rejects 5.")),
-    write("b.md", passage("claude", "./cap.py:3", "call(5)", "False", claim="Five is outside the cap.")),
-])
-expect("head and dot prefixes match", len(paths["findings"]), 1)
-expect("path merge needs fixes", paths["verdict"], "needs fixes")
-expect("both agents stay on the finding", paths["findings"][0]["passes"], ["codex", "claude"])
-expect("normalized where", paths["findings"][0]["where"], "cap.py:3")
-
-cased = merge([
-    write("a.md", passage("codex", "cases/item-cap/head/cap.py:3", "within_cap(5)", "False")),
-    write("b.md", passage("claude", "cap.py:3", "n == 5", "False", claim="off by one")),
-])
-expect("a case directory prefix matches", len(cased["findings"]), 1)
-
-garbage = write("bad.md", "Ship it. The diff looks correct.\n")
-clean = write("clean.md", "\n".join([
-    "# Attack review: clean", "", "Verdict: approve", "", "## Tried",
-    "- Input: empty", "  Observed: ok", "  Broke: no", "", "## Findings", "", "## Held",
-    "- Input: empty", "  Observed: ok", "",
-]))
-bad = merge([garbage, clean])
-expect("unparseable output is not an approve", bad["verdict"], "")
-timed = write("codex.md", "Parse: timeout\n")
-found = write("claude.md", passage("claude", "head/cap.py:3", "within_cap(5)", "False"))
-late = merge([timed, found])
-expect("a timeout does not drop the other bug", late["verdict"], "needs fixes")
-expect("the surviving where is kept", late["findings"][0]["where"], "cap.py:3")
-other = write("other.md", "\n".join([
-    "# Attack review: clean", "", "Verdict: approve", "", "## Tried",
-    "- Input: empty", "  Observed: ok", "  Broke: no", "", "## Findings", "", "## Held",
-    "- Input: empty", "  Observed: ok", "",
-]))
-expect("two clean passes approve", merge([clean, other])["verdict"], "approve")
-
-colon = write("codex.md", "\n".join([
-    "# Attack review: cap", "", "Verdict: needs fixes", "", "## Tried",
-    "- Input: within_cap(5)", "  Observed: False", "  Broke: yes", "",
-    "## Findings",
-    "### F1: cap.py:3 | passes: codex",
-    "The cap rejects 5.",
-    "Repro: within_cap(5)",
-    "Observed: False",
-    "",
-    "## Held",
-    "None",
-]))
-expect("a colon heading is kept", merge([colon])["verdict"], "needs fixes")
-expect("a colon heading keeps the line", merge([colon])["findings"][0]["where"], "cap.py:3")
-for heading in (
-    "#### F1 | cap.py:3 | passes: codex",
-    "### F1 | cap.py:3 | (passes: codex)",
-    "### cap.py line 3",
-    "**### F1 | cap.py:3**",
-):
-    sample = colon.replace("### F1: cap.py:3 | passes: codex", heading)
-    doc = merge([write("h.md", open(colon).read().replace("### F1: cap.py:3 | passes: codex", heading))])
-    expect("heading kept: " + heading, doc["verdict"] == "needs fixes" and doc["findings"] and doc["findings"][0]["where"] == "cap.py:3", True)
-bare = write("bare.md", "\n".join([
-    "# Attack review: cap", "", "Verdict: needs fixes", "", "## Tried",
-    "- Input: within_cap(5)", "  Observed: False", "  Broke: yes", "",
-    "## Findings",
-    "",
-    "## Held",
-    "None",
-]))
-expect("broke yes is not an approve", merge([bare])["verdict"], "needs fixes")
-quotes = write("quotes.md", "\n".join([
-    "# Attack review: empty", "", "Verdict: needs fixes", "", "## Tried",
-    '- Input: ""', "  Observed: False", "  Broke: no",
-    "- Input: within_cap(5)", "  Observed: False", "  Broke: yes", "",
-    "## Findings",
-    "### F1 | cap.py:3 | passes: codex",
-    "within_cap returns False.",
-    "Repro: within_cap(5)",
-    "Observed: False",
-    "",
-    "## Held",
-    '- Input: ""', "  Observed: False", "",
-]))
-quoted = render(merge([quotes]))
-expect("quoted empty input is kept", '- Input: ""' in quoted, True)
-expect("quoted merge passes the checker", check_attack(write("out.md", quoted)), [])
-expect("a missing pass is not an approve", merge(["/tmp/no-such-pass-e9be.md", clean])["verdict"], "")
-
-CLEAN_TEXT = "\n".join([
-    "# Attack review: clean", "", "Verdict: approve", "", "## Tried",
-    "- Input: empty", "  Observed: ok", "  Broke: no", "", "## Findings", "", "## Held",
-    "- Input: empty", "  Observed: ok", "",
-])
-FANCY = "\n".join([
-    "# Attack review: item cap", "",
-    "**Verdict: needs fixes**", "",
-    "## Tried",
-    "- Input: within_cap(5)",
-    "  Observed: False",
-    "  **Broke: yes**",
-    "",
-    "### Findings",
-    "### F1 | head/cap.py:3 | passes: codex",
-    "The cap rejects 5.",
-    "",
-])
-expect("bold needs-fixes is not an approve",
-       merge([write("fancy.md", FANCY), write("clean2.md", CLEAN_TEXT)])["verdict"], "needs fixes")
-FENCED = "\n".join([
-    "```", "Verdict: approve", "```", "",
-    "Verdict: needs fixes", "",
-    "## Tried",
-    "- Input: within_cap(5)", "  Observed: False", "  Broke: yes", "",
-    "## Findings",
-    "### F1 | cap.py:3 | passes: codex",
-    "rejected",
-    "Repro: within_cap(5)",
-    "Observed: False",
-    "",
-    "## Held", "None",
-])
-expect("a fenced approve is not the verdict", merge([write("fenced.md", FENCED)])["verdict"], "needs fixes")
-expect("approve with no inputs is not an approve", merge([write("only.md", "Verdict: approve\n")])["verdict"], "needs fixes")
-
-from merge_attacks import main as merge_main
-import contextlib
-import io
-opt_dir = tempfile.mkdtemp()
-prev = os.getcwd()
-os.chdir(opt_dir)
-try:
-    open("--x.md", "w").write(CLEAN_TEXT)
-    err = io.StringIO()
-    with contextlib.redirect_stderr(err):
-        dropped = merge_main(["merge_attacks.py", "--out", "out.md", "--x.md"])
-    expect("a pass named --x.md is not dropped silently", dropped, 2)
-    kept_code = merge_main(["merge_attacks.py", "--out", "out.md", "--", "--x.md"])
-    expect("a pass after -- is read", kept_code, 0)
-    expect("the read pass was merged", "Verdict: approve" in open("out.md").read(), True)
-finally:
-    os.chdir(prev)
-raw_pass = os.path.join(tempfile.mkdtemp(), "bad.md")
-open(raw_pass, "wb").write(b"\xff\xfe Verdict: approve\n")
-expect("a non-utf8 pass is not an approve", merge([raw_pass, write("c.md", CLEAN_TEXT)])["verdict"], "")
-
-text = render(one)
-path = write("merged.md", text)
-expect("merged file passes the checker", check_attack(path), [])
-parsed = parse_attack(path)
-expect("round trip keeps the verdict", parsed["verdict"], "needs fixes")
-expect("round trip keeps the finding line", parsed["findings"][0]["where"], "report.py:4")
+expect("help exits 0", ran.returncode, 0)
 
 if __name__ == "__main__":
     for item in FAILS:
         print(f"FAIL {item}")
-    total = 39
-    print(f"{total - len(FAILS)}/{total} passed")
+    print(f"{len(CHECKS) - len(FAILS)}/{len(CHECKS)} passed")
     sys.exit(1 if FAILS else 0)

@@ -22,6 +22,7 @@ PASS attack: attack.md
 Output of `python3 check/score_case.py cases/word-score/key.md cases/word-score/runs/run-1/attack.md`:
 
 ```
-F1 caught
+SKIP no agent CLI on PATH
+caught
 PASS caught planted bug
 ```

@@ -19,7 +19,7 @@ Keep a finding only when it has a file and line, or a breaking input with the ou
 
 Second opinions are agent-agnostic. Run `python3 "$SKILL_DIR"/check/attack_agents.py`. It prints `codex`, `claude`, or `none`. For each name, run a headless pass with the same brief. The script only finds the CLIs and starts them. If it prints `none`, write one pass yourself. Never require one agent.
 
-Merge the passes with `python3 "$SKILL_DIR"/check/merge_attacks.py`. Findings on the same file and line are one finding. `head/cap.py:3` and `cap.py:3` match. Wording does not split them. A finding from either pass is kept, with both passes' evidence. The verdict is approve or needs fixes. A pass that does not parse is not an approve. The held list is what you tried that did not break.
+End each pass with one json block, as [references/attack.md](references/attack.md) shows. Prose before the block is ignored. Merge with `python3 "$SKILL_DIR"/check/merge_attacks.py`. The same file and line are one finding. A null line is kept. A pass that is not valid JSON is not an approve.
 
 The attack verdict is the gate. When it is needs fixes, the drafts file does not approve. A kept break a user can reach is blocking, and the drafts verdict holds. A smaller kept break follows the tag rules already in this file. The drafts file approves only when the attack verdict is approve.
 

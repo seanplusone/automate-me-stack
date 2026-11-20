@@ -1,23 +1,19 @@
-# Attack review: trust report
+Synthetic stand-in for a codex pass. A failed case is accepted.
 
-Synthetic stand-in for a codex pass.
-
-Verdict: needs fixes
-
-## Tried
-- Input: {'passed': True, 'cases': [{'name': 'a', 'ok': False}]}
-  Observed: True
-  Broke: yes
-- Input: {}
-  Observed: False
-  Broke: no
-
-## Findings
-### F1 | ./report.py:4 | passes: codex
-accept returns True when passed is true and a case has ok false.
-Repro: {'passed': True, 'cases': [{'name': 'a', 'ok': False}]}
-Observed: True
-
-## Held
-- Input: {}
-  Observed: False
+```json
+{
+  "verdict": "needs fixes",
+  "tried": [
+    {"input": "{'passed': True, 'ok': False}", "broke": true, "observed": "True"},
+    {"input": "{}", "broke": false, "observed": "False"}
+  ],
+  "findings": [
+    {
+      "file": "./report.py",
+      "line": 4,
+      "claim": "accept returns True when passed is true and a case has ok false.",
+      "repro": "{'passed': True, 'ok': False}"
+    }
+  ]
+}
+```

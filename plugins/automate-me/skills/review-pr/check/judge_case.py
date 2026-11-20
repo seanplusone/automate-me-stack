@@ -53,9 +53,16 @@ def build_prompt(key_text, findings):
         lines.append("FINDINGS")
         lines.append("(none)")
     for finding in findings:
+        claim = finding.get("claim") or ""
+        if isinstance(claim, list):
+            claim = " ".join(claim)
+        where = finding.get("where") or ""
+        if not where and finding.get("file"):
+            line = finding.get("line")
+            where = finding["file"] if line is None else f"{finding['file']}:{line}"
         lines.append("FINDING " + finding.get("id", ""))
-        lines.append("WHERE " + finding.get("where", ""))
-        lines.append("CLAIM " + " ".join(finding.get("claim") or []))
+        lines.append("WHERE " + where)
+        lines.append("CLAIM " + claim)
         lines.append("REPRO " + finding.get("repro", ""))
         lines.append("OBSERVED " + finding.get("observed", ""))
         lines.append("")
@@ -84,10 +91,11 @@ def run_cli(argv, prompt):
     return result.returncode, result.stdout
 
 
-def judge(key_path, attack_path, environ=None, runner=None):
+def judge(key_path, attack_path, environ=None, runner=None, findings=None):
     """0 when the bug is caught or no CLI exists, 1 on a miss, 2 on a bad exit."""
     doc = parse_attack(attack_path)
-    prompt = build_prompt(open(key_path).read(), doc["findings"])
+    chosen = doc["findings"] if findings is None else findings
+    prompt = build_prompt(open(key_path).read(), chosen)
     argv = find_cli(environ)
     if argv is None and runner is None:
         print("SKIP no agent CLI on PATH")

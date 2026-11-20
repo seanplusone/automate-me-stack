@@ -1,23 +1,19 @@
-# Attack review: item cap
+Synthetic stand-in for a codex pass. The cap rejects 5.
 
-Synthetic stand-in for a codex pass. The module is invented.
-
-Verdict: needs fixes
-
-## Tried
-- Input: within_cap(5)
-  Observed: False
-  Broke: YES the boundary is rejected
-- Input: within_cap(4)
-  Observed: True
-  Broke: No, 4 is allowed
-
-## Findings
-### F1 | head/cap.py:3 | passes: codex
-within_cap(5) returns False, so a full list of 5 is rejected.
-Repro: within_cap(5)
-Observed: False
-
-## Held
-- Input: within_cap(4)
-  Observed: True
+```json
+{
+  "verdict": "needs fixes",
+  "tried": [
+    {"input": "within_cap(5)", "broke": true, "observed": "False"},
+    {"input": "within_cap(4)", "broke": false, "observed": "True"}
+  ],
+  "findings": [
+    {
+      "file": "head/cap.py",
+      "line": 3,
+      "claim": "within_cap(5) returns False, so a full list of 5 is rejected.",
+      "repro": "within_cap(5)"
+    }
+  ]
+}
+```
