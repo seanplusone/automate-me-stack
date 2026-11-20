@@ -218,7 +218,7 @@ try:
     os.environ["PATH"] = both
     stub_out = tempfile.mkdtemp()
     expect("main uses PATH stubs", agent_main(
-        ["attack_agents.py", "--run", "--brief", brief, "--out", stub_out]), 0)
+        ["attack_agents.py", "--run", "--brief", brief, "--out", stub_out, "--cwd", tempfile.mkdtemp()]), 0)
     expect("the stub ran, not another binary",
            "agent=codex" in open(os.path.join(stub_out, "codex.md")).read(), True)
 finally:

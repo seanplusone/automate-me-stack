@@ -6,7 +6,7 @@ Reviews one PR, or a set of linked PRs, and drafts short inline comments with a 
 
 Status: working. The review attacks by default. It re-runs claims and keeps a finding only with a file and line or a breaking input it ran. Five synthetic scored cases. `cases/refund-endpoint` and `cases/auth-header` score comment drafts. `cases/trust-report`, `cases/word-score` and `cases/item-cap` each hide one planted bug, and `check/score_case.py` passes only when the attack file catches it. The original comment cases came from real reviews on a production codebase and were replaced with synthetic ones for public release.
 
-A practice case runs only in a sandbox. `bwrap` is the reference. The agent sees system libraries and the copied `head` and `base`, not the case key. Without `bwrap`, that run is refused. A real pull request has no planted key and may run with a warning. The docker backend is a stub.
+A practice case, or any directory with a `key.md` under it, runs only in `bwrap`. The agent sees system libraries, a fresh home with only the login files, and the copied `head` and `base`. Session transcripts stay on the host. Without `bwrap`, that run is refused. A real pull request has no planted key and may run with a warning.
 
 ## What keeps it short
 

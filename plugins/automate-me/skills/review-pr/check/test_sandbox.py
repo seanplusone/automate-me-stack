@@ -8,9 +8,10 @@ import shutil
 import stat
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from attack_agents import bwrap_command, resolve_sandbox, run_all  # noqa: E402
+from attack_agents import bwrap_command, cleanup_stale, command, practice_roots, resolve_sandbox, run_all  # noqa: E402
 
 FAILS = []
 CHECKS = []
@@ -49,15 +50,38 @@ expect("docker is not a practice sandbox", run_all(
 expect("a bad sandbox name is usage", resolve_sandbox("nope"), "bad")
 
 work = tempfile.mkdtemp()
-argv = bwrap_command(["/tmp/stub-codex", "exec"], "/tmp/stub-codex", "codex", work, [root, head])
+home = tempfile.mkdtemp()
+argv = bwrap_command(
+    ["/tmp/stub-codex", "exec", "--sandbox", "danger-full-access"],
+    "/tmp/stub-codex", work, [root, head], home,
+)
 text = " ".join(argv)
 expect("bwrap unshares", "--unshare-all" in argv, True)
 expect("bwrap dies with the parent", "--die-with-parent" in argv, True)
 expect("bwrap keeps the network", "--share-net" in argv, True)
 expect("bwrap clears the environment", "--clearenv" in argv, True)
 expect("the work dir is /work", "--chdir" in argv and "/work" in argv, True)
+expect("tmp is a fresh disk", argv.count("--tmpfs") >= 2 and "/tmp" in argv, True)
+expect("home is the staged directory", home in argv and "/home/agent" in argv, True)
 expect("the case key is not a mount", key not in text and "key.md" not in text, True)
-expect("pwd inside is /work", "--setenv" in argv and "PWD" in argv and "/work" in argv, True)
+expect("host state is not mounted", os.path.expanduser("~/.codex") not in text, True)
+expect("host claude dir is not mounted", os.path.expanduser("~/.claude") not in text, True)
+expect("pwd inside is /work", "PWD" in argv and "/work" in argv, True)
+expect("codex drops its inner sandbox", command("/usr/bin/codex", "codex", True)[4], "danger-full-access")
+expect("claude keeps its permission mode", "acceptEdits" in command("/usr/bin/claude", "claude", True), True)
+cases_dir = os.path.join(root, "cases")
+expect("cases/ is a practice run", bool(practice_roots(cases_dir)), True)
+expect("a parent of the case is a practice run", bool(practice_roots(root)), True)
+expect("cases/ refuses sandbox none", run_all(
+    brief, tempfile.mkdtemp(), search_path=stubs, cwd=cases_dir, sandbox="none",
+), 2)
+stale = tempfile.mkdtemp(prefix="attack-cwd-")
+fresh = tempfile.mkdtemp(prefix="attack-cwd-")
+os.utime(stale, (time.time() - 7200, time.time() - 7200))
+cleanup_stale()
+expect("a stale copy is removed", os.path.isdir(stale), False)
+expect("a fresh copy stays", os.path.isdir(fresh), True)
+shutil.rmtree(fresh, ignore_errors=True)
 
 if shutil.which("bwrap") is None:
     print("SKIP bwrap is not installed")
@@ -111,6 +135,100 @@ else:
     expect("head is readable", "READ:ok" in body, True)
     expect("work is writable", "WRITE:ok" in body, True)
     expect("the secret is not in the output", "SECRET-KEY-LINE" not in body, True)
+
+    fake = tempfile.mkdtemp()
+    os.makedirs(os.path.join(fake, ".codex", "sessions"))
+    os.makedirs(os.path.join(fake, ".claude", "projects", "repo"))
+    open(os.path.join(fake, ".codex", "auth.json"), "w").write('{"token": "AUTH-MARKER"}\n')
+    open(os.path.join(fake, ".codex", "sessions", "old.txt"), "w").write("CANARY-TRANSCRIPT\n")
+    open(os.path.join(fake, ".claude", ".credentials.json"), "w").write('{"claudeAiOauth": {"accessToken": "AUTH-MARKER"}}\n')
+    open(os.path.join(fake, ".claude", "projects", "repo", "session.jsonl"), "w").write("CANARY-TRANSCRIPT\n")
+    open(os.path.join(fake, ".claude.json"), "w").write(
+        '{"hasCompletedOnboarding": true, "projects": {"/repo": {"history": "CANARY-TRANSCRIPT"}}}\n'
+    )
+    canary = os.path.join(tempfile.mkdtemp(), "codex")
+    open(canary, "w").write(
+        "#!/usr/bin/python3\n"
+        "import os\n"
+        "skip = {'proc', 'sys', 'dev'}\n"
+        "leaks = []\n"
+        "for dirpath, dirnames, filenames in os.walk('/'):\n"
+        "    dirnames[:] = [name for name in dirnames if name not in skip]\n"
+        "    for name in filenames:\n"
+        "        path = os.path.join(dirpath, name)\n"
+        "        try:\n"
+        "            if os.path.getsize(path) > 1000000:\n"
+        "                continue\n"
+        "            text = open(path, errors='replace').read(1000000)\n"
+        "        except OSError:\n"
+        "            continue\n"
+        "        if ('CANARY-' + 'TRANSCRIPT') in text:\n"
+        "            leaks.append(path)\n"
+        "print('LEAKS:' + ','.join(leaks))\n"
+        "try:\n"
+        "    print('AUTH:' + open('/home/agent/.codex/auth.json').read())\n"
+        "except OSError:\n"
+        "    print('AUTH:missing')\n"
+        "try:\n"
+        "    print('ONBOARD:' + open('/home/agent/.claude.json').read())\n"
+        "except OSError:\n"
+        "    print('ONBOARD:missing')\n"
+        "try:\n"
+        "    open('/tmp/probe.txt', 'w').write('ok')\n"
+        "    print('TMP:ok')\n"
+        "except OSError:\n"
+        "    print('TMP:fail')\n"
+    )
+    os.chmod(canary, 0o755)
+    canary_dir = os.path.dirname(canary)
+    saved = {name: os.environ.get(name) for name in ("HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR")}
+    os.environ["HOME"] = fake
+    os.environ.pop("CODEX_HOME", None)
+    os.environ.pop("CLAUDE_CONFIG_DIR", None)
+    canary_out = tempfile.mkdtemp()
+    try:
+        code = run_all(brief, canary_out, search_path=canary_dir, cwd=head, sandbox="bwrap")
+    finally:
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+    seen = open(os.path.join(canary_out, "codex.md")).read() if os.path.isfile(os.path.join(canary_out, "codex.md")) else ""
+    expect("canary run exits 0", code, 0)
+    leak = ""
+    for line in seen.splitlines():
+        if line.startswith("LEAKS:"):
+            leak = line[len("LEAKS:"):]
+    expect("transcripts are not visible", leak, "")
+    expect("the canary string is absent", "CANARY-TRANSCRIPT" not in seen, True)
+    expect("the login file is present", "AUTH-MARKER" in seen, True)
+    expect("onboarding stays and history does not", "hasCompletedOnboarding" in seen and "CANARY-TRANSCRIPT" not in seen, True)
+    expect("tmp is writable", "TMP:ok" in seen, True)
+
+if os.environ.get("AMS_REAL_CLI") != "1":
+    print("SKIP real CLI smoke (set AMS_REAL_CLI=1)")
+elif shutil.which("bwrap") is None:
+    print("SKIP bwrap is not installed")
+else:
+    smoke_dir = tempfile.mkdtemp()
+    open(os.path.join(smoke_dir, "note.txt"), "w").write("hello\n")
+    smoke_brief = os.path.join(tempfile.mkdtemp(), "brief.md")
+    open(smoke_brief, "w").write("Create /tmp/pong.txt containing pong. Reply with the single word pong.\n")
+    smoke_out = tempfile.mkdtemp()
+    code = run_all(smoke_brief, smoke_out, cwd=smoke_dir, sandbox="bwrap", timeout=180)
+    for cli in ("codex", "claude"):
+        if shutil.which(cli) is None:
+            print("SKIP %s is not installed" % cli)
+            continue
+        path = os.path.join(smoke_out, cli + ".md")
+        text = open(path).read() if os.path.isfile(path) else ""
+        lowered = text.lower()
+        expect(
+            "%s logs in" % cli,
+            code == 0 and "pong" in lowered and "not logged in" not in lowered and "401" not in text,
+            True,
+        )
 
 if __name__ == "__main__":
     for item in FAILS:
