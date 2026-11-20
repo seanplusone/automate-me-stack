@@ -224,42 +224,71 @@ def _host_claude_dir():
     return os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
 
 
-def _copy_file(src, dest):
-    if not os.path.isfile(src) or os.path.islink(src):
-        return
-    os.makedirs(os.path.dirname(dest), exist_ok=True)
-    shutil.copy2(src, dest)
-
-
-def _strip_claude_json(src, dest):
+def _stripped_claude_json(src):
     try:
         data = json.loads(open(src, encoding="utf-8").read())
     except (OSError, UnicodeError, json.JSONDecodeError):
-        return
+        return None
     if not isinstance(data, dict):
-        return
+        return None
     kept = {key: data[key] for key in CLAUDE_JSON_KEEP if key in data}
-    os.makedirs(os.path.dirname(dest), exist_ok=True)
-    open(dest, "w", encoding="utf-8").write(json.dumps(kept))
+    return json.dumps(kept).encode("utf-8")
 
 
-def stage_home():
-    """A fresh home with only the login files. Session transcripts stay on the host."""
-    home = tempfile.mkdtemp(prefix="attack-home-")
+def _minimal_codex_config(text):
+    """Keep model, provider, and auth tables. Drop project paths, hooks, and plugins."""
+    keep_tables = ("model_providers", "profiles", "auth")
+    keep_keys = ("model", "model_provider", "review_model", "profile")
+    out, section = [], ""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            section = stripped.strip("[]").split(".", 1)[0].strip().strip('"')
+            if section in keep_tables:
+                out.append(line)
+            continue
+        if section in keep_tables:
+            out.append(line)
+            continue
+        key = stripped.split("=", 1)[0].strip()
+        if key in keep_keys:
+            out.append(line)
+    return ("\n".join(out) + "\n").encode("utf-8") if out else b""
+
+
+def _login_feeds():
+    """(payload, sandbox dest). payload is a host path or bytes. Nothing is written to disk."""
+    feeds = []
     codex = _host_codex_dir()
-    for name in CODEX_FILES:
-        _copy_file(os.path.join(codex, name), os.path.join(home, ".codex", name))
+    auth = os.path.join(codex, CODEX_FILES[0])
+    if os.path.isfile(auth) and not os.path.islink(auth):
+        feeds.append((auth, "/home/agent/.codex/" + CODEX_FILES[0]))
+    config = os.path.join(codex, CODEX_FILES[1])
+    if os.path.isfile(config) and not os.path.islink(config):
+        try:
+            text = open(config, encoding="utf-8", errors="replace").read()
+        except OSError:
+            text = ""
+        body = _minimal_codex_config(text)
+        if body.strip():
+            feeds.append((body, "/home/agent/.codex/" + CODEX_FILES[1]))
     claude = _host_claude_dir()
-    for name in CLAUDE_FILES:
-        _copy_file(os.path.join(claude, name), os.path.join(home, ".claude", name))
-    raw = os.path.join(os.path.expanduser("~"), ".claude.json")
+    creds = os.path.join(claude, CLAUDE_FILES[0])
+    if os.path.isfile(creds) and not os.path.islink(creds):
+        feeds.append((creds, "/home/agent/.claude/" + CLAUDE_FILES[0]))
+    if os.environ.get("CLAUDE_CONFIG_DIR"):
+        raw = os.path.join(os.environ["CLAUDE_CONFIG_DIR"], ".claude.json")
+    else:
+        raw = os.path.join(os.path.expanduser("~"), ".claude.json")
     if os.path.isfile(raw) and not os.path.islink(raw):
-        _strip_claude_json(raw, os.path.join(home, ".claude.json"))
-    return home
+        body = _stripped_claude_json(raw)
+        if body:
+            feeds.append((body, "/home/agent/.claude/.claude.json"))
+    return feeds
 
 
 def cleanup_stale():
-    """Remove sandbox copies a killed run left behind for more than an hour."""
+    """Drop leftover homes immediately, and work copies older than an hour."""
     now = time.time()
     root = tempfile.gettempdir()
     try:
@@ -267,14 +296,38 @@ def cleanup_stale():
     except OSError:
         return
     for name in names:
-        if not (name.startswith("attack-cwd-") or name.startswith("attack-home-")):
-            continue
         path = os.path.join(root, name)
         try:
-            if now - os.path.getmtime(path) > STALE_SECONDS:
+            if name.startswith("attack-home-"):
+                shutil.rmtree(path, ignore_errors=True)
+            elif name.startswith("attack-cwd-") and now - os.path.getmtime(path) > STALE_SECONDS:
                 shutil.rmtree(path, ignore_errors=True)
         except OSError:
             continue
+
+
+def key_reachable(path):
+    """True when key.md is under path, following links and dot dirs, or in a parent up to root."""
+    path = os.path.abspath(path or ".")
+    start = path if os.path.isdir(path) else os.path.dirname(path)
+    seen = set()
+    if os.path.isdir(start):
+        for dirpath, dirnames, filenames in os.walk(start, followlinks=True):
+            real = os.path.realpath(dirpath)
+            if real in seen:
+                dirnames[:] = []
+                continue
+            seen.add(real)
+            if "key.md" in filenames:
+                return True
+    current = os.path.realpath(start)
+    while True:
+        if os.path.isfile(os.path.join(current, "key.md")):
+            return True
+        parent = os.path.dirname(current)
+        if parent == current:
+            return False
+        current = parent
 
 
 def _exposes(path, forbidden):
@@ -305,10 +358,10 @@ def resolve_sandbox(choice):
     if choice == "docker":
         return "docker"
     if choice == "bwrap":
-        return "bwrap" if shutil.which("bwrap") else "missing"
-    if shutil.which("bwrap"):
+        return "bwrap" if _bwrap_bin() else "missing"
+    if _bwrap_bin():
         return "bwrap"
-    return "missing"
+    return "unavailable"
 
 
 def _sandbox_env():
@@ -329,19 +382,15 @@ def _sandbox_env():
     return env
 
 
-def _binary_paths(binary):
-    """The CLI file, and its install directory when that directory is not already in /usr."""
+def _package_dir(binary):
+    """Directory of the resolved binary. Sibling helpers such as codex-code-mode-host live here."""
     real = os.path.realpath(binary)
     if not os.path.exists(real):
-        return []
-    paths = [real]
-    absolute = os.path.abspath(binary)
-    if os.path.exists(absolute) and absolute not in paths:
-        paths.append(absolute)
+        return None
     parent = os.path.dirname(real)
-    if parent and not (parent.startswith("/usr/") or parent.startswith("/bin") or parent.startswith("/lib")):
-        paths.append(parent)
-    return paths
+    if parent in ("/", "/usr", "/bin", "/lib", "/lib64"):
+        return None
+    return parent
 
 
 def _ro_bind(argv, src, dest, seen_dirs, forbidden):
@@ -359,14 +408,29 @@ def _ro_bind(argv, src, dest, seen_dirs, forbidden):
     argv += ["--ro-bind", src, dest]
 
 
-def bwrap_command(cmd, binary, work, forbidden, home):
-    """Argv that runs cmd with system dirs, /work, and a fresh home visible."""
-    tool = shutil.which("bwrap") or "bwrap"
+def _feed(fds, payload, dest, argv):
+    if isinstance(payload, bytes):
+        read_fd, write_fd = os.pipe()
+        view = payload
+        while view:
+            wrote = os.write(write_fd, view)
+            view = view[wrote:]
+        os.close(write_fd)
+        fd = read_fd
+    else:
+        fd = os.open(payload, os.O_RDONLY)
+    fds.append(fd)
+    argv += ["--file", str(fd), dest]
+
+
+def bwrap_command(cmd, binary, work, forbidden, host_tmp=None):
+    """(argv, fds). Login files are copied from fds and are not written to the host."""
+    tool = _bwrap_bin() or "bwrap"
+    work = os.path.abspath(work)
     argv = [
         tool,
         "--unshare-all", "--share-net", "--die-with-parent", "--new-session",
         "--tmpfs", "/",
-        "--tmpfs", "/tmp",
     ]
     for path in ("/usr", "/lib", "/lib64", "/bin"):
         if os.path.exists(path) and not _exposes(path, forbidden):
@@ -374,23 +438,47 @@ def bwrap_command(cmd, binary, work, forbidden, home):
     argv += ["--dir", "/etc"]
     for path in (
         "/etc/resolv.conf", "/etc/hosts", "/etc/passwd", "/etc/group", "/etc/nsswitch.conf",
-        "/etc/ssl", "/etc/ca-certificates", "/etc/pki",
+        "/etc/alternatives", "/etc/ssl", "/etc/ca-certificates", "/etc/pki",
     ):
         if os.path.exists(path) and not _exposes(path, forbidden):
             argv += ["--ro-bind", path, path]
     argv += ["--proc", "/proc", "--dev", "/dev"]
-    argv += ["--bind", work, "/work", "--chdir", "/work"]
-    argv += ["--bind", home, "/home/agent"]
-    seen = {"/", "/etc", "/tmp", "/work", "/home/agent"}
-    for path in _binary_paths(binary):
-        if path == os.path.realpath(work) or _inside(path, work) or _inside(path, home):
-            continue
-        _ro_bind(argv, path, path, seen, forbidden)
+    if host_tmp:
+        argv += ["--bind", os.path.abspath(host_tmp), "/tmp"]
+    else:
+        argv += ["--tmpfs", "/tmp"]
+    argv += [
+        "--bind", work, "/work", "--chdir", "/work",
+        "--tmpfs", "/home", "--dir", "/home/agent",
+        "--dir", "/home/agent/.codex", "--dir", "/home/agent/.claude",
+    ]
+    fds = []
+    for payload, dest in _login_feeds():
+        _feed(fds, payload, dest, argv)
+    seen = {"/", "/etc", "/tmp", "/work", "/home", "/home/agent", "/home/agent/.codex", "/home/agent/.claude"}
+    real_bin = os.path.realpath(binary)
+    package = _package_dir(binary)
+    launch = real_bin
+    work_real = os.path.realpath(work)
+    if package and (_inside(package, work_real) or package == work_real):
+        rel = os.path.relpath(real_bin, work_real)
+        launch = "/work" if rel == "." else "/work/" + rel
+    elif package and not _exposes(package, forbidden):
+        _ro_bind(argv, package, package, seen, forbidden)
     argv += ["--clearenv"]
     for key, value in _sandbox_env().items():
         argv += ["--setenv", key, value]
-    argv += cmd
-    return argv
+    argv += [launch if index == 0 else part for index, part in enumerate(cmd)]
+    return argv, fds
+
+
+def _bwrap_bin():
+    found = shutil.which("bwrap")
+    if found:
+        return found
+    if os.path.isfile("/usr/bin/bwrap") and os.access("/usr/bin/bwrap", os.X_OK):
+        return "/usr/bin/bwrap"
+    return None
 
 
 def _agent_env(work, hide):
@@ -415,6 +503,7 @@ def _agent_env(work, hide):
     return env
 def command(binary, name, outer_sandbox=False):
     """Argv for one CLI. The brief is not included. It goes on stdin."""
+    binary = os.path.realpath(binary)
     if name == "codex":
         mode = "danger-full-access" if outer_sandbox else "workspace-write"
         return [binary, "exec", "--skip-git-repo-check", "--sandbox", mode]
@@ -447,11 +536,12 @@ def detect(search_path=None):
     return found
 
 
-def _run_one(cmd, brief, work, timeout, env):
+def _run_one(cmd, brief, work, timeout, env, pass_fds=()):
     """(returncode, stdout, stderr). The child dies with this process, and its group is killable."""
     proc = subprocess.Popen(
         cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        cwd=work, env=env, start_new_session=True, preexec_fn=_preexec,
+        cwd=os.path.abspath(work), env=env, start_new_session=True, preexec_fn=_preexec,
+        pass_fds=tuple(pass_fds),
     )
     LIVE.append(proc)
     try:
@@ -468,7 +558,7 @@ def _run_one(cmd, brief, work, timeout, env):
             LIVE.remove(proc)
 
 
-def run_all(brief_path, out_dir, search_path=None, runner=None, timeout=DEFAULT_TIMEOUT, cwd=None, sandbox="auto"):
+def run_all(brief_path, out_dir, search_path=None, runner=None, timeout=DEFAULT_TIMEOUT, cwd=None, sandbox="auto", host_tmp=None):
     """Run each detected CLI. Returns 0, or 1 when a CLI exits non-zero or times out."""
     cleanup_stale()
     for name in OWNED:
@@ -487,58 +577,62 @@ def run_all(brief_path, out_dir, search_path=None, runner=None, timeout=DEFAULT_
         print("brief: missing file", file=sys.stderr)
         return 2
     brief = contract_bytes() + b"\n" + brief_body
-    origin = cwd if cwd is not None else os.getcwd()
+    origin = os.path.abspath(cwd if cwd is not None else os.getcwd())
     chosen = resolve_sandbox(sandbox)
     if chosen == "bad":
         print((__doc__ or "").strip(), file=sys.stderr)
         return 2
-    planted = bool(practice_roots(origin))
-    if (sandbox or "auto") == "auto" and not planted:
-        chosen = "none"
     if chosen == "docker":
         print("error: the docker sandbox is not implemented. bwrap is the reference.", file=sys.stderr)
-        chosen = "missing" if planted else "none"
-    if planted and chosen != "bwrap":
-        print("error: a practice case needs bwrap. Refusing to run without a sandbox.", file=sys.stderr)
         return 2
-    if chosen != "bwrap":
-        print("warning: running unsandboxed. There is no practice key to hide.", file=sys.stderr)
+    if chosen == "missing":
+        print("error: bwrap was requested but it is not installed.", file=sys.stderr)
+        return 2
+    if chosen == "unavailable":
+        if key_reachable(origin):
+            print("error: no sandbox is available and a key.md is reachable. Refusing to run.", file=sys.stderr)
+            return 2
+        print("warning: no sandbox is available. Running unsandboxed.", file=sys.stderr)
         chosen = "none"
+    elif chosen == "none":
+        print("warning: --sandbox none leaves the whole filesystem visible.", file=sys.stderr)
     work, made = agent_cwd(origin)
-    home = stage_home() if chosen == "bwrap" else None
     env = _agent_env(work, [origin] + practice_roots(origin))
     previous = {sig: signal.signal(sig, _on_stop) for sig in _stop_signals()}
     try:
-        return _run_found(found, brief, work, out_dir, runner, timeout, env, chosen, origin, home)
+        return _run_found(found, brief, work, out_dir, runner, timeout, env, chosen, origin, host_tmp)
     finally:
         _kill_live()
         for sig, old in previous.items():
             signal.signal(sig, old)
         if made:
             shutil.rmtree(work, ignore_errors=True)
-        if home:
-            shutil.rmtree(home, ignore_errors=True)
 
 
-def _run_found(found, brief, work, out_dir, runner, timeout, env, sandbox_name, origin, home):
+def _run_found(found, brief, work, out_dir, runner, timeout, env, sandbox_name, origin, host_tmp):
     failed = 0
     forbidden = [origin] + practice_roots(origin)
     outer = sandbox_name == "bwrap"
     for name, binary in found:
         cmd = command(binary, name, outer)
         launch_env = env
+        fds = ()
         if outer:
-            cmd = bwrap_command(cmd, binary, work, forbidden, home)
+            cmd, fds = bwrap_command(cmd, binary, work, forbidden, host_tmp)
             launch_env = _sandbox_env()
         out_path = os.path.join(out_dir, name + ".md")
         err_path = os.path.join(out_dir, name + ".err")
         try:
-            if runner:
-                result = runner(cmd, brief)
-                code = getattr(result, "returncode", 1)
-                stdout, stderr = getattr(result, "stdout", "") or "", getattr(result, "stderr", "") or ""
-            else:
-                code, stdout, stderr = _run_one(cmd, brief, work, timeout, launch_env)
+            try:
+                if runner:
+                    result = runner(cmd, brief)
+                    code = getattr(result, "returncode", 1)
+                    stdout, stderr = getattr(result, "stdout", "") or "", getattr(result, "stderr", "") or ""
+                else:
+                    code, stdout, stderr = _run_one(cmd, brief, work, timeout, launch_env, fds)
+            finally:
+                for fd in fds:
+                    os.close(fd)
         except subprocess.TimeoutExpired as exc:
             failed = 1
             open(err_path, "w").write(as_text(exc.stderr) + f"\ntimed out after {timeout}s\n")
