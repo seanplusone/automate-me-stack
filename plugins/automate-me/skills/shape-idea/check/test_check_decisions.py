@@ -93,13 +93,18 @@ expect("good file passes", GOOD, set())
 expect("missing Handoff", swap(HANDOFF, ""), {PRESENT})
 expect("open without question", swap("- Do you want a reminder?", "- reminders are not settled"), {QUESTION})
 expect("question mark not at the end", swap("- Do you want a reminder?", "- Do you want a reminder? Maybe."), {QUESTION})
-expect("six non-slot opens do not block done", opens(6), set())
+expect("six non-slot opens do not block done after turn 1",
+       swap("- turns: 1", "- turns: 3", opens(6)), set())
 expect("5 open items pass", opens(5), set())
 expect("turn 11", swap("- turns: 1", "- turns: 11"), {TURNS})
 expect("turns 0", swap("- turns: 1", "- turns: 0"), {TURNS})
 expect("unicode digit turn does not crash", swap("- turns: 1", "- turns: ²"), {TURNS})
 expect("turns 10 passes", swap("- turns: 1", "- turns: 10"), set())
-expect("open-cap on turn 1 fails", swap("- stop: done", "- stop: open-cap"), {MATCH})
+expect("open-cap on turn 1 fails", swap("- stop: done", "- stop: open-cap"),
+       {MATCH, "stop is the first match"})
+expect("writing and stop ignore case",
+       swap("- stop: done", "- stop: DONE", swap("- writing: pass", "- writing: PASS",
+            swap("- turns: 1", "- turns: 03"))), set())
 expect("missing goal", missing_slot("- goal: a tiny habit tracker on my phone\n"), {SLOTS})
 expect("missing done", missing_slot("- done: mark today done in under 10 seconds\n"), {SLOTS})
 expect("missing output", missing_slot("- output: the current streak on the phone\n"), {SLOTS})

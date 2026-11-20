@@ -26,9 +26,9 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from check_decisions import SLOTS, canon, parse, real_items, slot_of  # noqa: E402
+from check_decisions import SLOTS, canon, parse, real_items, slot_of, split_fences  # noqa: E402
 
-KEY_LINE = re.compile(r"^(Decided|Open|Parked):\s*(.+)$", re.I)
+KEY_LINE = re.compile(r"^(Decided|Open|Parked|Any):\s*(.+)$", re.I)
 
 
 def read_key(path):
@@ -39,7 +39,7 @@ def read_key(path):
             continue
         match = KEY_LINE.match(line.strip())
         if match and not fenced:
-            kind = canon(match.group(1))
+            kind = "Any" if match.group(1).lower() == "any" else canon(match.group(1))
             parts = [p.strip() for p in match.group(2).split(" | ") if p.strip()]
             items.append((kind, parts))
     return items
@@ -64,27 +64,54 @@ def missing(terms, text):
 
 
 def named(parts):
+    """A slot id with no terms is empty on purpose, so `Decided: goal` cannot pass."""
     if len(parts) == 1:
-        return parts[0], parts
+        return parts[0], [] if parts[0].lower() in SLOTS else parts
     return parts[0], parts[1:]
 
 
 def score(key_path, decisions_path):
-    sections, _, _, _ = parse(open(decisions_path).read())
+    visible, _, _ = split_fences(open(decisions_path).read())
+    sections, _, _, _ = parse(visible)
     items = read_key(key_path)
     if not items:
         print(f"FAIL no scorable lines in {key_path}")
         return 1
+    pools = {}
     misses = 0
     for kind, parts in items:
         ident, terms = named(parts)
-        body = real_items(sections.get(kind, []))
-        if ident.lower() in SLOTS:
+        if kind == "Any":
+            body = []
+            for section in ("Decided", "Open", "Parked"):
+                body.extend(real_items(sections.get(section, [])))
+        else:
+            body = real_items(sections.get(kind, []))
+        if kind != "Any" and ident.lower() in SLOTS:
+            if not terms:
+                misses += 1
+                print(f"{kind.lower()} {ident}: MISSED a slot line needs at least one term")
+                continue
             body = [item for item in body if slot_of(item) == ident.lower()]
+            pool_key = (kind, ident.lower())
         else:
             body = [item for item in body if slot_of(item) is None]
-        best = min((missing(terms, item) for item in body), key=len, default=list(terms))
-        result = "found" if not best else f"MISSED no {kind.lower()} item names: " + ", ".join(best)
+            pool_key = (kind, "*")
+        pool = pools.setdefault(pool_key, set(range(len(body))))
+        ranked = []
+        for index in pool:
+            lost = missing(terms, body[index])
+            ranked.append((len(lost), index, lost))
+        if not ranked:
+            best, index, lost = list(terms), None, list(terms)
+        else:
+            _, index, lost = min(ranked, key=lambda row: (row[0], row[1]))
+            best = lost
+        if not best and index is not None:
+            pool.remove(index)
+            result = "found"
+        else:
+            result = f"MISSED no {kind.lower()} item names: " + ", ".join(best)
         misses += result.startswith("MISSED")
         print(f"{kind.lower()} {ident}: {result}")
     print(f"{'FAIL' if misses else 'PASS'} {len(items) - misses}/{len(items)} key items")

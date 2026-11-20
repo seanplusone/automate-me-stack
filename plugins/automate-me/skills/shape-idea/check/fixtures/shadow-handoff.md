@@ -10,11 +10,7 @@
 
 ## Open
 
-- a?
-- b?
-- c?
-- d?
-- e?
+- none
 
 ## Parked
 
@@ -24,5 +20,7 @@
 
 - next: /automate-me:outcome
 - stop: done
+- next: /other
+- **stop:** open-cap
 - turns: 3
 - writing: pass
