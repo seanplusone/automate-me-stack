@@ -38,6 +38,7 @@ Every skill is named verb first and loads as `/automate-me:<name>`.
 | Understand a long doc or a large PR before reviewing it | `explain-doc` |
 | Review one PR, or a set of linked PRs | `review-pr` |
 | Prove a change, or a PR's test plan, in the running web app | `verify-web` |
+| Measure a rendered page for excess white space and a misaligned layout | `check-ui` |
 | Split a branch or PR that is too big to review | `split-pr` |
 | Commit a change and open it as a draft PR linked to its ticket | `open-pr` |
 | Query one of your Postgres databases, read-only by default | `query-db` |
@@ -90,6 +91,7 @@ Everything lives under `plugins/automate-me/skills/`:
 - `review-prd-light/` and `find-prd-collisions/` are the lighter PRD review pair. The first finds gaps. The second runs after it and finds points that contradict each other and scenarios no point covers.
 - `write-edd/` writes a draft EDD with blast radius, evidence, spikes (run or blocked with a reason) and two mermaid diagrams built from the delta list. `cases/order-sync` is an invented PHP repo and PRD, scored by `check/check_all.sh`.
 - `verify-web/` proves a change in the running web app the way a user would see it. Its `doctor.py` is read-only and config-driven. It checks the health URLs and any containers and workers you list. It also catches a worker that started before the last change to its code, and a page and background jobs that run different code trees. Then it drives the screens through the browser MCP and keeps evidence: snapshots, screenshots, console errors and failed requests. Each side effect is checked a second way. `verify-web pr <number>` reads a PR's test plan and runs each scenario on the base branch, then the PR branch. It writes `verify.md` with a VERIFIED, CONTRADICTED or NOT RUN verdict per scenario, for `review-pr` to use. `cases/demo-app` is a small invented web app with a PR that claims a fix it doesn't make.
+- `check-ui/` measures a rendered page at 390 and 1280. `check/measure.mjs` opens it in Playwright and writes a JSON report. The rules cover excess white space, group gaps, padding, a shared left edge, and sideways scroll. `check/geometry.mjs` holds those checks as plain functions. `cases/` has one clean page and one page per rule with a single planted defect. `check/test_cases.py` runs measure on them and prints SKIP when Playwright or Chromium is missing. The rules do not pass a page. A mockup diff is later.
 - `query-db/` runs read-only Postgres queries on the databases named in `.claude/query-db.json`, for example `query analytics prod`. The default is the non-prod environment. Prod is used only when named in that message, and prod writes are always refused. Before the first query on each database and environment, `guard.sql` counts the tables the login can write to, and the skill refuses a read-only environment whose login can write. `check/check_config.py` rejects a config that allows prod writes or holds a secret. `check/test_guard.py` proves the guard on two throwaway databases.
 - `setup/` configures a project for `query-db`, `working-rules`, `open-pr` and `verify-web`, in the style of pstack's setup. `detect.py` reads the repo and reports each value with the file it came from, never a secret value. The skill asks, validates with each skill's own checker, and writes whole files, so a rerun updates them. It runs only when typed.
 - `explain-doc/` turns a long design doc, PRD, runbook or PR into one page a reader can follow without opening the source. `check/check_map.py` holds the map to its limits, a cold read on a smaller model checks it, and `check/render_page.py` renders the page. It explains only; it judges nothing and posts nothing.
@@ -121,10 +123,17 @@ Every check prints PASS or FAIL and exits 1 on FAIL. Run `sh setup.sh` once afte
 
 ```
 python3 shared/check_shared.py
-for t in $(find . -name 'test_*.py'); do (cd "$(dirname "$t")" && python3 "$(basename "$t")" >/dev/null) || echo "FAIL $t"; done
+sh shared/list_tests.sh | while IFS= read -r t; do
+  dir=$(dirname "$t")
+  base=$(basename "$t")
+  case "$base" in
+    *.py) (cd "$dir" && python3 "$base" >/dev/null) || echo "FAIL $t" ;;
+    *.mjs|*.js) (cd "$dir" && node "$base" >/dev/null) || echo "FAIL $t" ;;
+  esac
+done
 ```
 
-`query-db/check/test_guard.py` needs a local Postgres or a pulled `postgres:16` image and prints SKIP without one. The `verify-web` PR case needs Node with Playwright.
+`shared/list_tests.sh` prints every `test_*.py`, `test_*.mjs`, and `test_*.js` under this folder. `query-db/check/test_guard.py` needs a local Postgres or a pulled `postgres:16` image and prints SKIP without one. The `verify-web` PR case and `check-ui` need Node with Playwright. `check-ui/check/test_cases.py` prints SKIP when Playwright or Chromium is missing.
 
 ## Credits
 

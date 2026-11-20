@@ -19,6 +19,7 @@ These need `.claude/project-profile.md`, which `/automate-me:setup` writes. Tick
 | Carry on in a new session | `/automate-me:working-rules pickup PROJ-123` | Where the ticket stands, from its worktree's `RESUME.md`, then it continues. |
 | Stop for now | "pause safely" | The step finished, a `wip:` commit, and `RESUME.md` updated for the next pickup. |
 | Test in the browser | `/automate-me:verify-web` | A health check of your local app, then the change driven in the real app, with screenshots kept as evidence. Needs `.claude/verify-web.yaml` (from `/automate-me:setup`). |
+| Check the layout of a rendered page | `/automate-me:check-ui` | A pass or fail for white space, gaps, padding, the left edge, and sideways scroll, with the measured numbers. |
 | Look at data | `/automate-me:query-db` | A read-only query on the default (non-prod) environment, or the database and environment you name, e.g. `/automate-me:query-db analytics prod`. Needs `.claude/query-db.json`. |
 | Open the PR | `/automate-me:open-pr` | The prose check, one confirmation, then a draft PR linked to the ticket. |
 
@@ -47,6 +48,7 @@ These need `.claude/project-profile.md`, which `/automate-me:setup` writes. Tick
 ## Good to know
 
 - Three skills start only when you type them: `setup`, `working-rules` and `open-pr`. Claude can reach for the others on its own when they fit.
+- `check-ui` measures layout. It does not prove the page works. `verify-web` does that. The layout rules alone do not pass a page.
 - `query-db` never writes to prod, whatever is asked. It hands you the SQL instead.
 - Nothing needs pstack. If you have it, `working-rules` and the spikes in `write-edd` use its playbooks. The README says how to install it.
 - What each skill is made of, and its checks, is in the README's Layout section.

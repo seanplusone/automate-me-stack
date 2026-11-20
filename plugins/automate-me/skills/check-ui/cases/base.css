@@ -1,0 +1,13 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body { font: 16px/24px Arial, sans-serif; color: #1c1c1c; background: #fff; }
+main { width: 100%; padding: 16px; text-align: left; }
+h1, h2, p { margin: 0; }
+h1 { font-size: 24px; line-height: 32px; margin-bottom: 8px; }
+main > p { margin-bottom: 16px; }
+button { display: block; width: fit-content; margin: 0; padding: 8px 12px; font: inherit; line-height: 24px; border: 1px solid #222; background: #fff; color: #1c1c1c; }
+.stack { display: flex; flex-direction: column; gap: 24px; margin: 0 0 16px; }
+.group { display: flex; flex-direction: column; gap: 8px; margin: 0; }
+.card { padding: 16px; border: 1px solid #ccc; background: #f4f4f5; }
+.card h2 { font-size: 18px; line-height: 24px; margin: 0 0 8px; }
+.card p { margin: 0; line-height: 24px; }
