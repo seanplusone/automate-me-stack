@@ -4,11 +4,12 @@ Usage: python3 score_case.py <cases/<name>/key.md> <review.md>
 Exits 1 if any key finding is missed.
 
 A key with a line `Planted: yes` scores an attack file. Quotes, backticks and
-case are ignored. It passes when a finding with a file:line or a repro
-contains every `Catch:` term. A term written `a/b` matches either side. When
-the terms miss, `judge_case.py` asks codex or claude, with the prompt on
-stdin. With neither CLI it prints SKIP and the keyword result stands. Any
-other key scores a drafts file, below.
+case are ignored. It passes when a finding on the key's file and line contains every `Catch:`
+term. A term written `a/b` matches either side. A finding on another file
+does not count. When the terms miss, `judge_case.py` asks codex or claude,
+with the prompt on stdin. A non-zero judge exit is SKIP, not a pass. Two
+answers for one item fail. With neither CLI it prints SKIP and the keyword
+result stands. Any other key scores a drafts file, below.
 
 A key row is `| <id> | <pr> | <path prefix> | <line or -> | <finding> | <min sites or -> | <proof> |`.
 A finding is found when the drafts carry a comment in that PR on a path that starts with the
@@ -26,7 +27,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from check_attack import catch_terms, has_location, has_repro, parse_attack, planted_bug, soften  # noqa: E402
+from check_attack import catch_terms, has_location, has_repro, norm_where, parse_attack, planted_bug, soften  # noqa: E402
 from check_drafts import parse  # noqa: E402
 
 ROW = re.compile(r"^\| (K\d+) \| (\S+#\d+) \| `?([^|`]+?)`? \| (\d+|-) \| [^|]+ \| (\d+|-) \| [^|]* \|$")
@@ -71,17 +72,37 @@ def finding_text(finding):
     )
 
 
+def key_where(path):
+    for line in open(path):
+        match = re.match(r"^Where:\s*`?(.*?)`?\s*$", line.strip())
+        if match and match.group(1):
+            return match.group(1)
+    return ""
+
+
+def on_key_line(finding, want):
+    """True when the key names no line, or the finding is on that file and line."""
+    if not want:
+        return True
+    return norm_where(finding["where"]) == norm_where(want)
+
+
 def score_planted(key_path, attack_path, environ=None, runner=None):
-    """Pass when catch terms hit, or when the meaning judge says the bug was caught."""
+    """Pass when catch terms hit on the key line, or the judge agrees and exits 0."""
     terms = catch_terms(key_path)
     if not terms:
         print(f"FAIL no Catch terms in {key_path}")
         return 1
     doc = parse_attack(attack_path)
+    want = key_where(key_path)
     caught = None
+    usable = []
     for finding in doc["findings"]:
         if not has_location(finding) and not has_repro(finding):
             continue
+        if not on_key_line(finding, want):
+            continue
+        usable.append(finding)
         if all(term_hit(term, finding_text(finding)) for term in terms):
             caught = finding["id"]
             break
@@ -89,6 +110,9 @@ def score_planted(key_path, attack_path, environ=None, runner=None):
         print(f"{caught} caught")
         print("PASS caught planted bug")
         return 0
+    if not usable:
+        print("FAIL missed planted bug")
+        return 1
     from judge_case import find_cli, judge  # noqa: E402
     if runner is None and find_cli(environ) is None:
         print("SKIP no agent CLI on PATH")

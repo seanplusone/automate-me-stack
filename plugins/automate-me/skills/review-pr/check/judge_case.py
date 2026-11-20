@@ -66,28 +66,45 @@ def build_prompt(key_text, findings):
 
 
 def parse_verdict(text):
+    """True, False, 'conflict' when one item has both answers, or None."""
     found = {}
     for match in ITEM.finditer(text or ""):
-        found[int(match.group(1))] = match.group(2).lower() == "yes"
-    return found.get(1)
+        number = int(match.group(1))
+        found.setdefault(number, []).append(match.group(2).lower() == "yes")
+    answers = found.get(1) or []
+    if not answers:
+        return None
+    if any(answer != answers[0] for answer in answers):
+        return "conflict"
+    return answers[0]
 
 
 def run_cli(argv, prompt):
     result = subprocess.run(argv, input=prompt, text=True, capture_output=True)
-    return result.stdout
+    return result.returncode, result.stdout
 
 
 def judge(key_path, attack_path, environ=None, runner=None):
-    """0 when the bug is caught or no CLI exists, 1 when the judge says no."""
+    """0 when the bug is caught or no CLI exists, 1 on a miss, 2 on a bad exit."""
     doc = parse_attack(attack_path)
     prompt = build_prompt(open(key_path).read(), doc["findings"])
     argv = find_cli(environ)
     if argv is None and runner is None:
         print("SKIP no agent CLI on PATH")
         return 0
-    stdout = runner(prompt) if runner else run_cli(argv, prompt)
+    if runner:
+        out = runner(prompt)
+        if isinstance(out, tuple):
+            code, stdout = out
+        else:
+            code, stdout = 0, out
+    else:
+        code, stdout = run_cli(argv, prompt)
+    if code:
+        print("SKIP judge exited non-zero")
+        return 2
     ok = parse_verdict(stdout)
-    if ok:
+    if ok is True:
         print("PASS judge caught planted bug")
         return 0
     print("FAIL judge missed planted bug")

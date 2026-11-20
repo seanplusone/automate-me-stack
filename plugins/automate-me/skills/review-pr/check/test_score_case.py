@@ -142,6 +142,18 @@ PARAPHRASE = CAUGHT.replace(
 ).replace('{"passed": true, "ok": false}', "a failed case with a true summary")
 code, text = planted_score(PARAPHRASE, "returns True | 'ok': False", runner=lambda prompt: "ITEM 1: yes\n")
 expect_planted("meaning judge can catch a paraphrase", (code, "PASS judge caught planted bug" in text), (0, True))
+DENIED = CAUGHT.replace("### F1 | report.py:4 | passes: current", "### F1 | unrelated.py:900 | passes: current")
+k, p = planted_files(DENIED, "returns True | ok false")
+open(k, "a").write("Where: report.py:4\n")
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    code = score(k, p, environ={"PATH": "/nonexistent"}, runner=lambda prompt: (7, "ITEM 1: no\nITEM 1: yes\n"))
+text = out.getvalue()
+expect_planted("a denial on another file is not a catch", (code, "PASS" not in text), (1, True))
+code, text = planted_score(PARAPHRASE, "returns True | 'ok': False", runner=lambda prompt: (7, "ITEM 1: no\nITEM 1: yes\n"))
+expect_planted("a non-zero judge does not pass", (code, "SKIP judge exited non-zero" in text and "PASS judge" not in text), (1, True))
+code, text = planted_score(PARAPHRASE, "returns True | 'ok': False", runner=lambda prompt: "ITEM 1: no\nITEM 1: yes\n")
+expect_planted("conflicting judge answers fail", (code, "FAIL judge missed planted bug" in text), (1, True))
 
 if __name__ == "__main__":
     for f in FAILS:

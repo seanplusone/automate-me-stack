@@ -120,6 +120,56 @@ other = write("other.md", "\n".join([
 ]))
 expect("two clean passes approve", merge([clean, other])["verdict"], "approve")
 
+colon = write("codex.md", "\n".join([
+    "# Attack review: cap", "", "Verdict: needs fixes", "", "## Tried",
+    "- Input: within_cap(5)", "  Observed: False", "  Broke: yes", "",
+    "## Findings",
+    "### F1: cap.py:3 | passes: codex",
+    "The cap rejects 5.",
+    "Repro: within_cap(5)",
+    "Observed: False",
+    "",
+    "## Held",
+    "None",
+]))
+expect("a colon heading is kept", merge([colon])["verdict"], "needs fixes")
+expect("a colon heading keeps the line", merge([colon])["findings"][0]["where"], "cap.py:3")
+for heading in (
+    "#### F1 | cap.py:3 | passes: codex",
+    "### F1 | cap.py:3 | (passes: codex)",
+    "### cap.py line 3",
+    "**### F1 | cap.py:3**",
+):
+    sample = colon.replace("### F1: cap.py:3 | passes: codex", heading)
+    doc = merge([write("h.md", open(colon).read().replace("### F1: cap.py:3 | passes: codex", heading))])
+    expect("heading kept: " + heading, doc["verdict"] == "needs fixes" and doc["findings"] and doc["findings"][0]["where"] == "cap.py:3", True)
+bare = write("bare.md", "\n".join([
+    "# Attack review: cap", "", "Verdict: needs fixes", "", "## Tried",
+    "- Input: within_cap(5)", "  Observed: False", "  Broke: yes", "",
+    "## Findings",
+    "",
+    "## Held",
+    "None",
+]))
+expect("broke yes is not an approve", merge([bare])["verdict"], "needs fixes")
+quotes = write("quotes.md", "\n".join([
+    "# Attack review: empty", "", "Verdict: needs fixes", "", "## Tried",
+    '- Input: ""', "  Observed: False", "  Broke: no",
+    "- Input: within_cap(5)", "  Observed: False", "  Broke: yes", "",
+    "## Findings",
+    "### F1 | cap.py:3 | passes: codex",
+    "within_cap returns False.",
+    "Repro: within_cap(5)",
+    "Observed: False",
+    "",
+    "## Held",
+    '- Input: ""', "  Observed: False", "",
+]))
+quoted = render(merge([quotes]))
+expect("quoted empty input is kept", '- Input: ""' in quoted, True)
+expect("quoted merge passes the checker", check_attack(write("out.md", quoted)), [])
+expect("a missing pass is not an approve", merge(["/tmp/no-such-pass-e9be.md", clean])["verdict"], "")
+
 text = render(one)
 path = write("merged.md", text)
 expect("merged file passes the checker", check_attack(path), [])
@@ -130,6 +180,6 @@ expect("round trip keeps the finding line", parsed["findings"][0]["where"], "rep
 if __name__ == "__main__":
     for item in FAILS:
         print(f"FAIL {item}")
-    total = 22
+    total = 32
     print(f"{total - len(FAILS)}/{total} passed")
     sys.exit(1 if FAILS else 0)
