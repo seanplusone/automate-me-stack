@@ -9,16 +9,22 @@ that ran past one line. A section whose only item is `none` has no items. Handof
     - next: /automate-me:outcome
     - stop: done | turn-cap | open-cap
     - turns: <n>
+    - writing: pass
+
+The five slots are goal, done, output, verify, and constraints. A slot counts when a Decided
+or Open item starts with `<slot>:`. An Open example is `output: what comes back, a list or a page?`.
 
 Fails when:
 - a section is missing or repeated, or the four sections are out of order;
 - an Open item does not end with `?`;
 - Open has more than 5 items;
+- any of the five slots is missing from both Decided and Open;
 - stop is missing, repeated, or not one of done, turn-cap, open-cap;
 - turns is missing, repeated, not a whole number, or greater than 10;
-- stop is done and Decided has no line starting with `goal:` or no line starting with `done:`;
+- stop is done and any of the five slots is not a Decided line;
 - any item runs past one line;
-- Handoff has no `next: /automate-me:outcome` line.
+- Handoff has no `next: /automate-me:outcome` line;
+- Handoff has no single `writing: pass` line.
 
 Prints a PASS or FAIL line per check and exits 1 on any FAIL.
 Exit 0 when every check passed. Exit 2 on a usage error.
@@ -33,7 +39,7 @@ STOPS = {"done", "turn-cap", "open-cap"}
 NEXT = "next: /automate-me:outcome"
 MAX_TURNS = 10
 MAX_OPEN = 5
-PREFIX = {"goal": re.compile(r"^goal:", re.I), "done": re.compile(r"^done:", re.I)}
+SLOTS = ["goal", "done", "output", "verify", "constraints"]
 
 
 def canon(name):
@@ -78,6 +84,10 @@ def parse(text):
     return sections, counts, positions, extras
 
 
+def has_slot(items, slot):
+    return any(re.match(rf"^{slot}:", item, re.I) for item in items)
+
+
 def field(items, label):
     """Values of Handoff bullets that start with `label:`."""
     found = []
@@ -109,11 +119,15 @@ def check(text):
         order.append("sections are " + ", ".join(positions) + "; use Decided, Open, Parked, Handoff")
     add("sections in order", order)
 
+    decided = real_items(sections.get("Decided", []))
     opens = real_items(sections.get("Open", []))
     add("every open item ends with a question",
         [f"open item does not end with ?: {item!r}" for item in opens if not item.endswith("?")])
     add("at most 5 open items",
         [f"{len(opens)} open items, at most {MAX_OPEN}"] if len(opens) > MAX_OPEN else [])
+    add("every slot is decided or open",
+        [f"missing slot: {slot}. Add a Decided `{slot}:` line or an Open `{slot}: ...?` item"
+         for slot in SLOTS if not has_slot(decided, slot) and not has_slot(opens, slot)])
 
     handoff = sections.get("Handoff", [])
     handoff_ready = counts.get("Handoff") == 1
@@ -141,12 +155,8 @@ def check(text):
 
     done_fails = []
     if len(stops) == 1 and stops[0].lower() == "done":
-        decided = real_items(sections.get("Decided", []))
-        if not any(PREFIX["goal"].match(item) for item in decided):
-            done_fails.append("Decided has no goal: line")
-        if not any(PREFIX["done"].match(item) for item in decided):
-            done_fails.append("Decided has no done: line")
-    add("stop done has goal and done", done_fails)
+        done_fails = [f"stop is done but {slot} is not a Decided line" for slot in SLOTS if not has_slot(decided, slot)]
+    add("stop done has all five slots decided", done_fails)
 
     add("no item longer than one line",
         [f"{name}: extra line {text!r}. Each item stays on one line" for name, text in extras])
@@ -155,6 +165,12 @@ def check(text):
     if handoff_ready and not any(item.strip().lower() == NEXT for item in handoff):
         next_fails.append(f"Handoff has no `{NEXT}` line")
     add("handoff names outcome", next_fails)
+
+    writing = field(handoff, "writing") if handoff_ready else []
+    writing_fails = []
+    if handoff_ready and writing != ["pass"]:
+        writing_fails.append("Handoff has no single `writing: pass` line. Run the shared writing check first")
+    add("handoff says writing pass", writing_fails)
     return results
 
 

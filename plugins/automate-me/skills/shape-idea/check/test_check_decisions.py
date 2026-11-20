@@ -18,7 +18,10 @@ GOOD = """# Decisions: water habit
 
 - goal: a tiny habit tracker on my phone
 - done: mark today done in under 10 seconds
-- no accounts, it's only me
+- output: the current streak on the phone
+- verify: mark today once and read the streak
+- constraints: no accounts, it's only me
+- the one habit is drinking water
 
 ## Open
 
@@ -33,7 +36,8 @@ GOOD = """# Decisions: water habit
 - next: /automate-me:outcome
 - stop: done
 - turns: 1
-- map: Decided goes to Goal and Must-haves. Open goes to Unknowns. Parked goes to the Parking lot.
+- writing: pass
+- map: goal goes to Goal. output goes to Output. verify goes to Verify. constraints and done go to Must-haves. Open goes to Unknowns. Parked goes to the Parking lot.
 """
 
 HANDOFF = """## Handoff
@@ -41,7 +45,8 @@ HANDOFF = """## Handoff
 - next: /automate-me:outcome
 - stop: done
 - turns: 1
-- map: Decided goes to Goal and Must-haves. Open goes to Unknowns. Parked goes to the Parking lot.
+- writing: pass
+- map: goal goes to Goal. output goes to Output. verify goes to Verify. constraints and done go to Must-haves. Open goes to Unknowns. Parked goes to the Parking lot.
 """
 
 PRESENT = "sections present once"
@@ -50,9 +55,11 @@ QUESTION = "every open item ends with a question"
 OPEN_CAP = "at most 5 open items"
 STOP = "stop reason is done, turn-cap, or open-cap"
 TURNS = "turn count recorded and at most 10"
-DONE = "stop done has goal and done"
+SLOTS = "every slot is decided or open"
+DONE = "stop done has all five slots decided"
 ONE_LINE = "no item longer than one line"
 NEXT = "handoff names outcome"
+WRITING = "handoff says writing pass"
 
 
 def failed(text):
@@ -76,6 +83,10 @@ def opens(n):
     return swap("- Do you want a reminder?", lines)
 
 
+def missing_slot(line):
+    return swap("- stop: done", "- stop: turn-cap", swap(line, ""))
+
+
 expect("good file passes", GOOD, set())
 expect("missing Handoff", swap(HANDOFF, ""), {PRESENT})
 expect("open without question", swap("- Do you want a reminder?", "- reminders are not settled"), {QUESTION})
@@ -84,24 +95,31 @@ expect("6 open items", opens(6), {OPEN_CAP})
 expect("5 open items pass", opens(5), set())
 expect("turn 11", swap("- turns: 1", "- turns: 11"), {TURNS})
 expect("turns 10 passes", swap("- turns: 1", "- turns: 10"), set())
-expect("stop done without done", swap("- done: mark today done in under 10 seconds\n", ""), {DONE})
-expect("stop done without goal", swap("- goal: a tiny habit tracker on my phone\n", ""), {DONE})
-expect("stop turn-cap without done passes",
-       swap("- done: mark today done in under 10 seconds\n", "", swap("- stop: done", "- stop: turn-cap")), set())
-expect("stop open-cap without done passes",
-       swap("- done: mark today done in under 10 seconds\n", "", swap("- stop: done", "- stop: open-cap", opens(5))), set())
+expect("missing goal", missing_slot("- goal: a tiny habit tracker on my phone\n"), {SLOTS})
+expect("missing done", missing_slot("- done: mark today done in under 10 seconds\n"), {SLOTS})
+expect("missing output", missing_slot("- output: the current streak on the phone\n"), {SLOTS})
+expect("missing verify", missing_slot("- verify: mark today once and read the streak\n"), {SLOTS})
+expect("missing constraints", missing_slot("- constraints: no accounts, it's only me\n"), {SLOTS})
+expect("stop done without done", swap("- done: mark today done in under 10 seconds\n", ""), {SLOTS, DONE})
+expect("stop done with output still open",
+       swap("- output: the current streak on the phone\n", "",
+            swap("- Do you want a reminder?", "- output: what comes back, a list or a page?\n- Do you want a reminder?")),
+       {DONE})
+expect("turn-cap with done in Open passes",
+       swap("- Do you want a reminder?", "- done: what does finished look like?\n- Do you want a reminder?",
+            swap("- stop: done", "- stop: turn-cap", swap("- done: mark today done in under 10 seconds\n", ""))), set())
 expect("bad stop reason", swap("- stop: done", "- stop: later"), {STOP})
 expect("missing turns", swap("- turns: 1\n", ""), {TURNS})
 expect("turns is not a number", swap("- turns: 1", "- turns: ten"), {TURNS})
 expect("missing next", swap("- next: /automate-me:outcome\n", ""), {NEXT})
+expect("missing writing pass", swap("- writing: pass\n", ""), {WRITING})
 expect("item longer than one line",
        swap("- goal: a tiny habit tracker on my phone", "- goal: a tiny habit tracker\n  on my phone"), {ONE_LINE})
 expect("repeated section", GOOD + "\n## Decided\n\n- again\n", {PRESENT})
 rest = swap(HANDOFF, "").replace("# Decisions: water habit\n\n", "", 1)
 expect("sections out of order", HANDOFF + "\n" + rest, {ORDER})
 expect("lone none in Open is empty", swap("- Do you want a reminder?", "- none"), set())
-expect("goal and done with no other line still passes",
-       swap("- no accounts, it's only me\n", ""), set())
+expect("a non-slot line is optional", swap("- the one habit is drinking water\n", ""), set())
 
 
 def write(text):
