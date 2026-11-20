@@ -68,9 +68,10 @@ expect(
     check_attack(attack(findings=[("F1", "none", "current", "something feels off.", "none", "none")])),
     ["F1 has no location and no repro"],
 )
+clean_approve = attack(verdict="approve", findings=[], tried=[("{}", "ok", "no")], held=[("{}", "ok")])
 expect(
     "approve on a planted bug",
-    check_attack(attack(verdict="approve", findings=[]), key(True)),
+    check_attack(clean_approve, key(True)),
     ["approve on a case with a planted bug"],
 )
 expect(
@@ -78,7 +79,17 @@ expect(
     check_attack(attack(verdict="needs fixes"), key(True)),
     [],
 )
-expect("approve with no planted key", check_attack(attack(verdict="approve", findings=[])), [])
+expect("approve with no planted key", check_attack(clean_approve), [])
+expect(
+    "approve with a located finding fails",
+    "approve contradicts a break" in check_attack(attack(verdict="approve")),
+    True,
+)
+expect(
+    "approve with a break and no finding fails",
+    "approve contradicts a break" in check_attack(attack(verdict="approve", findings=[])),
+    True,
+)
 held_try = [("{\"passed\": false}", "False", "no")]
 expect(
     "held input omitted",
@@ -110,12 +121,13 @@ case_dir = os.path.join(planted_root, "cases", "item-cap", "runs", "run-9")
 os.makedirs(case_dir)
 open(os.path.join(planted_root, "cases", "item-cap", "key.md"), "w").write("Planted: yes\nCatch: x\n")
 approved = os.path.join(case_dir, "attack.md")
-open(approved, "w").write(open(attack(verdict="approve", findings=[])).read())
+open(approved, "w").write(open(clean_approve).read())
 expect("a case key is found without --key", check_attack(approved), ["approve on a case with a planted bug"])
+expect("an empty --key does not disable the case", check_attack(approved, ""), ["approve on a case with a planted bug"])
 
 if __name__ == "__main__":
     for item in FAILS:
         print(f"FAIL {item}")
-    total = 12
+    total = 15
     print(f"{total - len(FAILS)}/{total} passed")
     sys.exit(1 if FAILS else 0)

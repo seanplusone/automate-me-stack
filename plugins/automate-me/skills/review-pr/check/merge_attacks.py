@@ -26,11 +26,15 @@ def merge(paths):
     """The merged review dict from pass files, in the order they were given."""
     docs, errors = [], []
     for path in paths:
+        source = os.path.splitext(os.path.basename(path))[0]
+        if not os.path.isfile(path):
+            errors.append(source + ": missing pass")
+            continue
         doc = parse_attack(path)
-        doc["source"] = os.path.splitext(os.path.basename(path))[0]
+        doc["source"] = source
         docs.append(doc)
         if not doc["parsed"]:
-            errors.append(doc["source"] + ": " + (doc["errors"][0] if doc["errors"] else "unparseable output"))
+            errors.append(source + ": " + (doc["errors"][0] if doc["errors"] else "unparseable output"))
     groups, order = {}, []
     for doc in docs:
         if not doc["parsed"]:
@@ -38,7 +42,7 @@ def merge(paths):
         for finding in doc["findings"]:
             if not finding["passes"]:
                 finding["passes"] = [doc["source"]]
-            if not has_location(finding) and not has_repro(finding):
+            if not finding.get("raw") and not has_location(finding) and not has_repro(finding):
                 continue
             key = finding_key(finding)
             if key not in groups:
@@ -73,7 +77,9 @@ def merge(paths):
             "observed": observed,
             "passes": passes,
         })
-    if kept:
+    broke = any(item["broke"] == "yes" for doc in docs if doc["parsed"] for item in doc["tried"])
+    said_fixes = any(doc["parsed"] and doc["verdict"] == "needs fixes" for doc in docs)
+    if kept or broke or said_fixes:
         verdict = "needs fixes"
     elif errors:
         verdict = ""
@@ -86,9 +92,9 @@ def merge(paths):
         for item in doc["tried"]:
             if not item["input"] or not item["observed"]:
                 continue
-            key = norm(item["input"])
+            key = item["input"]
             if key not in by_input:
-                by_input[key] = {"input": item["input"].strip(), "observed": item["observed"], "broke": item["broke"]}
+                by_input[key] = {"input": item["input"], "observed": item["observed"], "broke": item["broke"]}
                 tried.append(by_input[key])
             elif item["broke"] == "yes":
                 by_input[key]["broke"] = "yes"

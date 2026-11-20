@@ -7,8 +7,10 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from check_attack import norm_where  # noqa: E402
-from merge_attacks import merge  # noqa: E402
+import tempfile
+
+from check_attack import check_attack, norm_where  # noqa: E402
+from merge_attacks import merge, render  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "fixtures", "passes")
@@ -56,9 +58,15 @@ late = merge([timeout, paths("item-cap")[0]])
 expect("a timeout keeps the other bug", late["verdict"], "needs fixes")
 expect("a timeout keeps the planted line", norm_where(late["findings"][0]["where"]), ("cap.py", "3"))
 
+for case in list(PLANTED) + ["clean"]:
+    text = render(merge(paths(case)))
+    out = os.path.join(tempfile.mkdtemp(), "attack.md")
+    open(out, "w").write(text)
+    expect(case + " merge passes check_attack", check_attack(out), [])
+
 if __name__ == "__main__":
     for item in FAILS:
         print(f"FAIL {item}")
-    total = 15
+    total = 19
     print(f"{total - len(FAILS)}/{total} passed")
     sys.exit(1 if FAILS else 0)

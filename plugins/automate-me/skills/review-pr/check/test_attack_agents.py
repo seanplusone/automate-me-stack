@@ -11,8 +11,8 @@ FAILS = []
 STUB = """#!/usr/bin/env python3
 import os, sys
 sys.stdout.write("agent=" + os.path.basename(sys.argv[0]) + "\\n")
-sys.stdout.write("args=" + " ".join(sys.argv[1:-1]) + "\\n")
-sys.stdout.write("brief=" + sys.argv[-1])
+sys.stdout.write("args=" + " ".join(sys.argv[1:]) + "\\n")
+sys.stdout.write("brief=" + sys.stdin.read())
 """
 
 
@@ -38,11 +38,11 @@ both = bindir("codex", "claude")
 found = detect(both)
 expect("both names", [name for name, _binary in found], ["codex", "claude"])
 codex_bin = found[0][1]
-expect("codex argv", command(codex_bin, "codex", "BRIEF")[1:],
-       ["exec", "--skip-git-repo-check", "--sandbox", "workspace-write", "BRIEF"])
+expect("codex argv has no prompt", command(codex_bin, "codex")[1:],
+       ["exec", "--skip-git-repo-check", "--sandbox", "workspace-write"])
 claude_bin = found[1][1]
-expect("claude argv", command(claude_bin, "claude", "BRIEF")[1:],
-       ["-p", "--permission-mode", "acceptEdits", "--allowedTools", "Bash", "BRIEF"])
+expect("claude argv has no prompt", command(claude_bin, "claude")[1:],
+       ["-p", "--permission-mode", "acceptEdits", "--allowedTools", "Bash"])
 
 brief = os.path.join(tempfile.mkdtemp(), "brief.md")
 open(brief, "w").write("attack this diff")
@@ -54,7 +54,8 @@ claude_out = open(os.path.join(out, "claude.md")).read()
 expect("codex saw the brief", "brief=attack this diff" in codex_out, True)
 expect("codex was exec", "args=exec --skip-git-repo-check" in codex_out, True)
 expect("claude saw the brief", "brief=attack this diff" in claude_out, True)
-expect("claude was print mode", "args=-p" in claude_out, True)
+expect("claude was print mode", "args=-p --permission-mode acceptEdits --allowedTools Bash" in claude_out, True)
+expect("prompt is not an argument", "attack this diff" not in claude_out.split("brief=")[0], True)
 
 only = bindir("claude")
 expect("claude alone", [name for name, _binary in detect(only)], ["claude"])
@@ -72,9 +73,40 @@ expect("timeout exits 1", code, 1)
 expect("timeout is not an approve", open(os.path.join(slow_out, "codex.md")).read().strip(), "Parse: timeout")
 expect("timeout stderr is kept", "timed out after 0.2s" in open(os.path.join(slow_out, "codex.err")).read(), True)
 
+bad = tempfile.mkdtemp()
+bad_bin = os.path.join(bad, "codex")
+open(bad_bin, "w").write("""#!/usr/bin/env python3
+import sys
+sys.stdout.write("# Attack review: t\\n\\nVerdict: approve\\n\\n## Tried\\n- Input: x\\n  Observed: ok\\n  Broke: no\\n\\n## Findings\\n\\n## Held\\n- Input: x\\n  Observed: ok\\n")
+sys.exit(7)
+""")
+os.chmod(bad_bin, os.stat(bad_bin).st_mode | stat.S_IEXEC)
+bad_out = tempfile.mkdtemp()
+expect("non-zero exit is an error", run_all(brief, bad_out, search_path=bad) != 0, True)
+expect("non-zero exit is not an approve", open(os.path.join(bad_out, "codex.md")).read().strip(), "Parse: error")
+
+raw = tempfile.mkdtemp()
+raw_bin = os.path.join(raw, "claude")
+open(raw_bin, "w").write("""#!/usr/bin/env python3
+import sys
+sys.stdout.buffer.write(b"note \\xff\\n")
+""")
+os.chmod(raw_bin, os.stat(raw_bin).st_mode | stat.S_IEXEC)
+raw_out = tempfile.mkdtemp()
+expect("non-utf8 does not crash", run_all(brief, raw_out, search_path=raw), 0)
+expect("non-utf8 is replaced", "\ufffd" in open(os.path.join(raw_out, "claude.md"), encoding="utf-8").read(), True)
+
+wide = os.path.join(tempfile.mkdtemp(), "brief.md")
+open(wide, "wb").write(b"A" * 200000)
+wide_out = tempfile.mkdtemp()
+run_all(wide, wide_out, search_path=both)
+wide_text = open(os.path.join(wide_out, "claude.md")).read()
+expect("long brief arrives on stdin", wide_text.endswith("A" * 200000), True)
+expect("long brief stays off argv", "AAAA" not in wide_text.split("brief=")[0], True)
+
 if __name__ == "__main__":
     for item in FAILS:
         print(f"FAIL {item}")
-    total = 16
+    total = 23
     print(f"{total - len(FAILS)}/{total} passed")
     sys.exit(1 if FAILS else 0)

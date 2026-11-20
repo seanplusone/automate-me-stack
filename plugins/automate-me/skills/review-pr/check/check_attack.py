@@ -15,8 +15,11 @@ VERDICT = re.compile(r"^Verdict:\s*(approve|needs fixes)\b", re.I)
 ITEM = re.compile(r"^[-*]\s+Input:\s*(.+)$", re.I)
 OBS = re.compile(r"^\s*Observed:\s*(.*)$", re.I)
 BROKE = re.compile(r"^\s*Broke:\s*(yes|no)\b", re.I)
-FINDING = re.compile(r"^###\s+(\S+)\s*\|\s*(\S+?)(?:\s*\|\s*passes:\s*(.*))?$")
 REPRO = re.compile(r"^Repro:\s*(.*)$", re.I)
+HEAD_ID = re.compile(r"^(?P<id>[A-Za-z0-9_-]+)\s*[:|]\s*(?P<rest>.+)$")
+PASSES = re.compile(r"\(?\s*passes:\s*([^)|]+)", re.I)
+LINE_WORD = re.compile(r"(\S+)\s+line\s+(\d+)\b", re.I)
+WHERE_TOKEN = re.compile(r"(\S+:\d+)\b")
 WHERE = re.compile(r"^\S+:\d+$")
 PARSE_LINE = re.compile(r"^Parse:\s*\S", re.I)
 
@@ -80,6 +83,52 @@ def norm_where(where):
     if not parts:
         return None
     return ("/".join(parts), line)
+
+
+def parse_finding_heading(line):
+    """A finding heading in the shapes agents actually write, or None.
+
+    Accepts ### or ####, a colon or a pipe, bold markers, `(passes: name)`,
+    and `cap.py line 3` as well as `cap.py:3`.
+    """
+    raw = line.strip()
+    if not raw:
+        return None
+    looks = raw.startswith("#") or raw.startswith("**") or raw.startswith("__")
+    cleaned = raw.replace("**", "").replace("__", "").replace("`", "")
+    cleaned = re.sub(r"^#+\s*", "", cleaned).strip()
+    if not looks and not cleaned[:1].isalnum():
+        return None
+    passes = []
+    found = PASSES.search(cleaned)
+    if found:
+        passes = [part.strip(" )") for part in found.group(1).split(",") if part.strip(" )")]
+        cleaned = cleaned[:found.start()].strip(" |:")
+    where, fid = None, None
+    match = HEAD_ID.match(cleaned)
+    if match:
+        fid = match.group("id")
+        rest = match.group("rest").strip()
+        token = WHERE_TOKEN.match(rest)
+        words = LINE_WORD.match(rest)
+        if token:
+            where = token.group(1)
+        elif words:
+            where = f"{words.group(1)}:{words.group(2)}"
+        elif rest == "none" or rest.startswith("none"):
+            where = "none"
+    if where is None and looks:
+        words = LINE_WORD.search(cleaned)
+        token = WHERE_TOKEN.search(cleaned)
+        if words:
+            where = f"{words.group(1)}:{words.group(2)}"
+            fid = fid or "F"
+        elif token:
+            where = token.group(1)
+            fid = fid or "F"
+    if not looks or not where:
+        return None
+    return {"id": fid or "F", "where": where, "passes": passes}
 
 
 def same_where(left, right):
@@ -158,30 +207,34 @@ def parse_attack(path):
             continue
         if section != "findings":
             continue
-        m = FINDING.match(line)
-        if m:
-            passes = [p.strip() for p in (m.group(3) or "").split(",") if p.strip()]
+        heading = parse_finding_heading(line)
+        if heading:
             cur = {
-                "id": m.group(1),
-                "where": m.group(2),
-                "passes": passes,
+                "id": heading["id"],
+                "where": heading["where"],
+                "passes": heading["passes"],
                 "claim": [],
                 "repro": "",
                 "observed": "",
+                "raw": False,
             }
             doc["findings"].append(cur)
             continue
-        if cur is None:
-            continue
         m = REPRO.match(line)
-        if m:
+        if m and cur is not None:
             cur["repro"] = m.group(1).strip()
             continue
         m = OBS.match(line)
-        if m:
+        if m and cur is not None:
             cur["observed"] = m.group(1).strip()
             continue
         if line.strip():
+            if cur is None:
+                cur = {
+                    "id": "raw", "where": "none", "passes": [], "claim": [],
+                    "repro": "", "observed": "", "raw": True,
+                }
+                doc["findings"].append(cur)
             cur["claim"].append(line.strip())
     if not doc["verdict"] and not doc["tried"] and not doc["findings"]:
         doc["parsed"] = False
@@ -190,15 +243,16 @@ def parse_attack(path):
 
 
 def held_covers(item, held_items, held_text):
-    needle = soften(item["input"])
-    if not needle:
+    """True when Held still contains the input, quotes and backticks included."""
+    raw = item["input"].strip()
+    if raw == "":
         return False
-    blob = soften("\n".join(held_text))
-    if needle in blob:
+    blob = "\n".join(held_text)
+    if raw in blob:
         return True
     for held in held_items:
-        hay = soften(held["input"])
-        if hay and (needle in hay or hay in needle):
+        hay = held["input"].strip()
+        if hay and (raw == hay or raw in hay or hay in raw):
             return True
     return False
 
@@ -220,7 +274,11 @@ def check_attack(path, key_path=None):
     for item in tried:
         if item["broke"] == "no" and not held_covers(item, doc["held"], doc["held_text"]):
             fails.append("held list omits an input that did not break: " + item["input"])
-    if key_path is None:
+    located = any(has_location(finding) for finding in doc["findings"])
+    broke_yes = any(item["broke"] == "yes" for item in tried)
+    if doc["verdict"] == "approve" and (located or broke_yes):
+        fails.append("approve contradicts a break")
+    if not key_path:
         key_path = find_key(path)
     if key_path and planted_bug(key_path) and doc["verdict"] == "approve":
         fails.append("approve on a case with a planted bug")
@@ -239,7 +297,7 @@ def main(argv):
         if argv[i] == "--key":
             if i + 1 >= len(argv):
                 usage_or_exit(__doc__, ["check_attack.py"], 1)
-            key = argv[i + 1]
+            key = argv[i + 1].strip() or None
             i += 2
             continue
         args.append(argv[i])
