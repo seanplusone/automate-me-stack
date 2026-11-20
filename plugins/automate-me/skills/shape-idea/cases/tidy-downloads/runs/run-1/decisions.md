@@ -7,11 +7,11 @@
 
 ## Open
 
-- I don't know if it should run when I ask it or watch the folder all the time. Should it run when I ask it, or watch the folder all the time?
+- done: what does finished look like for one tidy of the downloads folder?
+- output: what comes back after a run, a list of moves or just a count?
+- verify: how will you check a file landed in the right folder?
+- constraints: are there files it must never move, or a size it must stay under?
 - maybe it also deletes files older than 30 days, but that scares me. Should it delete files older than 30 days, or never delete?
-- zip files, I have no idea what to do with those. What should it do with zip files?
-- should it touch the desktop too or only Downloads?
-- what do I type to undo a move?
 
 ## Parked
 
@@ -22,4 +22,5 @@
 - next: /automate-me:outcome
 - stop: open-cap
 - turns: 1
-- map: Decided goes to Goal and Must-haves. Open goes to Unknowns. Parked goes to the Parking lot.
+- writing: pass
+- map: goal goes to Goal. output goes to Output. verify goes to Verify. constraints, done, and every other Decided line go to Must-haves. Open goes to Unknowns. Parked goes to the Parking lot.
