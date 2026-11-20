@@ -3,9 +3,12 @@
 Usage: python3 score_case.py <cases/<name>/key.md> <review.md>
 Exits 1 if any key finding is missed.
 
-A key with a line `Planted: yes` scores an attack file. It passes only when a
-finding with a file:line or a repro contains every `Catch:` term. A term
-written `a/b` matches either side. Any other key scores a drafts file, below.
+A key with a line `Planted: yes` scores an attack file. Quotes, backticks and
+case are ignored. It passes when a finding with a file:line or a repro
+contains every `Catch:` term. A term written `a/b` matches either side. When
+the terms miss, `judge_case.py` asks codex or claude, with the prompt on
+stdin. With neither CLI it prints SKIP and the keyword result stands. Any
+other key scores a drafts file, below.
 
 A key row is `| <id> | <pr> | <path prefix> | <line or -> | <finding> | <min sites or -> | <proof> |`.
 A finding is found when the drafts carry a comment in that PR on a path that starts with the
@@ -23,7 +26,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from check_attack import catch_terms, has_location, has_repro, parse_attack, planted_bug  # noqa: E402
+from check_attack import catch_terms, has_location, has_repro, parse_attack, planted_bug, soften  # noqa: E402
 from check_drafts import parse  # noqa: E402
 
 ROW = re.compile(r"^\| (K\d+) \| (\S+#\d+) \| `?([^|`]+?)`? \| (\d+|-) \| [^|]+ \| (\d+|-) \| [^|]* \|$")
@@ -58,11 +61,18 @@ def missing_terms(hits, terms):
 
 
 def term_hit(term, text):
-    return any(alt.strip().lower() in text for alt in term.split("/") if alt.strip())
+    text = soften(text)
+    return any(soften(alt) in text for alt in term.split("/") if alt.strip())
 
 
-def score_planted(key_path, attack_path):
-    """Pass only when one finding carries every Catch term and a location or a repro."""
+def finding_text(finding):
+    return " ".join(
+        [finding["where"], " ".join(finding["claim"]), finding["repro"], finding["observed"]]
+    )
+
+
+def score_planted(key_path, attack_path, environ=None, runner=None):
+    """Pass when catch terms hit, or when the meaning judge says the bug was caught."""
     terms = catch_terms(key_path)
     if not terms:
         print(f"FAIL no Catch terms in {key_path}")
@@ -72,23 +82,27 @@ def score_planted(key_path, attack_path):
     for finding in doc["findings"]:
         if not has_location(finding) and not has_repro(finding):
             continue
-        text = " ".join(
-            [finding["where"], " ".join(finding["claim"]), finding["repro"], finding["observed"]]
-        ).lower()
-        if all(term_hit(term, text) for term in terms):
+        if all(term_hit(term, finding_text(finding)) for term in terms):
             caught = finding["id"]
             break
     if caught:
         print(f"{caught} caught")
         print("PASS caught planted bug")
         return 0
+    from judge_case import find_cli, judge  # noqa: E402
+    if runner is None and find_cli(environ) is None:
+        print("SKIP no agent CLI on PATH")
+        print("FAIL missed planted bug")
+        return 1
+    if judge(key_path, attack_path, environ=environ, runner=runner) == 0:
+        return 0
     print("FAIL missed planted bug")
     return 1
 
 
-def score(key_path, drafts_path):
+def score(key_path, drafts_path, environ=None, runner=None):
     if planted_bug(key_path):
-        return score_planted(key_path, drafts_path)
+        return score_planted(key_path, drafts_path, environ=environ, runner=runner)
     prs, _ = parse(drafts_path)
     rows = key_rows(key_path)
     terms = key_terms(key_path)

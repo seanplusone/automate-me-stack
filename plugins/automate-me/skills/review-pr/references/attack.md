@@ -19,10 +19,10 @@ Run the code. Record the command and the output you saw. A finding without a fil
 `python3 "$SKILL_DIR"/check/attack_agents.py` prints the CLIs it found. It knows `codex exec` and `claude -p`, and nothing else. `none` means you write the only pass. Names mean you run:
 
 ```
-python3 "$SKILL_DIR"/check/attack_agents.py --run --brief <dir>/attack-brief.md --out <dir>/passes
+python3 "$SKILL_DIR"/check/attack_agents.py --run --brief <dir>/attack-brief.md --out <dir>/passes --cwd <checkout>
 ```
 
-The script starts those CLIs. It does not contain the attack rules. Put the rules in the brief, and paste the same brief to every pass.
+The script starts those CLIs in `<checkout>`. Codex uses a workspace-write sandbox. Claude may run Bash there, with `acceptEdits`, and does not get a machine-wide bypass. Each pass waits at most 600 seconds (`--timeout`). Stderr is saved next to the pass. A timeout is `Parse: timeout`, not an empty approve. The script does not contain the attack rules. Put the rules in the brief, and paste the same brief to every pass.
 
 ## Brief
 
@@ -35,7 +35,7 @@ Write `<dir>/attack-brief.md` in your own words from this outline. Paste the dif
 
 ## Attack file
 
-Run `python3 "$SKILL_DIR"/check/check_attack.py <dir>/attack.md` on the file. It fails when no input was tried. It fails a finding with neither a file and line nor a repro. It fails when Held omits an input that did not break. It fails an approve verdict when the key marks a planted bug.
+Run `python3 "$SKILL_DIR"/check/check_attack.py <dir>/attack.md` on the file. It fails when the file does not parse. It fails when no input was tried. It fails a finding with neither a file and line nor a repro. It fails when Held omits an input that did not break. It finds `key.md` above the file and fails an approve when that key marks a planted bug.
 
 ```
 # Attack review: <topic>
@@ -66,4 +66,4 @@ Observed: <the output, or none>
 python3 "$SKILL_DIR"/check/merge_attacks.py --out <dir>/attack.md <dir>/passes/*.md
 ```
 
-The same file, line and repro is one finding. With no repro, the same file and line is one finding. With no line, the same repro is one finding. Two or more passes keep a finding only when at least two of them report it. One pass keeps every finding that has a file and line or a repro. The merged verdict is needs fixes when a finding remains.
+Findings match on the file and the line. `head/cap.py:3` and `cap.py:3` are the same line. Wording does not split them. A finding from either pass is kept, with both passes' evidence. The verdict is needs fixes when a finding remains. A pass that does not parse does not become an approve. A clean pair of passes with no finding is an approve.

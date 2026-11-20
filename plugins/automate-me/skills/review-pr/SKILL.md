@@ -19,11 +19,11 @@ Keep a finding only when it has a file and line, or a breaking input with the ou
 
 Second opinions are agent-agnostic. Run `python3 "$SKILL_DIR"/check/attack_agents.py`. It prints `codex`, `claude`, or `none`. For each name, run a headless pass with the same brief. The script only finds the CLIs and starts them. If it prints `none`, write one pass yourself. Never require one agent.
 
-Merge the passes with `python3 "$SKILL_DIR"/check/merge_attacks.py`. It dedupes findings. With two or more passes it keeps a finding only when another pass reproduced it. One pass keeps its own findings. The verdict is approve or needs fixes. The held list is what you tried that did not break.
+Merge the passes with `python3 "$SKILL_DIR"/check/merge_attacks.py`. Findings on the same file and line are one finding. `head/cap.py:3` and `cap.py:3` match. Wording does not split them. A finding from either pass is kept, with both passes' evidence. The verdict is approve or needs fixes. A pass that does not parse is not an approve. The held list is what you tried that did not break.
 
 The attack verdict is the gate. When it is needs fixes, the drafts file does not approve. A kept break a user can reach is blocking, and the drafts verdict holds. A smaller kept break follows the tag rules already in this file. The drafts file approves only when the attack verdict is approve.
 
-`drafts.md` may carry only findings the merge kept. Run `python3 "$SKILL_DIR"/check/check_attack.py` on `attack.md` before the drafts check. The format and the brief live in [references/attack.md](references/attack.md).
+`drafts.md` may carry only findings the merge kept. Run `python3 "$SKILL_DIR"/check/check_attack.py` on `attack.md` before the drafts check. It finds a `key.md` above that file, so an approve on a planted case fails with no extra flag. The format and the brief live in [references/attack.md](references/attack.md).
 
 ## Run
 

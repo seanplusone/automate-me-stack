@@ -77,11 +77,11 @@ def planted_files(attack, catch="returns True | ok\": false"):
     return k, p
 
 
-def planted_score(attack, catch="returns True | ok\": false"):
+def planted_score(attack, catch="returns True | ok\": false", runner=None):
     k, p = planted_files(attack, catch)
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
-        code = score(k, p)
+        code = score(k, p, environ={"PATH": "/nonexistent"}, runner=runner)
     return code, out.getvalue()
 
 
@@ -130,9 +130,18 @@ def expect_planted(name, got, want):
 code, text = planted_score(CAUGHT)
 expect_planted("planted bug caught", (code, "caught" in text and text.strip().endswith("PASS caught planted bug")), (0, True))
 code, text = planted_score(MISSED)
-expect_planted("planted bug missed", (code, "FAIL missed planted bug" in text), (1, True))
+expect_planted("planted bug missed", (code, "FAIL missed planted bug" in text and "SKIP" in text), (1, True))
 code, _text = planted_score(CAUGHT, "returns true/returns True")
 expect_planted("a/b catch term", code, 0)
+QUOTED = CAUGHT.replace('{"passed": true, "ok": false}', "`ok`: False")
+code, _text = planted_score(QUOTED, "'ok': False | returns True")
+expect_planted("quotes and case are ignored", code, 0)
+PARAPHRASE = CAUGHT.replace(
+    "accept returns True when a case has ok false.",
+    "The early return treats the summary as proof.",
+).replace('{"passed": true, "ok": false}', "a failed case with a true summary")
+code, text = planted_score(PARAPHRASE, "returns True | 'ok': False", runner=lambda prompt: "ITEM 1: yes\n")
+expect_planted("meaning judge can catch a paraphrase", (code, "PASS judge caught planted bug" in text), (0, True))
 
 if __name__ == "__main__":
     for f in FAILS:

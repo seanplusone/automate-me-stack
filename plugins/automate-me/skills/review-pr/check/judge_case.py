@@ -1,0 +1,101 @@
+"""Meaning judge for a planted-bug attack review.
+
+Usage: python3 check/judge_case.py <key.md> <attack.md>
+
+The keyword scorer only checks that the catch terms are present. This judge
+asks whether a finding states the same bug. It runs whichever agent CLI is
+on PATH, `codex exec` or `claude -p`. The prompt is written to that command's
+stdin. If neither CLI is installed, it prints SKIP and exits 0. Set
+JUDGE_CLI to one executable to force a command. That executable must read
+the prompt on stdin and write `ITEM 1: yes` or `ITEM 1: no`.
+
+Exit 0 when the finding catches the bug, or when no CLI is available.
+Exit 1 when the judge says the bug was missed.
+Exit 2 on a usage error.
+"""
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from check_attack import parse_attack  # noqa: E402
+
+ITEM = re.compile(r"ITEM\s+(\d+)\s*:\s*(yes|no)\b", re.I)
+
+
+def find_cli(environ=None):
+    """An argv list, or None when no judge can run."""
+    env = os.environ if environ is None else environ
+    override = env.get("JUDGE_CLI")
+    if override:
+        return [override]
+    path = env.get("PATH", "")
+    for name, extra in (("claude", ["-p"]), ("codex", ["exec"])):
+        found = shutil.which(name, path=path)
+        if found:
+            return [found, *extra]
+    return None
+
+
+def build_prompt(key_text, findings):
+    lines = [
+        "You judge whether a review finding catches the planted bug.",
+        "Answer yes only when a finding states that same bug.",
+        "Answer no when the findings describe a different problem, or none do.",
+        "",
+        "BUG",
+        key_text.strip(),
+        "",
+    ]
+    if not findings:
+        lines.append("FINDINGS")
+        lines.append("(none)")
+    for finding in findings:
+        lines.append("FINDING " + finding.get("id", ""))
+        lines.append("WHERE " + finding.get("where", ""))
+        lines.append("CLAIM " + " ".join(finding.get("claim") or []))
+        lines.append("REPRO " + finding.get("repro", ""))
+        lines.append("OBSERVED " + finding.get("observed", ""))
+        lines.append("")
+    lines.append("Reply with one line and nothing else.")
+    lines.append("ITEM 1: yes")
+    lines.append("ITEM 1: no")
+    return "\n".join(lines)
+
+
+def parse_verdict(text):
+    found = {}
+    for match in ITEM.finditer(text or ""):
+        found[int(match.group(1))] = match.group(2).lower() == "yes"
+    return found.get(1)
+
+
+def run_cli(argv, prompt):
+    result = subprocess.run(argv, input=prompt, text=True, capture_output=True)
+    return result.stdout
+
+
+def judge(key_path, attack_path, environ=None, runner=None):
+    """0 when the bug is caught or no CLI exists, 1 when the judge says no."""
+    doc = parse_attack(attack_path)
+    prompt = build_prompt(open(key_path).read(), doc["findings"])
+    argv = find_cli(environ)
+    if argv is None and runner is None:
+        print("SKIP no agent CLI on PATH")
+        return 0
+    stdout = runner(prompt) if runner else run_cli(argv, prompt)
+    ok = parse_verdict(stdout)
+    if ok:
+        print("PASS judge caught planted bug")
+        return 0
+    print("FAIL judge missed planted bug")
+    return 1
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 3 or sys.argv[1] in ("-h", "--help"):
+        print((__doc__ or "").strip())
+        sys.exit(0 if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help") else 2)
+    sys.exit(judge(sys.argv[1], sys.argv[2]))

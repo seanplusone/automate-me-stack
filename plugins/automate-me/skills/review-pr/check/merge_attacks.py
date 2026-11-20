@@ -1,43 +1,46 @@
-"""Dedupe attack passes and keep only findings another pass reproduced.
+"""Dedupe attack passes. A finding from either pass is kept.
 
 Usage: python3 merge_attacks.py --out <attack.md> <pass.md> [<pass.md> ...]
-With one pass, every finding that has a file:line or a repro is kept.
-With two or more, a finding is kept only when at least two passes report it.
-The same file, line and repro is one finding. With no repro, the same file
-and line is one finding. With no line, the same repro is one finding. The verdict is
-needs fixes when a finding remains, and approve when none do. Held lists
-every tried input that did not break.
+Findings match on the file and the line. head/cap.py:3, ./cap.py:3 and
+cap.py:3 are one finding. Wording and repro text do not split them. Both
+passes' evidence is kept. A pass that does not parse is not an empty review:
+the merge does not approve unless every pass parsed and none kept a finding.
+Held lists every tried input that did not break.
 """
 import os
-import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from check_attack import has_location, has_repro, norm, parse_attack  # noqa: E402
+from check_attack import has_location, has_repro, norm, norm_where, parse_attack  # noqa: E402
 
 
 def finding_key(finding):
-    """Same line and same repro match. A second repro on that line stays separate."""
-    if has_location(finding) and has_repro(finding):
-        return ("both", finding["where"], norm(finding["repro"]))
-    if has_location(finding):
-        return ("where", finding["where"])
+    """Same normalized file and line. With no line, the same repro matches."""
+    loc = norm_where(finding["where"])
+    if loc:
+        return ("where", loc)
     return ("repro", norm(finding["repro"]))
 
 
 def merge(paths):
     """The merged review dict from pass files, in the order they were given."""
-    docs = [parse_attack(path) for path in paths]
+    docs, errors = [], []
+    for path in paths:
+        doc = parse_attack(path)
+        doc["source"] = os.path.splitext(os.path.basename(path))[0]
+        docs.append(doc)
+        if not doc["parsed"]:
+            errors.append(doc["source"] + ": " + (doc["errors"][0] if doc["errors"] else "unparseable output"))
     groups, order = {}, []
     for doc in docs:
-        seen = set()
+        if not doc["parsed"]:
+            continue
         for finding in doc["findings"]:
+            if not finding["passes"]:
+                finding["passes"] = [doc["source"]]
             if not has_location(finding) and not has_repro(finding):
                 continue
             key = finding_key(finding)
-            if key in seen:
-                continue
-            seen.add(key)
             if key not in groups:
                 groups[key] = []
                 order.append(key)
@@ -45,25 +48,41 @@ def merge(paths):
     kept = []
     for key in order:
         items = groups[key]
-        if len(docs) >= 2 and len(items) < 2:
-            continue
-        base = {
-            "where": items[0]["where"],
-            "claim": items[0]["claim"],
-            "repro": items[0]["repro"],
-            "observed": items[0]["observed"],
-            "passes": [],
-        }
+        claims, repros, observed, passes = [], [], "", []
+        where = ""
         for item in items:
-            if has_repro(item):
-                base["repro"] = item["repro"]
-                base["observed"] = item["observed"]
+            loc = norm_where(item["where"])
+            shown = f"{loc[0]}:{loc[1]}" if loc else item["where"]
+            if not where or (loc and len(shown) < len(where)):
+                where = shown
+            agent = ", ".join(item["passes"]) or "pass"
+            text = " ".join(item["claim"]).strip()
+            if text:
+                claims.append(f"{agent}: {text}")
+            if has_repro(item) and item["repro"] not in repros:
+                repros.append(item["repro"])
+            if not observed and item["observed"] not in ("", "none"):
+                observed = item["observed"]
             for name in item["passes"]:
-                if name not in base["passes"]:
-                    base["passes"].append(name)
-        kept.append(base)
+                if name not in passes:
+                    passes.append(name)
+        kept.append({
+            "where": where or items[0]["where"],
+            "claim": claims or items[0]["claim"],
+            "repro": " | ".join(repros),
+            "observed": observed,
+            "passes": passes,
+        })
+    if kept:
+        verdict = "needs fixes"
+    elif errors:
+        verdict = ""
+    else:
+        verdict = "approve"
     tried, by_input = [], {}
     for doc in docs:
+        if not doc["parsed"]:
+            continue
         for item in doc["tried"]:
             if not item["input"] or not item["observed"]:
                 continue
@@ -77,10 +96,11 @@ def merge(paths):
     title = docs[0]["title"] if docs else "Attack review"
     return {
         "title": title or "Attack review",
-        "verdict": "needs fixes" if kept else "approve",
+        "verdict": verdict,
         "tried": tried,
         "findings": kept,
         "held": [item for item in tried if item["broke"] == "no"],
+        "errors": errors,
     }
 
 
@@ -99,10 +119,13 @@ def render(doc):
         lines.append("")
     for i, finding in enumerate(doc["findings"], 1):
         passes = ", ".join(finding["passes"]) or "unspecified"
-        claim = " ".join(finding["claim"]).strip() or "See the repro."
+        lines.append(f"### F{i} | {finding['where']} | passes: {passes}")
+        claims = [c for c in finding["claim"] if c.strip()]
+        if claims:
+            lines.extend(claims)
+        else:
+            lines.append("See the repro.")
         lines += [
-            f"### F{i} | {finding['where']} | passes: {passes}",
-            claim,
             f"Repro: {finding['repro'] or 'none'}",
             f"Observed: {finding['observed'] or 'none'}",
             "",
@@ -132,8 +155,18 @@ def main(argv):
     if not passes:
         print((__doc__ or "").strip(), file=sys.stderr)
         return 2
+    doc = merge(passes)
+    if not doc["verdict"]:
+        print("FAIL unparseable output, not an approve")
+        for item in doc["errors"]:
+            print(f"  {item}")
+        return 1
     os.makedirs(os.path.dirname(os.path.abspath(out)) or ".", exist_ok=True)
-    open(out, "w").write(render(merge(passes)))
+    open(out, "w").write(render(doc))
+    if doc["errors"]:
+        print("parsed with errors:")
+        for item in doc["errors"]:
+            print(f"  {item}")
     print(f"wrote {out}")
     return 0
 
