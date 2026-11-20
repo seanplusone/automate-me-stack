@@ -1,6 +1,6 @@
 ---
 name: review-pr
-description: Review one or more pull requests and draft short inline comments plus a verdict, for the user to read before anything is posted. Use for a PR link or number, "review this PR", a set of linked PRs, or a review that will end up as GitHub comments. Works on any repo; repo-specific risk checks load from references/.
+description: Review one or more pull requests and draft short inline comments plus a verdict, for the user to read before anything is posted. The review tries to break the change and does not trust an unrun pass line. Use for a PR link or number, "review this PR", a set of linked PRs, or a review that will end up as GitHub comments. Works on any repo; repo-specific risk checks load from references/.
 ---
 
 # PR review
@@ -8,6 +8,22 @@ description: Review one or more pull requests and draft short inline comments pl
 The orchestrator. It runs the playbook and reports back. The output is a short page of comments someone can paste, not a write-up of the review.
 
 A good review is a few findings that are all true, that the author does not already know, each on the line it concerns. Every extra or wrong comment spends the author's trust on the real ones.
+
+## Attack, by default
+
+Assume the PR is wrong and try to break it. A test count, a line that says pass, and the PR description are claims. Re-run each one before you trust it.
+
+Write concrete inputs and run them. Use an edge, a malformed value, a boundary, and keyword-stuffed nonsense when the change scores or matches text. Also run any claim the PR asserts and never executes.
+
+Keep a finding only when it has a file and line, or a breaking input with the output you observed. Drop the rest.
+
+Second opinions are agent-agnostic. Run `python3 "$SKILL_DIR"/check/attack_agents.py`. It prints `codex`, `claude`, or `none`. For each name, run a headless pass with the same brief. The script only finds the CLIs and starts them. If it prints `none`, write one pass yourself. Never require one agent.
+
+Merge the passes with `python3 "$SKILL_DIR"/check/merge_attacks.py`. It dedupes findings. With two or more passes it keeps a finding only when another pass reproduced it. One pass keeps its own findings. The verdict is approve or needs fixes. The held list is what you tried that did not break.
+
+The attack verdict is the gate. When it is needs fixes, the drafts file does not approve. A kept break a user can reach is blocking, and the drafts verdict holds. A smaller kept break follows the tag rules already in this file. The drafts file approves only when the attack verdict is approve.
+
+`drafts.md` may carry only findings the merge kept. Run `python3 "$SKILL_DIR"/check/check_attack.py` on `attack.md` before the drafts check. The format and the brief live in [references/attack.md](references/attack.md).
 
 ## Run
 
@@ -99,7 +115,7 @@ At most 6 lines:
 1. The single most important finding, in one sentence.
 2. The page link.
 3. Anything only the user can answer, such as a ticket question addressed to them.
-4. What was not verified, in one sentence.
+4. What was not verified, in one sentence. Name one input that did not break.
 5. The size verdict and its numbers, only when the size check says split.
 
 Write it to W17 to W19 in `../shared/writing-rules.md`: who it affects first, every claim labeled measured, inferred or a guess, and nothing on this list dropped. W2 applies too, so no colon joins two halves of a sentence.

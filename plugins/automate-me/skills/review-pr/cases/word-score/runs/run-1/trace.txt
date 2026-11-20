@@ -1,0 +1,38 @@
+# trace
+
+Agents: codex absent, claude absent. attack_agents.py printed none.
+
+## head
+$ python3 test_score_review.py
+1 passed
+exit:0
+
+## head
+$ python3 -c 'from score_review import passes
+samples = [
+    "bug line bug line",
+    "bug at line 3",
+    "all good",
+    "accept returns True at report.py:4 for input x",
+    "",
+]
+for s in samples:
+    print(repr(s))
+    print(repr(passes(s)))
+'
+'bug line bug line'
+True
+'bug at line 3'
+True
+'all good'
+False
+'accept returns True at report.py:4 for input x'
+False
+''
+False
+exit:0
+
+## base
+$ python3 -c 'from score_review import passes; print(repr(passes("bug line bug line")))'
+False
+exit:0
