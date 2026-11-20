@@ -37,9 +37,11 @@ node "$SKILL_DIR"/check/measure.mjs --url page.html --widths 390,1280
 node "$SKILL_DIR"/check/measure.mjs --url http://127.0.0.1:3000/settings --widths 390,1280 --config rules.json --out report.json
 ```
 
-`--url` is an http or https URL, or a path to an HTML file. `--widths` defaults to 390 and 1280. `--config` is optional. `--out` writes the same JSON the command prints.
+`--url` is an http or https URL, or a path to an HTML file. `--widths` defaults to 390 and 1280. `--config` is optional. `--out` writes the same JSON the command prints. `--shots` is the folder for crops of rows that need a look. `--wait-for` is a selector to wait for after load. `--timeout` is the whole run, in milliseconds.
 
-Exit 0 when every rule passes. Exit 1 when a rule fails. The report is still printed. Exit 2 when the arguments are wrong, the browser is missing, the page does not load, or the run is inconclusive. A blank page, a script error, or a page where every rule skips is inconclusive. It is not a pass. `--help` prints usage and exits 0.
+The page loads, then the tool waits until the DOM and any animation have been still for about half a second. That wait stops at 3 seconds.
+
+Exit 0 when every rule passes. Exit 1 when a rule fails. Exit 3 when nothing fails but a row needs a look. Exit 2 when the arguments are wrong, the page does not load, or the run is inconclusive. The report names the reason. A blank page, or the page's own script dying before the first paint, is inconclusive. A console error, a widget error, or a failed iframe is a warning. `--help` prints usage and exits 0.
 
 ## Rules
 
@@ -83,7 +85,7 @@ The command prints one JSON object. The shape is [check/report.schema.json](chec
 }
 ```
 
-`status` is `pass`, `fail`, or `skip`. `verdict` is `fail` when any row is `fail`. A skip means the page had nothing for that rule to measure. If every row is a skip, the verdict is `inconclusive` and the command exits 2.
+`status` is `pass`, `fail`, `skip`, or `review`. `review` means the box was a guess and the guess is weak. A selector in the config is never a guess. `verdict` is `fail` when any row fails, and `review` when the only open rows need a look. The `review` list names each of those rows and the crop saved for it. If every row is a skip, the verdict is `inconclusive` and the command exits 2.
 
 ## Config
 
@@ -98,7 +100,7 @@ Copy [rules.example.json](rules.example.json) into the project and pass it with 
 | betweenOverInside | 2 | Minimum ratio of the between-group gap to the inside gap. |
 | minWidthRatio | 0.6 | Minimum main-column width, as a fraction of the viewport, at columnAtWidth. |
 | columnAtWidth | 1280 | Viewport width at which the column ratio runs. A run that omits it records a skip. |
-| columnExemptions | prose, signin | Reading columns of 55 to 80ch, and a single centered sign-in card or form. Set this to [] to turn both off. The 0.6 default stays. |
+| columnExemptions | prose, signin | A reading column of 55 to 80ch in the paragraph font, or a form with a password field. Code, figures, and asides can sit in the reading column. A table or a grid cannot. Set this to [] to turn both off. |
 | auto | true | Class-name guesses. data-ui and selectors still apply when this is false. |
 | selectors | see the example | CSS selectors for cards, groups, columns, headings, body, buttons, and containers. They add matches. |
 
