@@ -6,9 +6,9 @@ diff -ruN base/cap.py head/cap.py
      """True when count is at most 5."""
 -    return count <= 5
 +    return count < 5
-diff -ruN base/test_cap.py head/test_cap.py
---- base/test_cap.py	1970-01-01 00:00:00.000000000 +0000
-+++ head/test_cap.py	2026-11-20 15:52:32.772975047 +0000
+diff -ruN base/case_test_cap.py head/case_test_cap.py
+--- base/case_test_cap.py	1970-01-01 00:00:00.000000000 +0000
++++ head/case_test_cap.py	2026-11-20 15:52:32.772975047 +0000
 @@ -0,0 +1,15 @@
 +from cap import within_cap
 +

@@ -3,7 +3,7 @@
 Agents: codex absent, claude absent. attack_agents.py printed none.
 
 ## head
-$ python3 test_score_review.py
+$ python3 case_test_score_review.py
 1 passed
 exit:0
 

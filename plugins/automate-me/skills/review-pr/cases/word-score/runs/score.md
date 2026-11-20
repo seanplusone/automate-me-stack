@@ -2,7 +2,7 @@
 
 A synthetic case. The module, the diff and the PR body are invented. The codex CLI and the claude CLI were not on PATH. `check/attack_agents.py` printed `none`, so the current agent wrote the only pass.
 
-The pass re-ran `python3 test_score_review.py`. It printed `1 passed` and exited 0. It then called `passes` on the inputs in `runs/run-1/trace.txt`. On the base, `bug line bug line` returns False. `merge_attacks.py` wrote `attack.md` from that pass.
+The pass re-ran `python3 case_test_score_review.py`. It printed `1 passed` and exited 0. It then called `passes` on the inputs in `runs/run-1/trace.txt`. On the base, `bug line bug line` returns False. `merge_attacks.py` wrote `attack.md` from that pass.
 
 The author's test held. The sentence `bug at line 3` held. `all good` held. The empty string held.
 

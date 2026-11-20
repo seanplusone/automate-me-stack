@@ -4,4 +4,4 @@ A review that mentions a bug and a line is good enough. The word check replaces 
 
 Tests: 1 passed.
 
-`test_score_review.py` checks the sentence "bug at line 3".
+`case_test_score_review.py` checks the sentence "bug at line 3".

@@ -2,7 +2,7 @@
 
 A synthetic case. The module, the diff and the PR body are invented. The codex CLI and the claude CLI were not on PATH. `check/attack_agents.py` printed `none`, so the current agent wrote the only pass.
 
-The pass re-ran `python3 test_report.py`. It printed `2 passed` and exited 0. It then called `accept` on the inputs in `runs/run-1/trace.txt`. On the base, the failed case returns False. `merge_attacks.py` wrote `attack.md` from that pass.
+The pass re-ran `python3 case_test_report.py`. It printed `2 passed` and exited 0. It then called `accept` on the inputs in `runs/run-1/trace.txt`. On the base, the failed case returns False. `merge_attacks.py` wrote `attack.md` from that pass.
 
 The author's two tests held. A report with `passed` false held. An empty report held.
 

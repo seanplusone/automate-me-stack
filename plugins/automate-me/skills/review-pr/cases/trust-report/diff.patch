@@ -1,17 +1,6 @@
-diff -ruN base/report.py head/report.py
---- base/report.py	2026-11-20 15:52:28.964919191 +0000
-+++ head/report.py	2026-11-20 15:52:28.988919557 +0000
-@@ -1,5 +1,7 @@
- def accept(report):
-     """Accept a report only when every case passed."""
-+    if report.get("passed") is True:
-+        return True
-     cases = report.get("cases") or []
-     if not cases:
-         return False
-diff -ruN base/test_report.py head/test_report.py
---- base/test_report.py	1970-01-01 00:00:00.000000000 +0000
-+++ head/test_report.py	2026-11-20 15:52:29.768931266 +0000
+diff -ruN base/case_test_report.py head/case_test_report.py
+--- base/case_test_report.py	1970-01-01 00:00:00.000000000 +0000
++++ head/case_test_report.py	2026-11-20 15:52:29.768931266 +0000
 @@ -0,0 +1,15 @@
 +from report import accept
 +
@@ -28,3 +17,14 @@ diff -ruN base/test_report.py head/test_report.py
 +    test_trusts_a_pass()
 +    test_rejects_a_failure()
 +    print("2 passed")
+diff -ruN base/report.py head/report.py
+--- base/report.py	2026-11-20 15:52:28.964919191 +0000
++++ head/report.py	2026-11-20 15:52:28.988919557 +0000
+@@ -1,5 +1,7 @@
+ def accept(report):
+     """Accept a report only when every case passed."""
++    if report.get("passed") is True:
++        return True
+     cases = report.get("cases") or []
+     if not cases:
+         return False
