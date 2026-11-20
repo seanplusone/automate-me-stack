@@ -1,6 +1,6 @@
 ---
 name: outcome
-description: Turn a rough idea, often a spoken ramble or a voice transcript, into a brief an agent can run. Sorts what was said into decisions, thinking aloud, tangents, questions and facts. Then it fills the brief slots and marks every gap unknown with the one question that fills it. It reads the brief back with at most 3 questions. Nothing runs until the user says yes. Use for /outcome, "here's a rough idea", "I'm just thinking out loud", or a long unstructured message about building, reviewing, designing, learning or deciding something. When a message looks like a ramble, offer it in one line first.
+description: Turn a rough idea, often a spoken ramble or a voice transcript, into a brief an agent can run. Sorts what was said into decisions, thinking aloud, tangents, questions and facts. Then it fills the brief slots and marks every gap unknown with the one question that fills it. It reads the brief back with at most 3 questions. Nothing runs until the user says yes. Use for /outcome, "here's a rough idea", "I'm just thinking out loud", or a long unstructured message about building, reviewing, designing, learning or deciding something. When a message looks like a ramble, offer it in one line first. A shape-idea decisions.md is mapped into the brief before the read-back.
 ---
 
 # Outcome
@@ -10,6 +10,21 @@ A rough idea arrives as a ramble. It mixes firm decisions with "maybe", drifts i
 Voice is only how the text arrives. The skill works on the transcript, typos and all.
 
 `$SKILL_DIR` is this skill's directory, printed as "Base directory for this skill" when it loads. The same steps apply on any stack and for any coding agent.
+
+## A decisions file
+
+If the user brings a `decisions.md` from [shape-idea](../shape-idea/SKILL.md), map that file. Do not sort it as a ramble.
+
+| In the decisions file | In the brief |
+|---|---|
+| The `goal:` line | Goal |
+| The `output:` line | Output |
+| The `verify:` line | Verify |
+| `constraints:`, `done:`, and every other Decided line | Must-haves |
+| Each Open line | Unknowns |
+| Parked | Parking lot |
+
+A slot that is still Open is an unknown. It is not a must-have. Then read the brief back. The same traps apply.
 
 ## When to offer it
 

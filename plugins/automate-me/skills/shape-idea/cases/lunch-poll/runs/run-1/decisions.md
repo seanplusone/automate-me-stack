@@ -1,12 +1,13 @@
-# Decisions: lunch poll bot
+# Decisions: lunch poll
 
 ## Decided
 
-- goal: a bot our team can use to pick a lunch spot. people vote, and the winner is where we go
-- done: a person can start a poll, three choices go out, and the winner is posted back in the same chat
-- constraints: no payments, nobody orders through the bot, for about 12 people
-- output: the winner's name only, posted back in the same chat
-- verify: I start a poll with three choices, a second person votes, and I see the winner come back
+- goal: a bot our team can use to pick a lunch spot. people vote, and the winner is where we go.
+- done: a person can start a poll, three choices go out, and the winner is posted back in the same chat.
+- output: the winner's name only, posted back in the same chat.
+- verify: I start a poll with three choices, a second person votes, and I see the winner come back.
+- constraints: no payments, nobody orders through the bot.
+- we are about 12 people.
 
 ## Open
 
@@ -15,7 +16,7 @@
 
 ## Parked
 
-- maybe dietary tags later, not sure
+- dietary tags later, not sure
 - the office snack drawer is empty again, someone should buy pretzels
 
 ## Handoff

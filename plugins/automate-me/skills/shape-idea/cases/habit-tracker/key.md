@@ -2,15 +2,13 @@
 
 A synthetic case. The app and every number are invented. Never show this file to the skill.
 
-Turn 1 records the firm lines, including constraints from "no accounts, it's only me". Output and verify were not said, so they are Open slots. Reminders, the app name, and the day reset are the other gaps. That is 5 open items, so the stop is `open-cap`. Nothing clashes, so there is no pushback.
+The run is a fresh model that read SKILL.md and the ramble, then two replies. It did not see this key. Terms must sit on the named slot line. Stop is done once output and verify are decided. Reminders, the name, and the day reset stay open.
 
-Decided: goal | goal | phone | habit
-Decided: water | drinking water
-Decided: streak | miss a day
-Decided: done | done | 10 seconds | streak
-Decided: limits | constraints | only me
-Open: output | output | streak | history
-Open: verify | verify | 10 seconds
+Decided: goal | phone | drinking water | miss a day
+Decided: done | 10 seconds | streak
+Decided: output | current streak | phone
+Decided: verify | 10 seconds | streak
+Decided: constraints | accounts | only me
 Open: reminders | reminder | annoying
 Open: name | call the app
 Open: reset | midnight | 4am

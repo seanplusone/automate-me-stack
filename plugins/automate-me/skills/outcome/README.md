@@ -2,7 +2,7 @@
 
 Part of `automate-me`. Shared writing rules live in `../shared/writing-rules.md`. The trap list comes from `../brief-check/SKILL.md`. The slot names below are this skill's.
 
-Turns a rough idea, often a spoken ramble, into a brief an agent can run. It sorts what was said, fills the slots, marks every gap as an unknown with its question, and reads the brief back with at most 3 questions. Nothing runs until the user says yes.
+Turns a rough idea, often a spoken ramble, into a brief an agent can run. It sorts what was said, fills the slots, marks every gap as an unknown with its question, and reads the brief back with at most 3 questions. Nothing runs until the user says yes. A shape-idea decisions.md is mapped into the brief instead of being sorted as a ramble.
 
 Status: new. Five synthetic scored cases, plus `missing-evals`, which fails the shape check. The `run-*` briefs were written by hand to show the scorer working. One blind run has been scored. A fresh agent read only `SKILL.md` and brief-check's, never a key. Its scores and the key changes it led to are in each case's `runs/score.md`. Blind briefs are kept in `runs/blind/`.
 

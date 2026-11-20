@@ -2,9 +2,9 @@
 
 Part of `automate-me`. Shared writing rules live in `../shared/writing-rules.md`. The next step is [outcome](../outcome/SKILL.md).
 
-Brainstorms a vague idea before a brief. Each turn restates the idea, asks one question, and names at most one risk. Decisions are saved to `decisions.md` as they are made. It stops when goal, done, output, verify, and constraints are all decided, or at 10 turns, or at 5 open items. Then it hands the file to outcome. It never builds, runs, or posts.
+Brainstorms a vague idea before a brief. Each turn restates the idea, asks one question, and names at most one risk. Decisions are saved to `decisions.md` as they are made. It stops when the five slots are decided, at turn 10, or after turn 1 when more than 5 other gaps stay open. Then it hands the file to outcome. It never builds, runs, or posts.
 
-Status: new. Three synthetic scored cases. Each `run-1` follows `SKILL.md`. habit-tracker and tidy-downloads stop at `open-cap` on turn 1. lunch-poll stops at `done` on turn 3.
+Status: new. Three synthetic scored cases. Each `run-1` was written by a fresh model that read `SKILL.md` and the case input, not the key. All three stop at `done`: habit-tracker and lunch-poll on turn 3, tidy-downloads on turn 5.
 
 ## What the checks cover, and what they don't
 
@@ -15,8 +15,12 @@ Status: new. Three synthetic scored cases. Each `run-1` follows `SKILL.md`. habi
 - Open has at most 5 items;
 - `stop` is `done`, `turn-cap`, or `open-cap`, once;
 - `turns` is one whole number from 0 through 10;
-- each of goal, done, output, verify, and constraints starts a Decided line or an Open line;
-- when `stop` is `done`, all five of those slots are Decided lines;
+- each of goal, done, output, verify, and constraints starts one Decided line or one Open line, with a value, and not both;
+- `stop: done` requires all five Decided and none of them Open;
+- `stop: open-cap` is only after turn 1, and only with more than 5 Open lines that are not slots;
+- `stop: turn-cap` requires `turns: 10`;
+- `turns` is an ASCII whole number from 1 through 10;
+- the shared writing check passes on the file, whether or not the line says `writing: pass`;
 - no item runs past one line;
 - Handoff has `next: /automate-me:outcome` and a single `writing: pass` line.
 
@@ -87,12 +91,12 @@ shape-idea/
     test_check_decisions.py         python3 check/test_check_decisions.py
     test_score_case.py              python3 check/test_score_case.py
   cases/
-    habit-tracker/                  stop: open-cap, turn 1. A phone habit for drinking water.
+    habit-tracker/                  stop: done, turn 3. A phone habit for drinking water.
       input.md                      the ramble, the only thing the skill is given
       key.md                        decided, open, and parked terms
       runs/run-1/decisions.md       following the skill
       runs/score.md                 why it stopped, and the scorer output
-    tidy-downloads/                 stop: open-cap, turn 1. A command line tool for a downloads folder.
+    tidy-downloads/                 stop: done, turn 5. A command line tool for a downloads folder.
     lunch-poll/                     stop: done, turn 3. A team bot that picks a lunch spot.
                                     each of the last two: input.md, key.md, runs/run-1/decisions.md, runs/score.md
 ```

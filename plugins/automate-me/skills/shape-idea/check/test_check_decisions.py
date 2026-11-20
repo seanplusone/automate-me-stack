@@ -52,11 +52,11 @@ HANDOFF = """## Handoff
 PRESENT = "sections present once"
 ORDER = "sections in order"
 QUESTION = "every open item ends with a question"
-OPEN_CAP = "at most 5 open items"
 STOP = "stop reason is done, turn-cap, or open-cap"
 TURNS = "turn count recorded and at most 10"
 SLOTS = "every slot is decided or open"
-DONE = "stop done has all five slots decided"
+DONE = "stop matches the file"
+MATCH = "stop matches the file"
 ONE_LINE = "no item longer than one line"
 NEXT = "handoff names outcome"
 WRITING = "handoff says writing pass"
@@ -84,17 +84,22 @@ def opens(n):
 
 
 def missing_slot(line):
-    return swap("- stop: done", "- stop: turn-cap", swap(line, ""))
+    text = swap(line, "")
+    text = swap("- stop: done", "- stop: turn-cap", text)
+    return swap("- turns: 1", "- turns: 10", text)
 
 
 expect("good file passes", GOOD, set())
 expect("missing Handoff", swap(HANDOFF, ""), {PRESENT})
 expect("open without question", swap("- Do you want a reminder?", "- reminders are not settled"), {QUESTION})
 expect("question mark not at the end", swap("- Do you want a reminder?", "- Do you want a reminder? Maybe."), {QUESTION})
-expect("6 open items", opens(6), {OPEN_CAP})
+expect("six non-slot opens do not block done", opens(6), set())
 expect("5 open items pass", opens(5), set())
 expect("turn 11", swap("- turns: 1", "- turns: 11"), {TURNS})
+expect("turns 0", swap("- turns: 1", "- turns: 0"), {TURNS})
+expect("unicode digit turn does not crash", swap("- turns: 1", "- turns: ²"), {TURNS})
 expect("turns 10 passes", swap("- turns: 1", "- turns: 10"), set())
+expect("open-cap on turn 1 fails", swap("- stop: done", "- stop: open-cap"), {MATCH})
 expect("missing goal", missing_slot("- goal: a tiny habit tracker on my phone\n"), {SLOTS})
 expect("missing done", missing_slot("- done: mark today done in under 10 seconds\n"), {SLOTS})
 expect("missing output", missing_slot("- output: the current streak on the phone\n"), {SLOTS})
@@ -106,8 +111,18 @@ expect("stop done with output still open",
             swap("- Do you want a reminder?", "- output: what comes back, a list or a page?\n- Do you want a reminder?")),
        {DONE})
 expect("turn-cap with done in Open passes",
-       swap("- Do you want a reminder?", "- done: what does finished look like?\n- Do you want a reminder?",
-            swap("- stop: done", "- stop: turn-cap", swap("- done: mark today done in under 10 seconds\n", ""))), set())
+       swap("- turns: 1", "- turns: 10",
+            swap("- Do you want a reminder?", "- done: what does finished look like?\n- Do you want a reminder?",
+                 swap("- stop: done", "- stop: turn-cap", swap("- done: mark today done in under 10 seconds\n", "")))),
+       set())
+expect("duplicate goal", GOOD.replace("- goal: a tiny habit tracker on my phone\n",
+                                      "- goal: a tiny habit tracker on my phone\n- goal: another one\n"),
+       {"no duplicate slot"})
+expect("empty goal value", swap("- goal: a tiny habit tracker on my phone", "- goal:"),
+       {"slot values are not empty"})
+expect("writing pass does not excuse slop",
+       swap("- goal: a tiny habit tracker on my phone", "- goal: we will leverage a robust plan. It delves."),
+       {"prose passes the writing check"})
 expect("bad stop reason", swap("- stop: done", "- stop: later"), {STOP})
 expect("missing turns", swap("- turns: 1\n", ""), {TURNS})
 expect("turns is not a number", swap("- turns: 1", "- turns: ten"), {TURNS})
@@ -117,7 +132,7 @@ expect("item longer than one line",
        swap("- goal: a tiny habit tracker on my phone", "- goal: a tiny habit tracker\n  on my phone"), {ONE_LINE})
 expect("repeated section", GOOD + "\n## Decided\n\n- again\n", {PRESENT})
 rest = swap(HANDOFF, "").replace("# Decisions: water habit\n\n", "", 1)
-expect("sections out of order", HANDOFF + "\n" + rest, {ORDER})
+expect("sections out of order", "# Decisions: water habit\n\n" + HANDOFF + "\n" + rest, {ORDER})
 expect("lone none in Open is empty", swap("- Do you want a reminder?", "- none"), set())
 expect("a non-slot line is optional", swap("- the one habit is drinking water\n", ""), set())
 
