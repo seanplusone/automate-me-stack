@@ -5,7 +5,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from attack_agents import command, detect, run_all  # noqa: E402
+from attack_agents import command, detect, run_all, stamp  # noqa: E402
 
 FAILS = []
 STUB = """#!/usr/bin/env python3
@@ -38,9 +38,11 @@ both = bindir("codex", "claude")
 found = detect(both)
 expect("both names", [name for name, _binary in found], ["codex", "claude"])
 codex_bin = found[0][1]
-expect("codex argv", command(codex_bin, "codex", "BRIEF")[1:], ["exec", "--skip-git-repo-check", "BRIEF"])
+expect("codex argv", command(codex_bin, "codex", "BRIEF")[1:],
+       ["exec", "--skip-git-repo-check", "--sandbox", "workspace-write", "BRIEF"])
 claude_bin = found[1][1]
-expect("claude argv", command(claude_bin, "claude", "BRIEF")[1:], ["-p", "BRIEF"])
+expect("claude argv", command(claude_bin, "claude", "BRIEF")[1:],
+       ["-p", "--permission-mode", "acceptEdits", "--allowedTools", "Bash", "BRIEF"])
 
 brief = os.path.join(tempfile.mkdtemp(), "brief.md")
 open(brief, "w").write("attack this diff")
@@ -56,10 +58,23 @@ expect("claude was print mode", "args=-p" in claude_out, True)
 
 only = bindir("claude")
 expect("claude alone", [name for name, _binary in detect(only)], ["claude"])
+expect("stamp adds the agent", "passes: claude" in stamp("### F1 | head/cap.py:3\nbroke\n", "claude"), True)
+expect("stamp does not repeat the agent",
+       stamp("### F1 | cap.py:3 | passes: claude\n", "claude").count("claude"), 1)
+
+slow_dir = tempfile.mkdtemp()
+slow = os.path.join(slow_dir, "codex")
+open(slow, "w").write("#!/bin/sh\nsleep 5\n")
+os.chmod(slow, os.stat(slow).st_mode | stat.S_IEXEC)
+slow_out = tempfile.mkdtemp()
+code = run_all(brief, slow_out, search_path=slow_dir, timeout=0.2, cwd=slow_dir)
+expect("timeout exits 1", code, 1)
+expect("timeout is not an approve", open(os.path.join(slow_out, "codex.md")).read().strip(), "Parse: timeout")
+expect("timeout stderr is kept", "timed out after 0.2s" in open(os.path.join(slow_out, "codex.err")).read(), True)
 
 if __name__ == "__main__":
     for item in FAILS:
         print(f"FAIL {item}")
-    total = 11
+    total = 16
     print(f"{total - len(FAILS)}/{total} passed")
     sys.exit(1 if FAILS else 0)

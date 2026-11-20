@@ -48,13 +48,13 @@ review-pr/
     attack_agents.py         finds codex or claude on PATH and runs one headless pass each
     check_attack.py          fails an attack file that tried nothing, or approved a planted bug
     check_drafts.py          the format and writing check
-    merge_attacks.py         dedupes passes and keeps only reproduced findings
+    merge_attacks.py         matches file and line, and keeps either pass's finding
     live_state.py            fails on a closed PR or a head that moved since the review
     moved_drift.py           lists what a moved file is missing from its source
     post_review.py           posts a checked drafts file to GitHub, only when told
     render_page.py           renders a checked drafts file as the review page
     summary.py               the summary message, as Markdown or Slack mrkdwn
-    score_case.py            scores drafts against a findings table, or an attack file against a planted bug
+    score_case.py            scores drafts, or a planted bug by terms and an optional judge
     test_*.py                plain-script tests: python3 check/test_<name>.py
   cases/
     refund-endpoint/         one Python PR: a line row with Terms, a directory row with a site minimum, a PR-level row

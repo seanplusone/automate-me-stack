@@ -65,8 +65,8 @@ split = merge([
     write("a.md", passage("codex", "report.py:4", shared, "True")),
     write("b.md", passage("claude", "cap.py:3", "within_cap(5)", "False", claim="within_cap returns False for 5.")),
 ])
-expect("a one-sided finding is dropped", split["findings"], [])
-expect("no reproduced finding approves", split["verdict"], "approve")
+expect("either pass keeps its own line", len(split["findings"]), 2)
+expect("either pass needs fixes", split["verdict"], "needs fixes")
 
 same_repro = merge([
     write("a.md", passage("codex", "none", "bug line bug line", "True", claim="passes returns True.")),
@@ -82,7 +82,43 @@ second = (
     "Observed: False\n\n"
 )
 both = merge([write("c.md", first.replace("## Held", second + "## Held"))])
-expect("two repros on one line both stay", len(both["findings"]), 2)
+expect("two repros on one line are one finding", len(both["findings"]), 1)
+expect("both repros are kept", "bug line bug line" in both["findings"][0]["repro"] and "report.py:4" in both["findings"][0]["repro"], True)
+
+paths = merge([
+    write("a.md", passage("codex", "head/cap.py:3", "within_cap(5)", "False", claim="The cap rejects 5.")),
+    write("b.md", passage("claude", "./cap.py:3", "call(5)", "False", claim="Five is outside the cap.")),
+])
+expect("head and dot prefixes match", len(paths["findings"]), 1)
+expect("path merge needs fixes", paths["verdict"], "needs fixes")
+expect("both agents stay on the finding", paths["findings"][0]["passes"], ["codex", "claude"])
+expect("normalized where", paths["findings"][0]["where"], "cap.py:3")
+
+cased = merge([
+    write("a.md", passage("codex", "cases/item-cap/head/cap.py:3", "within_cap(5)", "False")),
+    write("b.md", passage("claude", "cap.py:3", "n == 5", "False", claim="off by one")),
+])
+expect("a case directory prefix matches", len(cased["findings"]), 1)
+
+garbage = write("bad.md", "Ship it. The diff looks correct.\n")
+clean = write("clean.md", "\n".join([
+    "# Attack review: clean", "", "Verdict: approve", "", "## Tried",
+    "- Input: empty", "  Observed: ok", "  Broke: no", "", "## Findings", "", "## Held",
+    "- Input: empty", "  Observed: ok", "",
+]))
+bad = merge([garbage, clean])
+expect("unparseable output is not an approve", bad["verdict"], "")
+timed = write("codex.md", "Parse: timeout\n")
+found = write("claude.md", passage("claude", "head/cap.py:3", "within_cap(5)", "False"))
+late = merge([timed, found])
+expect("a timeout does not drop the other bug", late["verdict"], "needs fixes")
+expect("the surviving where is kept", late["findings"][0]["where"], "cap.py:3")
+other = write("other.md", "\n".join([
+    "# Attack review: clean", "", "Verdict: approve", "", "## Tried",
+    "- Input: empty", "  Observed: ok", "  Broke: no", "", "## Findings", "", "## Held",
+    "- Input: empty", "  Observed: ok", "",
+]))
+expect("two clean passes approve", merge([clean, other])["verdict"], "approve")
 
 text = render(one)
 path = write("merged.md", text)
@@ -94,6 +130,6 @@ expect("round trip keeps the finding line", parsed["findings"][0]["where"], "rep
 if __name__ == "__main__":
     for item in FAILS:
         print(f"FAIL {item}")
-    total = 11
+    total = 22
     print(f"{total - len(FAILS)}/{total} passed")
     sys.exit(1 if FAILS else 0)

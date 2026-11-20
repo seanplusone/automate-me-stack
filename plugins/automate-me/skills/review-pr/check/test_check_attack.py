@@ -90,10 +90,32 @@ expect(
     check_attack(attack(tried=held_try, findings=[], held=[("{\"passed\": false}", "False")], verdict="approve")),
     [],
 )
+loose = os.path.join(tempfile.mkdtemp(), "attack.md")
+open(loose, "w").write("\n".join([
+    "# Attack review: loose", "", "Verdict: needs fixes", "", "## Tried",
+    "- Input: within_cap(4)", "  Observed: True", "  Broke: No, 4 is allowed", "",
+    "## Findings",
+    "### F1 | head/cap.py:3",
+    "The boundary is wrong.",
+    "Repro: within_cap(5)",
+    "Observed: False",
+    "",
+    "## Held",
+    "4 stayed inside. Input within_cap(4) observed True.",
+    "",
+]))
+expect("broke case and a prose held list", check_attack(loose), [])
+planted_root = tempfile.mkdtemp()
+case_dir = os.path.join(planted_root, "cases", "item-cap", "runs", "run-9")
+os.makedirs(case_dir)
+open(os.path.join(planted_root, "cases", "item-cap", "key.md"), "w").write("Planted: yes\nCatch: x\n")
+approved = os.path.join(case_dir, "attack.md")
+open(approved, "w").write(open(attack(verdict="approve", findings=[])).read())
+expect("a case key is found without --key", check_attack(approved), ["approve on a case with a planted bug"])
 
 if __name__ == "__main__":
     for item in FAILS:
         print(f"FAIL {item}")
-    total = 10
+    total = 12
     print(f"{total - len(FAILS)}/{total} passed")
     sys.exit(1 if FAILS else 0)
