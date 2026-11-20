@@ -22,17 +22,21 @@ Run the code. Record the command and the output you saw. A finding needs a file 
 python3 "$SKILL_DIR"/check/attack_agents.py --run --brief <dir>/attack-brief.md --out <dir>/passes --cwd <checkout>
 ```
 
-The script starts those CLIs in `<checkout>`. The brief is their stdin, not an argument. Codex uses a workspace-write sandbox. Claude may run Bash there, with `acceptEdits`, and does not get a machine-wide bypass. Each pass waits at most 600 seconds (`--timeout`). Stderr is saved next to the pass. A timeout is `Parse: timeout`, not an empty approve. The script puts the attack-file section below in front of every brief. With `--sandbox auto`, a run uses `bwrap` whenever it is installed. `--sandbox none` is the only unsandboxed path, and it prints a warning. Inside `bwrap`, Codex is started from its real binary with `--sandbox danger-full-access`, because its own bubblewrap cannot start there. Claude still uses `acceptEdits` and may run Bash.
+The script starts those CLIs in `<checkout>`. The brief is their stdin, not an argument. Codex uses a workspace-write sandbox. Claude may run Bash there, with `acceptEdits`, and does not get a machine-wide bypass. Each pass waits at most 600 seconds (`--timeout`). Stderr is saved next to the pass. A timeout is `Parse: timeout`, not an empty approve. The script puts the attack-file section below in front of every brief. `--sandbox auto` uses `bwrap` when it is installed. A reachable `key.md` runs only inside `bwrap`. `--sandbox none` cannot override that. A checkout with no reachable `key.md` may use `--sandbox none`, and that prints a warning. Inside `bwrap`, Codex starts from its real binary with `--sandbox danger-full-access` and the host network. `bwrap` is the boundary. Codex's own bubblewrap cannot start there. Claude still uses `acceptEdits` and may run Bash.
 
 ## Sandbox
 
-`bwrap` is the reference backend. `--sandbox docker` is a stub. When `bwrap` is missing, auto walks the cwd and every parent up to the root, including dot directories and links, and refuses if it finds a `key.md`.
+`bwrap` is the reference backend. `--sandbox docker` is a stub. Before a mount, the script walks the cwd and every parent up to the root. The walk follows links and enters dot directories, `.git`, and `node_modules`.
 
-The sandbox is a fresh root. `/usr`, `/bin`, `/lib`, and `/etc/alternatives` are read-only, so `awk`, `sed`, `grep`, `find`, `python3`, and `git` can resolve. `/tmp` is a writable empty disk. The CLI package directory is read-only, so a helper next to the real binary is visible. Network stays on, which means a local service such as a Docker API on port 2375 is reachable too.
+If a `key.md` is reachable and the cwd is not a case with `head` and `base`, the run is refused. A practice run without `bwrap` is refused too.
 
-`/work` is the checkout when that checkout has no `key.md`. When the cwd is a case, or contains cases, `/work` holds only the copied `head` and `base` trees. The case key is not copied.
+The sandbox is a fresh root. `/usr`, `/bin`, `/lib`, and `/etc/alternatives` are read-only, so `awk`, `sed`, `grep`, `find`, `python3`, `python`, and `git` resolve. `/tmp` is a writable empty disk. The CLI package directory is read-only, so a helper next to the real binary is visible.
 
-Login files are passed in with `bwrap --file` and are not written to the host. Codex gets `auth.json`, and a short `config.toml` with only model, provider, and auth keys. Claude gets `.credentials.json`, and `.claude.json` under `CLAUDE_CONFIG_DIR` with onboarding and account fields only. `CODEX_HOME` and `CLAUDE_CONFIG_DIR` point at `/home/agent`. API key variables are passed by name and are not printed. Add a backend by teaching `attack_agents.py` a new `--sandbox` name.
+Network stays on. A real review can reach the public internet and a local service, such as a Docker API on port 2375. That is accepted because `bwrap` is the boundary, and Codex runs with full access inside it.
+
+`/work` is the checkout when no `key.md` is reachable. When the cwd is a case, `/work` holds only the copied `head` and `base`. The case key is not copied.
+
+Login files are passed in with `bwrap --file` and are not written to the host. Codex gets `auth.json` and `config.toml` with host tables removed: projects, hooks, plugins, mcp servers, notify, and history. Paths that point at host directories are removed too. Claude gets `.credentials.json`, and `.claude.json` under `CLAUDE_CONFIG_DIR` with onboarding and account fields only. `CODEX_HOME` and `CLAUDE_CONFIG_DIR` point at `/home/agent`. API key variables are passed by name and are not printed. Add a backend by teaching `attack_agents.py` a new `--sandbox` name.
 
 ## Brief
 

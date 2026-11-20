@@ -42,6 +42,8 @@ CLAUDE_JSON_KEEP = (
     "numStartups", "installMethod", "autoUpdates", "theme", "primaryApiKey",
 )
 STALE_SECONDS = 3600
+LOGIN_MAX = 8 * 1024 * 1024
+DROP_CONFIG = ("projects", "hooks", "plugins", "mcp_servers", "notify", "history")
 LIVE = []
 
 
@@ -198,13 +200,23 @@ def practice_roots(path):
     return found
 
 
+def _copyable_cases(path):
+    """Case directories that have head or base, so the mount can omit the key."""
+    found = []
+    for case in practice_roots(path):
+        if any(os.path.isdir(os.path.join(case, name)) for name in ("head", "base")):
+            found.append(case)
+    return found
+
+
 def agent_cwd(cwd):
     """(directory, created). Practice trees are copied without their key.md."""
-    cases = practice_roots(cwd)
+    cases = _copyable_cases(cwd)
     if not cases:
         return cwd, False
     temp = tempfile.mkdtemp(prefix="attack-cwd-")
     single = len(cases) == 1
+    copied = False
     for case in cases:
         label = "" if single else os.path.basename(case)
         for name in ("head", "base"):
@@ -213,6 +225,10 @@ def agent_cwd(cwd):
                 continue
             dest = os.path.join(temp, name) if not label else os.path.join(temp, label, name)
             _copy_tree(src, dest, src)
+            copied = True
+    if not copied:
+        shutil.rmtree(temp, ignore_errors=True)
+        return cwd, False
     return temp, True
 
 
@@ -235,25 +251,105 @@ def _stripped_claude_json(src):
     return json.dumps(kept).encode("utf-8")
 
 
+def _is_host_path(value):
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    if text.startswith("~"):
+        return True
+    if not text.startswith("/"):
+        return False
+    home = os.path.expanduser("~")
+    if home and (text == home or text.startswith(home + os.sep)):
+        return True
+    return os.path.isdir(text)
+
+
+def _clean_config(data):
+    if not isinstance(data, dict):
+        return data
+    out = {}
+    for key, value in data.items():
+        if key in DROP_CONFIG:
+            continue
+        if isinstance(value, dict):
+            cleaned = _clean_config(value)
+            if cleaned:
+                out[key] = cleaned
+            continue
+        if isinstance(value, list):
+            if any(_is_host_path(item) for item in value):
+                continue
+            out[key] = value
+            continue
+        if _is_host_path(value):
+            continue
+        out[key] = value
+    return out
+
+
+def _toml_key(key):
+    if all(ch.isalnum() or ch in "_-" for ch in key):
+        return key
+    return '"' + key.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _toml_string(value):
+    if "\n" not in value and "\r" not in value and all(ord(ch) >= 32 or ch == "\t" for ch in value):
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\t", "\\t")
+        return '"' + escaped + '"'
+    if "'''" not in value and not value.endswith("'"):
+        return "'''\n" + value + "'''"
+    body = value.replace("\\", "\\\\").replace('"""', '\\"""')
+    return '"""\n' + body + '"""'
+
+
+def _toml_scalar(value):
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return repr(value)
+    if isinstance(value, str):
+        return _toml_string(value)
+    if isinstance(value, list):
+        return "[" + ", ".join(_toml_scalar(item) for item in value) + "]"
+    if isinstance(value, dict):
+        parts = [_toml_key(key) + " = " + _toml_scalar(item) for key, item in value.items()]
+        return "{ " + ", ".join(parts) + " }"
+    return _toml_string(str(value))
+
+
+def _toml_emit(data, prefix, lines):
+    scalars = [(key, value) for key, value in data.items() if not isinstance(value, dict)]
+    tables = [(key, value) for key, value in data.items() if isinstance(value, dict)]
+    if prefix:
+        lines.append("")
+        lines.append("[" + prefix + "]")
+    for key, value in scalars:
+        lines.append(_toml_key(key) + " = " + _toml_scalar(value))
+    for key, value in tables:
+        child = _toml_key(key) if not prefix else prefix + "." + _toml_key(key)
+        _toml_emit(value, child, lines)
+
+
 def _minimal_codex_config(text):
-    """Keep model, provider, and auth tables. Drop project paths, hooks, and plugins."""
-    keep_tables = ("model_providers", "profiles", "auth")
-    keep_keys = ("model", "model_provider", "review_model", "profile")
-    out, section = [], ""
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("[") and stripped.endswith("]"):
-            section = stripped.strip("[]").split(".", 1)[0].strip().strip('"')
-            if section in keep_tables:
-                out.append(line)
-            continue
-        if section in keep_tables:
-            out.append(line)
-            continue
-        key = stripped.split("=", 1)[0].strip()
-        if key in keep_keys:
-            out.append(line)
-    return ("\n".join(out) + "\n").encode("utf-8") if out else b""
+    """Drop host tables and host paths. Keep every other setting, including dotted keys."""
+    import tomllib
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        print("error: config.toml could not be parsed. It was not passed in.", file=sys.stderr)
+        return b""
+    if not isinstance(data, dict):
+        return b""
+    cleaned = _clean_config(data)
+    if not cleaned:
+        return b""
+    lines = []
+    _toml_emit(cleaned, "", lines)
+    return ("\n".join(lines).strip() + "\n").encode("utf-8")
 
 
 def _login_feeds():
@@ -287,8 +383,15 @@ def _login_feeds():
     return feeds
 
 
+def _is_empty_dir(path):
+    try:
+        return os.path.isdir(path) and not os.listdir(path)
+    except OSError:
+        return False
+
+
 def cleanup_stale():
-    """Drop leftover homes immediately, and work copies older than an hour."""
+    """Drop leftover homes and empty work copies now, and old work copies after an hour."""
     now = time.time()
     root = tempfile.gettempdir()
     try:
@@ -298,9 +401,9 @@ def cleanup_stale():
     for name in names:
         path = os.path.join(root, name)
         try:
-            if name.startswith("attack-home-"):
-                shutil.rmtree(path, ignore_errors=True)
-            elif name.startswith("attack-cwd-") and now - os.path.getmtime(path) > STALE_SECONDS:
+            empty_work = name.startswith("attack-cwd-") and _is_empty_dir(path)
+            old_work = name.startswith("attack-cwd-") and now - os.path.getmtime(path) > STALE_SECONDS
+            if name.startswith("attack-home-") or empty_work or old_work:
                 shutil.rmtree(path, ignore_errors=True)
         except OSError:
             continue
@@ -408,16 +511,40 @@ def _ro_bind(argv, src, dest, seen_dirs, forbidden):
     argv += ["--ro-bind", src, dest]
 
 
-def _feed(fds, payload, dest, argv):
-    if isinstance(payload, bytes):
-        read_fd, write_fd = os.pipe()
+def _bytes_fd(payload):
+    """An fd positioned at the start. A pipe would block once the payload passes 64KB."""
+    if len(payload) > LOGIN_MAX:
+        raise ValueError("a login file is larger than 8MB")
+    if hasattr(os, "memfd_create"):
+        fd = os.memfd_create("ams-login")
         view = payload
         while view:
-            wrote = os.write(write_fd, view)
+            wrote = os.write(fd, view)
             view = view[wrote:]
-        os.close(write_fd)
-        fd = read_fd
+        os.lseek(fd, 0, os.SEEK_SET)
+        return fd
+    import threading
+    read_fd, write_fd = os.pipe()
+
+    def _write():
+        try:
+            view = payload
+            while view:
+                wrote = os.write(write_fd, view)
+                view = view[wrote:]
+        finally:
+            os.close(write_fd)
+
+    threading.Thread(target=_write, daemon=True).start()
+    return read_fd
+
+
+def _feed(fds, payload, dest, argv):
+    if isinstance(payload, bytes):
+        fd = _bytes_fd(payload)
     else:
+        if os.path.getsize(payload) > LOGIN_MAX:
+            raise ValueError("a login file is larger than 8MB")
         fd = os.open(payload, os.O_RDONLY)
     fds.append(fd)
     argv += ["--file", str(fd), dest]
@@ -453,9 +580,15 @@ def bwrap_command(cmd, binary, work, forbidden, host_tmp=None):
         "--dir", "/home/agent/.codex", "--dir", "/home/agent/.claude",
     ]
     fds = []
-    for payload, dest in _login_feeds():
-        _feed(fds, payload, dest, argv)
+    try:
+        for payload, dest in _login_feeds():
+            _feed(fds, payload, dest, argv)
+    except ValueError:
+        for fd in fds:
+            os.close(fd)
+        raise
     seen = {"/", "/etc", "/tmp", "/work", "/home", "/home/agent", "/home/agent/.codex", "/home/agent/.claude"}
+    alias = _python_alias(argv)
     real_bin = os.path.realpath(binary)
     package = _package_dir(binary)
     launch = real_bin
@@ -466,10 +599,21 @@ def bwrap_command(cmd, binary, work, forbidden, host_tmp=None):
     elif package and not _exposes(package, forbidden):
         _ro_bind(argv, package, package, seen, forbidden)
     argv += ["--clearenv"]
-    for key, value in _sandbox_env().items():
+    env = _sandbox_env()
+    if alias:
+        env["PATH"] = alias + ":" + env["PATH"]
+    for key, value in env.items():
         argv += ["--setenv", key, value]
     argv += [launch if index == 0 else part for index, part in enumerate(cmd)]
     return argv, fds
+
+
+def _python_alias(argv):
+    """A python name on PATH when the host only has python3. /usr is mounted read-only."""
+    if shutil.which("python") or not shutil.which("python3"):
+        return ""
+    argv += ["--dir", "/opt", "--dir", "/opt/ams-bin", "--symlink", shutil.which("python3"), "/opt/ams-bin/python"]
+    return "/opt/ams-bin"
 
 
 def _bwrap_bin():
@@ -585,13 +729,17 @@ def run_all(brief_path, out_dir, search_path=None, runner=None, timeout=DEFAULT_
     if chosen == "docker":
         print("error: the docker sandbox is not implemented. bwrap is the reference.", file=sys.stderr)
         return 2
+    planted = key_reachable(origin)
+    if planted and not _copyable_cases(origin):
+        print("error: a key.md is reachable, and this directory is not a case with head and base. Refusing to run.", file=sys.stderr)
+        return 2
+    if planted and chosen != "bwrap":
+        print("error: a practice run needs a sandbox. Refusing to run.", file=sys.stderr)
+        return 2
     if chosen == "missing":
         print("error: bwrap was requested but it is not installed.", file=sys.stderr)
         return 2
     if chosen == "unavailable":
-        if key_reachable(origin):
-            print("error: no sandbox is available and a key.md is reachable. Refusing to run.", file=sys.stderr)
-            return 2
         print("warning: no sandbox is available. Running unsandboxed.", file=sys.stderr)
         chosen = "none"
     elif chosen == "none":
@@ -618,7 +766,11 @@ def _run_found(found, brief, work, out_dir, runner, timeout, env, sandbox_name, 
         launch_env = env
         fds = ()
         if outer:
-            cmd, fds = bwrap_command(cmd, binary, work, forbidden, host_tmp)
+            try:
+                cmd, fds = bwrap_command(cmd, binary, work, forbidden, host_tmp)
+            except ValueError as exc:
+                print("error: %s" % exc, file=sys.stderr)
+                return 2
             launch_env = _sandbox_env()
         out_path = os.path.join(out_dir, name + ".md")
         err_path = os.path.join(out_dir, name + ".err")
