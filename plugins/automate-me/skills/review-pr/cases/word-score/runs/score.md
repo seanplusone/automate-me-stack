@@ -26,3 +26,5 @@ SKIP no agent CLI on PATH
 SKIP meaning
 WEAK location only
 ```
+
+Exit code 2. That is a location check, not a judged catch.

@@ -62,7 +62,7 @@ Input is one PR, or a set of PRs that link to each other. Output is `drafts.md` 
    - Write breaking inputs before you read the author's tests as evidence. Cover an edge, a malformed value, a boundary, keyword-stuffed nonsense when the change scores or matches text, and each claim the PR states but does not run.
    - Run each input. Record the command and the output you saw. A pass line in the PR body is not a run.
    - When `python3 "$SKILL_DIR"/check/attack_agents.py` prints `none`, write your pass to `<dir>/passes/current.md` and end it with the json block. When it prints names, do not write that pass. Run `python3 "$SKILL_DIR"/check/attack_agents.py --run --brief <dir>/attack-brief.md --out <dir>/passes --cwd <checkout>`. Each pass waits at most 600 seconds. Codex stays in its workspace sandbox. Claude may run Bash in that checkout.
-   - End the pass with the json block from [references/attack.md](../references/attack.md). Do not rely on markdown headings. The agent script appends that attack-file contract to the brief.
+   - End the pass with the json block from [references/attack.md](../references/attack.md). Do not rely on markdown headings. The agent script adds that attack-file contract to the brief. It does not show the case key, and it runs agents outside a planted case.
    - Merge with `python3 "$SKILL_DIR"/check/merge_attacks.py --out <dir>/attack.md <dir>/passes/*.md`. Then run `python3 "$SKILL_DIR"/check/check_attack.py <dir>/attack.md`. The checker reads a `key.md` above the file when the review is a planted case.
    - A finding the merge dropped stays out of `drafts.md`. When the input is a local diff and not a GitHub PR, stop after the attack check. There is no drafts file and nothing to post.
 

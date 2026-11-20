@@ -15,6 +15,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from check_attack import common_suffix, norm_span, path_suffix, parse_attack  # noqa: E402
 
 
+def _same(left, right):
+    try:
+        return os.path.realpath(left) == os.path.realpath(right)
+    except OSError:
+        return False
+
+
 def _blank(source):
     return {
         "parsed": False, "tried": [], "findings": [], "verdict": "", "stated": "",
@@ -56,7 +63,12 @@ def merge(paths):
                 errors.append(doc["source"] + ": line out of range")
                 continue
             stored = {
-                "file": path, "line": start, "claim": finding["claim"], "repro": finding["repro"],
+                "file": path,
+                "line": start if start is not None and start == end else None,
+                "line_start": start,
+                "line_end": end,
+                "claim": finding["claim"],
+                "repro": finding["repro"],
                 "passes": [doc["source"]],
             }
             if start is None:
@@ -90,6 +102,8 @@ def merge(paths):
         findings.append({
             "file": key_path,
             "line": items[0]["line"],
+            "line_start": items[0]["line_start"],
+            "line_end": items[0]["line_end"],
             "claim": " | ".join(claims),
             "repro": " | ".join(repros),
             "passes": passes,
@@ -123,7 +137,14 @@ def render(doc):
             for item in doc["tried"]
         ],
         "findings": [
-            {"file": item["file"], "line": item["line"], "claim": item["claim"], "repro": item["repro"]}
+            {
+                "file": item["file"],
+                "line": item["line"],
+                "line_start": item.get("line_start"),
+                "line_end": item.get("line_end"),
+                "claim": item["claim"],
+                "repro": item["repro"],
+            }
             for item in doc["findings"]
         ],
     }
@@ -169,6 +190,9 @@ def main(argv):
         index += 1
     if not out or not passes:
         print((__doc__ or "").strip(), file=sys.stderr)
+        return 2
+    if any(_same(out, path) for path in passes):
+        print("refusing to write over an input", file=sys.stderr)
         return 2
     doc = merge(passes)
     if not doc["verdict"]:

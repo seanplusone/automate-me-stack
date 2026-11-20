@@ -136,7 +136,7 @@ denied = block({
 buf = io.StringIO()
 with contextlib.redirect_stdout(buf):
     code = score_planted(key, denied, environ={"PATH": "/nonexistent"})
-expect("a denial is not a pass", (code, "PASS" not in buf.getvalue() and "WEAK" in buf.getvalue()), (0, True))
+expect("a denial is not a pass", (code, "PASS" not in buf.getvalue() and "WEAK" in buf.getvalue()), (2, True))
 
 # A real catch still keyword-passes when no CLI exists.
 caught = block({
@@ -144,17 +144,17 @@ caught = block({
     "tried": [{"input": "within_cap(5)", "broke": True, "observed": "False"}],
     "findings": [finding("cap.py", 3)],
 })
-expect("a catch keyword-passes with no CLI", score_planted(key, caught, environ={"PATH": "/nonexistent"}), 0)
+expect("a catch with no CLI is weak", score_planted(key, caught, environ={"PATH": "/nonexistent"}), 2)
 expect("a column location is scored", score_planted(key, block({
     "verdict": "needs fixes",
     "tried": [{"input": "within_cap(5)", "broke": True, "observed": "False"}],
     "findings": [finding("cap.py:3:12", None)],
-}), environ={"PATH": "/nonexistent"}), 0)
+}), environ={"PATH": "/nonexistent"}), 2)
 expect("a null line on the key file is scored", score_planted(key, block({
     "verdict": "needs fixes",
     "tried": [{"input": "within_cap(5)", "broke": True, "observed": "False"}],
     "findings": [{"file": "cap.py", "line": None, "claim": "within_cap(5) returns False", "repro": "within_cap(5)"}],
-}), environ={"PATH": "/nonexistent"}), 0)
+}), environ={"PATH": "/nonexistent"}), 2)
 expect("a null line on another file misses", score_planted(key, block({
     "verdict": "needs fixes",
     "tried": [{"input": "within_cap(5)", "broke": True, "observed": "False"}],
@@ -237,6 +237,47 @@ open(huge, "w").write(
 ran = subprocess.run([sys.executable, os.path.join(HERE, "check_attack.py"), huge], capture_output=True, text=True)
 expect("a huge line exits", ran.returncode, 1)
 expect("a huge line has no traceback", "Traceback" not in ran.stderr and "Traceback" not in ran.stdout, True)
+
+quoted_src = open(os.path.join(HERE, "fixtures", "passes", "item-cap", "codex.md")).read()
+quoted = "\n".join("> " + line for line in quoted_src.splitlines())
+clean_src = open(os.path.join(HERE, "fixtures", "passes", "clean", "claude.md")).read()
+hidden = write(quoted + "\n" + clean_src + "\n")
+expect("a quoted fence still counts", parse_attack(hidden)["parsed"], False)
+expect("a quoted fence does not approve", merge_main(["merge", "--out", os.path.join(tempfile.mkdtemp(), "a.md"), hidden]), 1)
+only_quoted = write(quoted + "\n")
+expect("one quoted fence still parses", parse_attack(only_quoted)["verdict"], "needs fixes")
+
+ranged = block({
+    "verdict": "needs fixes",
+    "tried": [{"input": "bug line bug line", "broke": True, "observed": "True"}],
+    "findings": [{"file": "score_review.py:3-6", "line": None, "claim": "returns True", "repro": "bug line bug line"}],
+})
+span = merge([ranged])["findings"][0]
+expect("a range keeps its start", span["line_start"], 3)
+expect("a range keeps its end", span["line_end"], 6)
+range_key = os.path.join(tempfile.mkdtemp(), "key.md")
+open(range_key, "w").write("Planted: yes\nWhere: score_review.py:6\nCatch: bug line bug line | returns True\n")
+range_out = os.path.join(tempfile.mkdtemp(), "attack.md")
+expect("the range merge writes", merge_main(["merge", "--out", range_out, ranged]), 0)
+expect("a merged range still reaches line 6", score_planted(
+    range_key, range_out, environ={"PATH": "/nonexistent"}, runner=yes,
+), 0)
+
+blank = block({
+    "verdict": "needs fixes",
+    "tried": [{"input": "within_cap(5)", "broke": True, "observed": "False"}],
+    "findings": [{"file": "", "line": None, "claim": "the cap is wrong", "repro": "within_cap(5) in cap.py"}],
+})
+kept = merge([blank])["findings"]
+expect("an empty file with a repro is kept", kept[0]["repro"], "within_cap(5) in cap.py")
+expect("an empty file with no judge is not weak", score_planted(key, blank, environ={"PATH": "/nonexistent"}), 1)
+expect("an empty file can reach the judge", score_planted(key, blank, environ={"PATH": "/nonexistent"}, runner=yes), 0)
+
+same = os.path.join(tempfile.mkdtemp(), "attack.md")
+open(same, "w").write(open(block(clean())).read())
+garbage = write("not json\n")
+expect("out cannot be an input", merge_main(["merge", "--out", same, same, garbage]), 2)
+expect("the input approve is still there", parse_attack(same)["verdict"], "approve")
 
 if __name__ == "__main__":
     for item in FAILS:

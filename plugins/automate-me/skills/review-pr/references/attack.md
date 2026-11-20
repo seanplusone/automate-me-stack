@@ -22,7 +22,7 @@ Run the code. Record the command and the output you saw. A finding needs a file 
 python3 "$SKILL_DIR"/check/attack_agents.py --run --brief <dir>/attack-brief.md --out <dir>/passes --cwd <checkout>
 ```
 
-The script starts those CLIs in `<checkout>`. The brief is their stdin, not an argument. Codex uses a workspace-write sandbox. Claude may run Bash there, with `acceptEdits`, and does not get a machine-wide bypass. Each pass waits at most 600 seconds (`--timeout`). Stderr is saved next to the pass. A timeout is `Parse: timeout`, not an empty approve. The script appends the attack-file section below to every brief.
+The script starts those CLIs in `<checkout>`. The brief is their stdin, not an argument. Codex uses a workspace-write sandbox. Claude may run Bash there, with `acceptEdits`, and does not get a machine-wide bypass. Each pass waits at most 600 seconds (`--timeout`). Stderr is saved next to the pass. A timeout is `Parse: timeout`, not an empty approve. The script puts the attack-file section below in front of every brief. When the cwd is a planted case, agents run in a copy of `head` and `base`. That copy has no case key.
 
 ## Brief
 
@@ -35,7 +35,7 @@ Write `<dir>/attack-brief.md` in your own words from this outline. Paste the dif
 
 ## Attack file
 
-End the pass with exactly one json fence. Prose before it is fine. The machine reads only that block. A second fence is an error, even inside another fence. A json object with no fence is read only when it is the whole output.
+End the pass with exactly one json fence. Prose before it is fine. The machine reads only that block. A second fence is an error, even inside a quote or another fence. A json object with no fence is read only when it is the whole output.
 
 ```json
 {"verdict": "approve", "tried": [{"input": "within_cap(4)", "broke": false, "observed": "True"}], "findings": []}
@@ -45,7 +45,9 @@ End the pass with exactly one json fence. Prose before it is fine. The machine r
 
 An approve needs at least one tried row, every `broke` false, and no findings. A true `broke` or any finding is needs fixes, even if the verdict says approve. Missing or invalid JSON is an error, and an error is not an approve.
 
-Run `python3 "$SKILL_DIR"/check/check_attack.py <dir>/attack.md`. It finds `key.md` above the file and fails an approve when that key marks a planted bug.
+## Check
+
+Run `python3 "$SKILL_DIR"/check/check_attack.py <dir>/attack.md`. It uses the case key and fails an approve when that key marks a planted bug.
 
 ## Merge
 
@@ -53,4 +55,4 @@ Run `python3 "$SKILL_DIR"/check/check_attack.py <dir>/attack.md`. It finds `key.
 python3 "$SKILL_DIR"/check/merge_attacks.py --out <dir>/attack.md <dir>/passes/*.md
 ```
 
-Findings on the same file and line are one finding. `head/cap.py` and `cap.py` match. A null line is kept and is not dropped. It matches a key only when the file matches too. Both passes' claims stay in the merged finding. The merge approves only when every pass is a valid approve.
+Findings on the same file and line are one finding. `head/cap.py` and `cap.py` match. A range such as `file:3-6` stays a range. A null line is kept. It matches a key only when the file matches too. Both passes' claims stay in the merged finding. The merge approves only when every pass is a valid approve. Do not pass `--out` as one of the inputs.
