@@ -66,4 +66,4 @@ Observed: <the output, or none>
 python3 "$SKILL_DIR"/check/merge_attacks.py --out <dir>/attack.md <dir>/passes/*.md
 ```
 
-Findings match on the file and the line. `head/cap.py:3` and `cap.py:3` are the same line. Wording does not split them. A finding from either pass is kept, with both passes' evidence. The verdict is needs fixes when a finding remains. A pass that does not parse does not become an approve. A clean pair of passes with no finding is an approve.
+Findings match on the file and the line. `head/cap.py:3` and `cap.py:3` are the same line. Wording does not split them. A finding from either pass is kept, with both passes' evidence. The verdict is needs fixes when a finding remains. A pass is an approve only with one approve line outside a code fence. It tried at least one input, and every input held. It names no file and line. The merge approves only when every pass is that kind of approve.

@@ -154,6 +154,33 @@ code, text = planted_score(PARAPHRASE, "returns True | 'ok': False", runner=lamb
 expect_planted("a non-zero judge does not pass", (code, "SKIP judge exited non-zero" in text and "PASS judge" not in text), (1, True))
 code, text = planted_score(PARAPHRASE, "returns True | 'ok': False", runner=lambda prompt: "ITEM 1: no\nITEM 1: yes\n")
 expect_planted("conflicting judge answers fail", (code, "FAIL judge missed planted bug" in text), (1, True))
+SPAN = CAUGHT.replace("### F1 | report.py:4 | passes: current", "### F1 | report.py:3 | passes: current")
+k, p = planted_files(SPAN, "returns True | ok false")
+open(k, "a").write("Where: report.py:3-4\n")
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    code = score(k, p, environ={"PATH": "/nonexistent"})
+expect_planted("a line in the key span counts", code, 0)
+FAR = CAUGHT.replace("### F1 | report.py:4 | passes: current", "### F1 | report.py:9 | passes: current")
+k, p = planted_files(FAR, "returns True | ok false")
+open(k, "a").write("Where: report.py:4\n")
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    code = score(k, p, environ={"PATH": "/nonexistent"})
+expect_planted("a line outside the window misses", code, 1)
+DENY = CAUGHT.replace(
+    "accept returns True when a case has ok false.",
+    "This does not show a bug. returns True and ok false are only words.",
+)
+k, p = planted_files(DENY, "returns True | ok false")
+open(k, "a").write("Where: report.py:4\n")
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    code = score(k, p, environ={"PATH": "/nonexistent"})
+text = out.getvalue()
+expect_planted("a denial on the key line is not a keyword pass", (code, "PASS" not in text), (1, True))
+from judge_case import parse_verdict
+expect_planted("a sentence is not a judge answer", parse_verdict("The answer is not ITEM 1: yes."), None)
 
 if __name__ == "__main__":
     for f in FAILS:

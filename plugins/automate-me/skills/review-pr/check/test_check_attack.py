@@ -2,9 +2,10 @@
 import os
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from check_attack import check_attack  # noqa: E402
+from check_attack import check_attack, parse_finding_heading, planted_bug  # noqa: E402
 
 FAILS = []
 
@@ -124,10 +125,19 @@ approved = os.path.join(case_dir, "attack.md")
 open(approved, "w").write(open(clean_approve).read())
 expect("a case key is found without --key", check_attack(approved), ["approve on a case with a planted bug"])
 expect("an empty --key does not disable the case", check_attack(approved, ""), ["approve on a case with a planted bug"])
+dotted = os.path.join(tempfile.mkdtemp(), "key.md")
+open(dotted, "w").write("Planted: yes.\n")
+expect("planted yes with a period", planted_bug(dotted), True)
+bare = os.path.join(tempfile.mkdtemp(), "attack.md")
+open(bare, "w").write("Verdict: approve\n")
+expect("approve with no inputs fails the check", "not a valid approve" in check_attack(bare), True)
+started = time.perf_counter()
+parse_finding_heading("### " + ("a" * 40000))
+expect("a huge heading line stays fast", time.perf_counter() - started < 0.5, True)
 
 if __name__ == "__main__":
     for item in FAILS:
         print(f"FAIL {item}")
-    total = 15
+    total = 18
     print(f"{total - len(FAILS)}/{total} passed")
     sys.exit(1 if FAILS else 0)

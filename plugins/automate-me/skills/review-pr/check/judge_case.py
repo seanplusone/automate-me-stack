@@ -22,7 +22,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from check_attack import parse_attack  # noqa: E402
 
-ITEM = re.compile(r"ITEM\s+(\d+)\s*:\s*(yes|no)\b", re.I)
+ITEM = re.compile(r"^ITEM\s+(\d+)\s*:\s*(yes|no)\s*$", re.I | re.M)
 
 
 def find_cli(environ=None):

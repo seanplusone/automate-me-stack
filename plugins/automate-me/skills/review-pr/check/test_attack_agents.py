@@ -5,7 +5,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from attack_agents import command, detect, run_all, stamp  # noqa: E402
+from attack_agents import command, detect, main as agent_main, run_all, stamp  # noqa: E402
 
 FAILS = []
 STUB = """#!/usr/bin/env python3
@@ -62,6 +62,9 @@ expect("claude alone", [name for name, _binary in detect(only)], ["claude"])
 expect("stamp adds the agent", "passes: claude" in stamp("### F1 | head/cap.py:3\nbroke\n", "claude"), True)
 expect("stamp does not repeat the agent",
        stamp("### F1 | cap.py:3 | passes: claude\n", "claude").count("claude"), 1)
+section = stamp("## Findings (all in cap.py:3)\n### F1 | cap.py:3\n", "codex")
+expect("stamp leaves a section header", section.splitlines()[0], "## Findings (all in cap.py:3)")
+expect("stamp still marks the finding", "passes: codex" in section, True)
 
 slow_dir = tempfile.mkdtemp()
 slow = os.path.join(slow_dir, "codex")
@@ -104,9 +107,22 @@ wide_text = open(os.path.join(wide_out, "claude.md")).read()
 expect("long brief arrives on stdin", wide_text.endswith("A" * 200000), True)
 expect("long brief stays off argv", "AAAA" not in wide_text.split("brief=")[0], True)
 
+stale = tempfile.mkdtemp()
+open(os.path.join(stale, "claude.md"), "w").write("STALE\n")
+run_all(brief, stale, search_path=slow_dir and bindir("codex"))
+expect("a stale pass is cleared", os.path.exists(os.path.join(stale, "claude.md")), False)
+
+flags = tempfile.mkdtemp()
+expect("timeout 0.5 does not crash",
+       agent_main(["attack_agents.py", "--run", "--brief", brief, "--out", flags, "--timeout", "0.5"]), 0)
+expect("repeated --out is an error",
+       agent_main(["attack_agents.py", "--run", "--brief", brief, "--out", flags, "--out", flags]), 2)
+expect("a bad timeout is an error",
+       agent_main(["attack_agents.py", "--run", "--brief", brief, "--out", flags, "--timeout", "nope"]), 2)
+
 if __name__ == "__main__":
     for item in FAILS:
         print(f"FAIL {item}")
-    total = 23
+    total = 29
     print(f"{total - len(FAILS)}/{total} passed")
     sys.exit(1 if FAILS else 0)

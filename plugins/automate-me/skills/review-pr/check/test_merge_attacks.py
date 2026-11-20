@@ -170,6 +170,63 @@ expect("quoted empty input is kept", '- Input: ""' in quoted, True)
 expect("quoted merge passes the checker", check_attack(write("out.md", quoted)), [])
 expect("a missing pass is not an approve", merge(["/tmp/no-such-pass-e9be.md", clean])["verdict"], "")
 
+CLEAN_TEXT = "\n".join([
+    "# Attack review: clean", "", "Verdict: approve", "", "## Tried",
+    "- Input: empty", "  Observed: ok", "  Broke: no", "", "## Findings", "", "## Held",
+    "- Input: empty", "  Observed: ok", "",
+])
+FANCY = "\n".join([
+    "# Attack review: item cap", "",
+    "**Verdict: needs fixes**", "",
+    "## Tried",
+    "- Input: within_cap(5)",
+    "  Observed: False",
+    "  **Broke: yes**",
+    "",
+    "### Findings",
+    "### F1 | head/cap.py:3 | passes: codex",
+    "The cap rejects 5.",
+    "",
+])
+expect("bold needs-fixes is not an approve",
+       merge([write("fancy.md", FANCY), write("clean2.md", CLEAN_TEXT)])["verdict"], "needs fixes")
+FENCED = "\n".join([
+    "```", "Verdict: approve", "```", "",
+    "Verdict: needs fixes", "",
+    "## Tried",
+    "- Input: within_cap(5)", "  Observed: False", "  Broke: yes", "",
+    "## Findings",
+    "### F1 | cap.py:3 | passes: codex",
+    "rejected",
+    "Repro: within_cap(5)",
+    "Observed: False",
+    "",
+    "## Held", "None",
+])
+expect("a fenced approve is not the verdict", merge([write("fenced.md", FENCED)])["verdict"], "needs fixes")
+expect("approve with no inputs is not an approve", merge([write("only.md", "Verdict: approve\n")])["verdict"], "needs fixes")
+
+from merge_attacks import main as merge_main
+import contextlib
+import io
+opt_dir = tempfile.mkdtemp()
+prev = os.getcwd()
+os.chdir(opt_dir)
+try:
+    open("--x.md", "w").write(CLEAN_TEXT)
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        dropped = merge_main(["merge_attacks.py", "--out", "out.md", "--x.md"])
+    expect("a pass named --x.md is not dropped silently", dropped, 2)
+    kept_code = merge_main(["merge_attacks.py", "--out", "out.md", "--", "--x.md"])
+    expect("a pass after -- is read", kept_code, 0)
+    expect("the read pass was merged", "Verdict: approve" in open("out.md").read(), True)
+finally:
+    os.chdir(prev)
+raw_pass = os.path.join(tempfile.mkdtemp(), "bad.md")
+open(raw_pass, "wb").write(b"\xff\xfe Verdict: approve\n")
+expect("a non-utf8 pass is not an approve", merge([raw_pass, write("c.md", CLEAN_TEXT)])["verdict"], "")
+
 text = render(one)
 path = write("merged.md", text)
 expect("merged file passes the checker", check_attack(path), [])
@@ -180,6 +237,6 @@ expect("round trip keeps the finding line", parsed["findings"][0]["where"], "rep
 if __name__ == "__main__":
     for item in FAILS:
         print(f"FAIL {item}")
-    total = 32
+    total = 39
     print(f"{total - len(FAILS)}/{total} passed")
     sys.exit(1 if FAILS else 0)
