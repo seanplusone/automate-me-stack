@@ -14,6 +14,7 @@ import re
 import sys
 
 JSON_OPEN = re.compile(r"^(`{3,}|~{3,})[ \t]*json[ \t]*$", re.I)
+FENCE_CLOSE = re.compile(r"^(`{3,}|~{3,})[ \t]*$")
 MAX_LINE = 1_000_000
 WINDOW = 2
 
@@ -158,11 +159,26 @@ def where_span(text):
     return path, start, end
 
 
+def unwrap_prefix(line):
+    """Drop leading quotes, list markers, and whitespace. The fence can sit behind them."""
+    text = line
+    while True:
+        rest = text.lstrip(" \t")
+        if rest.startswith(">"):
+            text = rest[1:]
+            continue
+        marker = re.match(r"^(?:[-*+]|\d+[.)])(?:[ \t]+|$)", rest)
+        if marker:
+            text = rest[marker.end():]
+            continue
+        return rest
+
+
 def json_opens(text):
     """(line index, fence marker) for every fence whose info string is json."""
     found = []
     for index, line in enumerate(text.split("\n")):
-        match = JSON_OPEN.match(line.strip())
+        match = JSON_OPEN.match(unwrap_prefix(line))
         if match:
             found.append((index, match.group(1)))
     return found
@@ -175,6 +191,8 @@ def one_json_body(text):
         return None, "more than one json block"
     if not opens:
         bare = text.strip()
+        if bare.startswith("{") or bare.startswith(">"):
+            bare = "\n".join(unwrap_prefix(line) for line in text.split("\n")).strip()
         if bare.startswith("{"):
             return bare, None
         return None, "missing json block"
@@ -182,10 +200,33 @@ def one_json_body(text):
     lines = text.split("\n")
     char, width = marker[0], len(marker)
     for index in range(start + 1, len(lines)):
-        close = re.match(r"^(%s{3,})[ \t]*$" % re.escape(char), lines[index].strip())
-        if close and len(close.group(1)) >= width:
-            return "\n".join(lines[start + 1:index]), None
+        close = FENCE_CLOSE.match(unwrap_prefix(lines[index]))
+        if close and close.group(1)[0] == char and len(close.group(1)) >= width:
+            body = "\n".join(unwrap_prefix(line) for line in lines[start + 1:index])
+            return body, None
     return None, "unclosed json block"
+
+
+def finding_span(finding):
+    """(path, start, end). A stored line_start/line_end keeps a range through the merge."""
+    raw_start = finding.get("line_start")
+    raw_end = finding.get("line_end")
+    has_start = isinstance(raw_start, int) and not isinstance(raw_start, bool)
+    has_end = isinstance(raw_end, int) and not isinstance(raw_end, bool)
+    if not has_start and not has_end:
+        return norm_span(finding.get("file"), finding.get("line"))
+    if (has_start and raw_start > MAX_LINE) or (has_end and raw_end > MAX_LINE):
+        raise ValueError("line out of range")
+    path, _, _ = norm_span(finding.get("file"), None)
+    start = raw_start if has_start else raw_end
+    end = raw_end if has_end else raw_start
+    if start is None or start <= 0:
+        return path, None, None
+    if end is None or end <= 0:
+        end = start
+    if end < start:
+        start, end = end, start
+    return path, start, end
 
 
 def _pairs(pairs):
@@ -283,12 +324,8 @@ def parse_attack(path):
     return doc
 
 
-def find_key(attack_path):
-    """cases/<name>/key.md for this file. A run-local key.md does not win."""
-    try:
-        directory = os.path.dirname(os.path.realpath(attack_path))
-    except OSError:
-        directory = os.path.dirname(os.path.abspath(attack_path))
+def _case_key(directory):
+    """cases/<name>/key.md walking up from a directory, or None."""
     while True:
         parent = os.path.dirname(directory)
         if os.path.basename(parent) == "cases":
@@ -297,6 +334,22 @@ def find_key(attack_path):
         if parent == directory:
             return None
         directory = parent
+
+
+def find_key(attack_path):
+    """cases/<name>/key.md. The symlink's own directory and its target both count."""
+    seen = []
+    for path in (attack_path,):
+        seen.append(os.path.dirname(os.path.abspath(path)))
+    try:
+        seen.append(os.path.dirname(os.path.realpath(attack_path)))
+    except OSError:
+        pass
+    for directory in seen:
+        found = _case_key(directory)
+        if found:
+            return found
+    return None
 
 
 def check_attack(path, key_path=None):
@@ -329,10 +382,16 @@ def main(argv):
     while index < len(argv):
         if argv[index] == "--key":
             if index + 1 >= len(argv):
-                usage_or_exit(__doc__, ["check_attack.py"], 1)
-            key = argv[index + 1].strip() or None
+                print((__doc__ or "").strip(), file=sys.stderr)
+                return 2
+            value = argv[index + 1].strip()
+            if value:
+                key = value
             index += 2
             continue
+        if argv[index].startswith("--"):
+            print((__doc__ or "").strip(), file=sys.stderr)
+            return 2
         args.append(argv[index])
         index += 1
     if len(args) != 1:

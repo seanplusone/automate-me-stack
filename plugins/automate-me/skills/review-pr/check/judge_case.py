@@ -11,11 +11,14 @@ the prompt on stdin and write `ITEM 1: yes` or `ITEM 1: no`.
 
 Exit 0 when the finding catches the bug, or when no CLI is available.
 Exit 1 when the judge says the bug was missed.
-Exit 2 on a usage error.
+Exit 2 when the judge times out, exits non-zero, or the arguments are wrong.
+The default wait is 300 seconds. Set JUDGE_TIMEOUT to change it. A timeout
+is SKIP, not a pass.
 """
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 
@@ -23,6 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from check_attack import parse_attack  # noqa: E402
 
 ITEM = re.compile(r"^ITEM\s+(\d+)\s*:\s*([A-Za-z]+)\b", re.I)
+DEFAULT_TIMEOUT = 300
 
 
 def find_cli(environ=None):
@@ -73,10 +77,12 @@ def build_prompt(key_text, findings):
 
 
 def _judge_line(line):
-    """Drop emphasis and backticks so a wrapped answer still counts."""
+    """Drop list markers and emphasis around the label and the answer."""
     text = line.strip()
-    text = re.sub(r"^[>*_\s`]+", "", text)
-    text = re.sub(r"[*_`]+$", "", text)
+    text = re.sub(r"^[-*+][ \t]+", "", text)
+    text = re.sub(r"^\d+[.)][ \t]+", "", text)
+    text = text.replace("*", "").replace("_", "").replace("`", "")
+    text = re.sub(r"^[-+][ \t]+", "", text)
     return text.strip()
 
 
@@ -100,13 +106,34 @@ def parse_verdict(text):
     return answers[0]
 
 
-def run_cli(argv, prompt):
-    result = subprocess.run(argv, input=prompt, text=True, capture_output=True)
-    return result.returncode, result.stdout
+def _timeout(timeout):
+    if timeout is not None:
+        return float(timeout)
+    raw = os.environ.get("JUDGE_TIMEOUT", "")
+    if not raw:
+        return DEFAULT_TIMEOUT
+    return float(raw)
 
 
-def judge(key_path, attack_path, environ=None, runner=None, findings=None):
-    """0 when the bug is caught or no CLI exists, 1 on a miss, 2 on a bad exit."""
+def run_cli(argv, prompt, timeout):
+    proc = subprocess.Popen(
+        argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, start_new_session=True,
+    )
+    try:
+        stdout, _stderr = proc.communicate(prompt, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except OSError:
+            proc.kill()
+        proc.communicate()
+        raise
+    return proc.returncode, stdout
+
+
+def judge(key_path, attack_path, environ=None, runner=None, findings=None, timeout=None):
+    """0 when the bug is caught or no CLI exists, 1 on a miss, 2 on a bad exit or timeout."""
     doc = parse_attack(attack_path)
     chosen = doc["findings"] if findings is None else findings
     prompt = build_prompt(open(key_path).read(), chosen)
@@ -121,7 +148,14 @@ def judge(key_path, attack_path, environ=None, runner=None, findings=None):
         else:
             code, stdout = 0, out
     else:
-        code, stdout = run_cli(argv, prompt)
+        try:
+            code, stdout = run_cli(argv, prompt, _timeout(timeout))
+        except subprocess.TimeoutExpired:
+            print("SKIP judge timed out")
+            return 2
+        except (ValueError, OSError) as exc:
+            print(f"SKIP judge {exc}")
+            return 2
     if code:
         print("SKIP judge exited non-zero")
         return 2

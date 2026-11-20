@@ -6,9 +6,9 @@ Exits 1 if any key finding is missed.
 A key with a line `Planted: yes` scores an attack file. A finding matches when
 its file matches the key file and its line overlaps the key span, plus or
 minus 2. A null line still needs that file, plus a repro. The judge then
-decides, and only those findings are sent. With no CLI the result is weak:
-it prints SKIP for meaning and checks the location only. Any other key scores
-a drafts file, below.
+decides, and only those findings are sent. With no CLI the result is weak.
+It prints SKIP for meaning, checks the location only, and exits 2. Exit 2 is
+not a judged catch. Any other key scores a drafts file, below.
 
 A key row is `| <id> | <pr> | <path prefix> | <line or -> | <finding> | <min sites or -> | <proof> |`.
 A finding is found when the drafts carry a comment in that PR on a path that starts with the
@@ -26,7 +26,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from check_attack import catch_terms, norm_span, parse_attack, path_suffix, planted_bug, where_span  # noqa: E402
+from check_attack import catch_terms, finding_span, parse_attack, path_suffix, planted_bug, where_span  # noqa: E402
 from check_drafts import parse  # noqa: E402
 
 ROW = re.compile(r"^\| (K\d+) \| (\S+#\d+) \| `?([^|`]+?)`? \| (\d+|-) \| [^|]+ \| (\d+|-) \| [^|]* \|$")
@@ -71,7 +71,7 @@ def key_where(path):
 def matches(finding, want):
     """The file matches, and the line overlaps the key span. A null line needs a repro."""
     try:
-        path, start, end = norm_span(finding.get("file"), finding.get("line"))
+        path, start, end = finding_span(finding)
     except ValueError:
         return False
     if not path:
@@ -87,6 +87,24 @@ def matches(finding, want):
     return start <= span[2] + 2 and end >= span[1] - 2
 
 
+def repro_mentions(finding, want):
+    """An empty file can still name the key file in its repro."""
+    try:
+        path, _start, _end = finding_span(finding)
+    except ValueError:
+        return False
+    repro = (finding.get("repro") or "").strip()
+    if path or not repro:
+        return False
+    if not want:
+        return True
+    span = where_span(want)
+    if not span:
+        return False
+    name = span[0].split("/")[-1].lower()
+    return name in repro.lower()
+
+
 def score_planted(key_path, attack_path, environ=None, runner=None):
     """The judge decides on matching findings. With no CLI, only the location is checked."""
     terms = catch_terms(key_path)
@@ -98,18 +116,26 @@ def score_planted(key_path, attack_path, environ=None, runner=None):
         print("FAIL missed planted bug")
         return 1
     want = key_where(key_path)
-    usable = [finding for finding in doc["findings"] if matches(finding, want)]
+    located = [finding for finding in doc["findings"] if matches(finding, want)]
+    mentioned = [finding for finding in doc["findings"] if repro_mentions(finding, want)]
+    usable = located + [finding for finding in mentioned if finding not in located]
     if not usable:
         print("FAIL missed planted bug")
         return 1
     from judge_case import find_cli, judge  # noqa: E402
     if runner is None and find_cli(environ) is None:
+        if not located:
+            print("FAIL missed planted bug")
+            return 1
         print("SKIP no agent CLI on PATH")
         print("SKIP meaning")
         print("WEAK location only")
+        return 2
+    judged = judge(key_path, attack_path, environ=environ, runner=runner, findings=usable)
+    if judged == 0:
         return 0
-    if judge(key_path, attack_path, environ=environ, runner=runner, findings=usable) == 0:
-        return 0
+    if judged == 2:
+        return 2
     print("FAIL missed planted bug")
     return 1
 

@@ -1,12 +1,14 @@
 """Run: python3 check/test_attack_agents.py"""
 import os
+import signal
 import stat
+import subprocess
 import sys
 import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from attack_agents import command, detect, main as agent_main, run_all  # noqa: E402
+from attack_agents import command, contract_bytes, detect, main as agent_main, run_all  # noqa: E402
 
 FAILS = []
 CHECKS = []
@@ -142,6 +144,52 @@ group_out = tempfile.mkdtemp()
 expect("a timeout kills the group", run_all(brief, group_out, search_path=group, timeout=0.3), 1)
 time.sleep(2)
 expect("a child does not write after the timeout", os.path.exists(marker), False)
+expect("the contract does not name the key", b"key.md" not in contract_bytes(), True)
+
+owned = tempfile.mkdtemp()
+owned_brief = os.path.join(owned, "codex.md")
+open(owned_brief, "w").write("KEEP THE BRIEF\n")
+expect("a brief that is a pass is refused", run_all(owned_brief, owned, search_path=both), 2)
+expect("the brief was not deleted", open(owned_brief).read(), "KEEP THE BRIEF\n")
+
+root = tempfile.mkdtemp()
+head = os.path.join(root, "cases", "item-cap", "head")
+os.makedirs(head)
+open(os.path.join(root, "cases", "item-cap", "key.md"), "w").write("Planted: yes\nSECRET-KEY-LINE\n")
+open(os.path.join(head, "cap.py"), "w").write("x = 1\n")
+walker = tempfile.mkdtemp()
+open(os.path.join(walker, "codex"), "w").write(
+    "#!/usr/bin/python3\nimport os\n"
+    "for dirpath, dirs, files in os.walk('.'):\n"
+    "    for name in files:\n"
+    "        print(os.path.join(dirpath, name))\n"
+)
+os.chmod(os.path.join(walker, "codex"), os.stat(os.path.join(walker, "codex")).st_mode | stat.S_IEXEC)
+walk_out = tempfile.mkdtemp()
+run_all(brief, walk_out, search_path=walker, cwd=head)
+walked = open(os.path.join(walk_out, "codex.md")).read()
+expect("the copy has the code", "cap.py" in walked, True)
+expect("the copy has no key", "key.md" not in walked and "SECRET-KEY-LINE" not in walked, True)
+
+script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "attack_agents.py")
+for stop in (signal.SIGTERM, signal.SIGINT):
+    late = os.path.join(tempfile.mkdtemp(), "late.txt")
+    sleeper = tempfile.mkdtemp()
+    open(os.path.join(sleeper, "codex"), "w").write(
+        "#!/usr/bin/python3\nimport os, time\npath = %r\ntime.sleep(3)\nopen(path, 'w').write('late')\n" % late
+    )
+    os.chmod(os.path.join(sleeper, "codex"), 0o755)
+    env = os.environ.copy()
+    env["PATH"] = sleeper
+    proc = subprocess.Popen(
+        [sys.executable, script, "--run", "--brief", brief, "--out", tempfile.mkdtemp(), "--timeout", "30"],
+        env=env, cwd=tempfile.mkdtemp(),
+    )
+    time.sleep(0.4)
+    proc.send_signal(stop)
+    proc.wait(timeout=5)
+    time.sleep(3.2)
+    expect("signal %s kills the agent" % stop.name, os.path.exists(late), False)
 
 stale = tempfile.mkdtemp()
 open(os.path.join(stale, "claude.md"), "w").write("STALE\n")

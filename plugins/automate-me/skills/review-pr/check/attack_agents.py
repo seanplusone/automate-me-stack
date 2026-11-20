@@ -18,14 +18,16 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 
 NAMES = ("codex", "claude")
 OWNED = ("codex.md", "claude.md", "codex.err", "claude.err")
 DEFAULT_TIMEOUT = 600
+LIVE = []
 
 
 def contract_bytes():
-    """The attack-file rules, appended so a short brief still states the JSON shape."""
+    """The attack-file shape. It stops before any mention of the case key."""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "references", "attack.md")
     try:
         text = open(path, encoding="utf-8").read()
@@ -34,7 +36,12 @@ def contract_bytes():
     marker = "## Attack file"
     if marker not in text:
         return b""
-    return ("\n\n" + text[text.index(marker):]).encode("utf-8")
+    body = text[text.index(marker):]
+    for stop in ("## Check", "## Merge"):
+        if stop in body:
+            body = body[:body.index(stop)]
+            break
+    return ("\n\n" + body.rstrip() + "\n").encode("utf-8")
 
 
 def clear_owned(out_dir):
@@ -48,6 +55,8 @@ def clear_owned(out_dir):
 
 def _kill_group(proc):
     """Kill the child and every process it started."""
+    if proc is None:
+        return
     try:
         os.killpg(proc.pid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError, OSError):
@@ -59,6 +68,67 @@ def _kill_group(proc):
         proc.wait(timeout=2)
     except subprocess.TimeoutExpired:
         pass
+
+
+def _kill_live():
+    for proc in list(LIVE):
+        _kill_group(proc)
+
+
+def _on_stop(signum, _frame):
+    """SIGTERM and SIGINT kill the agent group, then this process exits."""
+    _kill_live()
+    raise SystemExit(128 + signum)
+
+
+def _same(left, right):
+    try:
+        return os.path.realpath(left) == os.path.realpath(right)
+    except OSError:
+        return False
+
+
+def _case_root(path):
+    """The cases/<name> directory when path sits in a case that has key.md."""
+    if not path:
+        return None
+    directory = os.path.realpath(path)
+    if not os.path.isdir(directory):
+        directory = os.path.dirname(directory)
+    while True:
+        parent = os.path.dirname(directory)
+        if os.path.basename(parent) == "cases" and os.path.isfile(os.path.join(directory, "key.md")):
+            return directory
+        if parent == directory:
+            return None
+        directory = parent
+
+
+def agent_cwd(cwd):
+    """A copy of the checkout when cwd is a planted case. The key stays out."""
+    root = _case_root(cwd)
+    if not root:
+        return cwd
+    temp = tempfile.mkdtemp(prefix="attack-cwd-")
+    real = os.path.realpath(cwd)
+    if os.path.basename(real) in ("head", "base") and os.path.dirname(real) == root:
+        source = real
+        for name in os.listdir(source):
+            if name == "key.md":
+                continue
+            src = os.path.join(source, name)
+            dst = os.path.join(temp, name)
+            if os.path.isdir(src):
+                shutil.copytree(src, dst, symlinks=True)
+            else:
+                shutil.copy2(src, dst, follow_symlinks=True)
+    else:
+        for name in ("head", "base"):
+            src = os.path.join(root, name)
+            if os.path.isdir(src):
+                shutil.copytree(src, os.path.join(temp, name), symlinks=True)
+    print("warning: agents run outside the case so they cannot read key.md", file=sys.stderr)
+    return temp
 def command(binary, name):
     """Argv for one CLI. The brief is not included. It goes on stdin."""
     if name == "codex":
@@ -93,28 +163,58 @@ def detect(search_path=None):
 
 
 def _run_one(cmd, brief, work, timeout):
-    """(returncode, stdout, stderr). Timeout kills the process group and raises TimeoutExpired."""
+    """(returncode, stdout, stderr). The child is its own process group."""
     proc = subprocess.Popen(
         cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         cwd=work, start_new_session=True,
     )
+    LIVE.append(proc)
     try:
-        stdout, stderr = proc.communicate(brief, timeout=timeout)
-    except subprocess.TimeoutExpired as exc:
-        _kill_group(proc)
-        raise exc
-    return proc.returncode, stdout, stderr
+        try:
+            stdout, stderr = proc.communicate(brief, timeout=timeout)
+        except BaseException:
+            _kill_group(proc)
+            raise
+        return proc.returncode, stdout, stderr
+    finally:
+        if proc.poll() is None:
+            _kill_group(proc)
+        if proc in LIVE:
+            LIVE.remove(proc)
 
 
 def run_all(brief_path, out_dir, search_path=None, runner=None, timeout=DEFAULT_TIMEOUT, cwd=None):
     """Run each detected CLI. Returns 0, or 1 when a CLI exits non-zero or times out."""
+    for name in OWNED:
+        if _same(brief_path, os.path.join(out_dir, name)):
+            print("refusing to delete the brief", file=sys.stderr)
+            return 2
+    brief_body = b""
+    if os.path.isfile(brief_path):
+        brief_body = open(brief_path, "rb").read()
     clear_owned(out_dir)
     found = detect(search_path)
     if not found:
         print("none")
         return 0
-    brief = contract_bytes() + b"\n" + open(brief_path, "rb").read()
-    work = cwd if cwd is not None else os.getcwd()
+    if not os.path.isfile(brief_path) and not brief_body:
+        print("brief: missing file", file=sys.stderr)
+        return 2
+    brief = contract_bytes() + b"\n" + brief_body
+    work = agent_cwd(cwd if cwd is not None else os.getcwd())
+    previous = {
+        signal.SIGTERM: signal.signal(signal.SIGTERM, _on_stop),
+        signal.SIGINT: signal.signal(signal.SIGINT, _on_stop),
+    }
+    try:
+        return _run_found(found, brief, work, out_dir, runner, timeout)
+    finally:
+        _kill_live()
+        for sig, old in previous.items():
+            signal.signal(sig, old)
+
+
+def _run_found(found, brief, work, out_dir, runner, timeout):
     failed = 0
     for name, binary in found:
         cmd = command(binary, name)
@@ -158,15 +258,31 @@ def main(argv):
         names = [name for name, _binary in detect()]
         print("\n".join(names) if names else "none")
         return 0
+    known = {"--run", "--brief", "--out", "--cwd", "--timeout", "--help", "-h"}
+    if any(arg.startswith("--") and arg not in known for arg in argv[1:]):
+        print((__doc__ or "").strip(), file=sys.stderr)
+        return 2
     if "--brief" not in argv or "--out" not in argv:
         print((__doc__ or "").strip(), file=sys.stderr)
         return 2
     if any(argv[1:].count(flag) > 1 for flag in ("--brief", "--out", "--cwd", "--timeout")):
         print("repeated option", file=sys.stderr)
         return 2
-    brief = argv[argv.index("--brief") + 1]
-    out = argv[argv.index("--out") + 1]
-    cwd = argv[argv.index("--cwd") + 1] if "--cwd" in argv else None
+
+    def _value(flag):
+        index = argv.index(flag)
+        if index + 1 >= len(argv) or argv[index + 1].startswith("--"):
+            print((__doc__ or "").strip(), file=sys.stderr)
+            return None
+        return argv[index + 1]
+
+    brief = _value("--brief")
+    out = _value("--out")
+    if brief is None or out is None:
+        return 2
+    cwd = _value("--cwd") if "--cwd" in argv else None
+    if "--cwd" in argv and cwd is None:
+        return 2
     timeout = DEFAULT_TIMEOUT
     if "--timeout" in argv:
         try:

@@ -1,6 +1,7 @@
 """Run: python3 check/test_check_attack.py"""
 import json
 import os
+import subprocess
 import sys
 import tempfile
 
@@ -93,6 +94,28 @@ expect(
 link = os.path.join(tempfile.mkdtemp(), "attack.md")
 os.symlink(deep_attack, link)
 expect("a symlink uses the case key", check_attack(link), ["approve on a case with a planted bug"])
+
+outside = os.path.join(tempfile.mkdtemp(), "attack.md")
+open(outside, "w").write(open(dump(approve())).read())
+inside = os.path.join(case, "runs", "linked.md")
+os.symlink(outside, inside)
+expect("a link inside the case still uses the key", check_attack(inside), ["approve on a case with a planted bug"])
+
+from check_attack import main as check_main
+loose = dump(approve())
+planted = os.path.join(tempfile.mkdtemp(), "key.md")
+open(planted, "w").write("Planted: yes\nCatch: x\n")
+expect(
+    "an empty second key does not drop the first",
+    check_main(["check_attack.py", loose, "--key", planted, "--key", ""]),
+    1,
+)
+ran = subprocess.run(
+    [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "check_attack.py"), "--nope"],
+    capture_output=True, text=True,
+)
+expect("a bad flag exits 2", ran.returncode, 2)
+expect("a bad flag has no traceback", "Traceback" not in ran.stderr, True)
 
 if __name__ == "__main__":
     for item in FAILS:
