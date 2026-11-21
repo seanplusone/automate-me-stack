@@ -37,12 +37,14 @@ Fails (exit 1) when:
 - the file has no `# Decisions` title;
 - a section is missing or repeated, or the sections are out of order;
 - a code fence sits under Decided, Open or Parked, because its text would not reach the brief;
-- an Open item does not end with `?`, or `?` and closing quotes or brackets. Only the end counts. The question after
-  any slot, line or `unknown:` label is only a placeholder such as `?` or `TBD?`, or only a template hole;
-- a Decided value ends in `?`;
-- an answer is an unknown. An answer is a Decided value, an Evals case body, or a Parked `out of scope:` line.
-  Read by bare(), which runs check_brief's core() and strips link syntax, every leading label and leading markup or
-  brackets, it is `unknown` alone, `unknown` and punctuation, or `unknown` and at most two words (`unknown for now`,
+- an Open item is not a question: it does not end in a question mark, before any closing quotes or brackets (see
+  ends_in_question()). Only the end counts. The question after any slot, line or `unknown:` label is only a
+  placeholder such as `?` or `TBD?`, or only a template hole;
+- a Decided value is a question, by the same rule;
+- an answer is an unknown. An answer is a Decided value, an Evals case body, or a Parked `out of scope:` line that is
+  not a question. Read after its last `<words>:` label (`deadline: unknown`, `tools: chat API: unknown`), then by
+  bare(), which runs check_brief's core() and strips link syntax, every leading label and leading markup or brackets,
+  it is `unknown` alone, `unknown` and punctuation, or `unknown` and at most two words (`unknown for now`,
   `(unknown), CSV`). It belongs in Open as a question;
 - a Decided or Parked line, or a slot or line label, has nothing left once bare() strips its labels (`decide: stated:`);
 - a Decided `tools:`, `agents:` (or `agents and roles:`), `evals:`, `decide:`, or `write first:` line is empty or
@@ -72,7 +74,8 @@ replaces the value, or moves the slot to Open as a question. A confirmation neve
 
 Prints a PASS or FAIL line per check, then the ASK lines, then `PASS|FAIL|ASK decisions: <path>`.
 Exit 0 pass, 1 fail, 2 ask, 3 usage: bad arguments, or a path that is missing, a directory, or not
-UTF-8 text, with one line on stderr. A UTF-8 BOM is ignored.
+UTF-8 text, or a heading that matches a section name only by Unicode case rules (`## Decıded`), with one line on
+stderr. A UTF-8 BOM is ignored.
 """
 import contextlib
 import io
@@ -80,6 +83,7 @@ import os
 import re
 import sys
 import tempfile
+import unicodedata
 
 sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "shared")))
 from check_writing import check_writing  # noqa: E402
@@ -111,8 +115,11 @@ HANDOFF_FIELD = re.compile(r"^(next|stop|turns|writing|map)\s*[:\uff1a]\s*(.*)$"
 EXTRA_HEAD = re.compile(r"^[*_]*(tools?|agents and roles|agents?|evals?|decide|write first)[*_]*\s*[:\uff1a][*_]*\s*(.*)$",
                         re.I)
 EXTRA_NAME = {"tool": "tools", "agent": "agents", "agents and roles": "agents", "eval": "evals"}
-# An Open item is a question when it ends with `?`, or `?` and closing quotes or brackets. Nothing else counts.
-QUESTION_END = re.compile(r"\?[\"'\u201d\u2019)\]]*$")
+# The marks that end a question: ASCII, full-width, Arabic, Greek, the double marks, and the small form.
+# An opening mark such as `¿` does not end one.
+QUESTION_MARKS = "?\uff1f\u061f\u037e\u2047\u2048\u2049\ufe56"
+# Closing punctuation a question may end inside: categories Pe and Pf, and the straight quotes.
+CLOSERS = "\"'"
 LOOSE_SLOT = re.compile(r"^(?:\d+[.)]\s*)?[*_]+\s*(goal|done|output|verify|constraints)\s*[*_]*\s*[:\uff1a]"
                         r"|^\d+[.)]\s*(goal|done|output|verify|constraints)\s*[:\uff1a]", re.I)
 BRIEF_SLOT = {"goal": "Goal", "done": "Done", "output": "Output", "verify": "Verification",
@@ -126,6 +133,10 @@ TAG_LABEL = re.compile(r"^[*_]*(?:investigate|out of scope|how|write first)[*_]*
 LABEL = re.compile(r"^[\W_]*(?:stated|write first|investigate|out of scope|how|pass|fail|goal|done|output|verify"
                    r"|constraints|tools?|agents and roles|agents?|evals?|decide)[*_`\s]*[:\uff1a]\s*", re.I)
 LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+# A `<words>:` label before a value, with markup around it. A colon with no space after it (`https://`, `9:30`), a
+# label in a code span, and a label that starts with `unknown` are not labels.
+WORDS_LABEL = re.compile(r"^(?:[^\w`]|_)*(?!unknown(?![^\W_]))[^\W_][\w ]*?[*_\s]*[:\uff1a](?=[*_]*(?:\s|$))[*_]*\s*",
+                         re.I)
 UNKNOWN_LEAD = re.compile(r"^unknown(?![^\W_])(.*)$")
 SHORT_TAIL = 2
 VALUE_CHECKS = {"no placeholder", "no template hole", "no bare trap adjective"}
@@ -135,7 +146,8 @@ BRIEF_CHECK = "the mapped brief passes outcome's brief check"
 
 
 def canon(name):
-    return next(s for s in SECTIONS + ["Confirmed"] if s.lower() == name.lower())
+    """The section a heading names, or None when it matches only by Unicode case rules (`Decıded`)."""
+    return next((s for s in SECTIONS + ["Confirmed"] if s.lower() == name.lower()), None)
 
 
 def is_none(item):
@@ -215,11 +227,15 @@ def bare(value):
 def unknown_shape(value):
     """'question' when an answer is an unknown that belongs in Open, 'ask' when it only starts with the word, else None.
 
-    The value is read by bare(), so markup, brackets, a link and labels hide nothing. `unknown` alone, `unknown` and
-    punctuation (`unknown:`, `unknown,`, `unknown)`), or `unknown` and at most two words is a question. A longer value
-    may be prose such as `unknown senders get nothing`, so the person says whether it is decided.
+    The value is read after its last `<words>:` label, then by bare(), so markup, brackets, a link and labels hide
+    nothing. `unknown` alone, `unknown` and punctuation (`unknown:`, `unknown,`, `unknown)`), or `unknown` and at most
+    two words is a question. A longer value may be prose such as `unknown senders get nothing`, so the person says
+    whether it is decided.
     """
-    match = UNKNOWN_LEAD.match(bare(value))
+    text = value or ""
+    while WORDS_LABEL.match(text):
+        text = WORDS_LABEL.sub("", text, count=1)
+    match = UNKNOWN_LEAD.match(bare(text))
     if not match:
         return None
     tail = match.group(1)
@@ -230,7 +246,7 @@ def unknown_shape(value):
 
 def undecided(source, value):
     """Why an answer is not a decision yet, or None."""
-    if source == "Decided" and value.endswith("?"):
+    if source == "Decided" and ends_in_question(value):
         return "is a question, not a decision; move it to Open"
     if unknown_shape(value) == "question":
         return "is unknown; move it to Open as a question"
@@ -258,8 +274,22 @@ def extra_of(item):
     return EXTRA_NAME.get(name, name), match.group(2).strip()
 
 
-def is_question(item):
-    return bool(QUESTION_END.search(item.strip()))
+def question_end(text):
+    """The index of the question mark that ends the text, after trailing space and CLOSERS, else None."""
+    end = len(text)
+    while end and (text[end - 1].isspace() or text[end - 1] in CLOSERS
+                   or unicodedata.category(text[end - 1]) in ("Pe", "Pf")):
+        end -= 1
+    return end - 1 if end and text[end - 1] in QUESTION_MARKS else None
+
+
+def ends_in_question(text):
+    return question_end(text) is not None
+
+
+def parked_limit(row):
+    """A Parked `out of scope:` line that is not a question. The brief puts it in Constraints."""
+    return bool(OUT_OF_SCOPE.match(row.strip())) and not ends_in_question(row)
 
 
 def parse(text):
@@ -374,7 +404,7 @@ def check(text):
     q_fails = []
     for item in opens:
         outcome, why = judge(open_body(item))
-        if not is_question(item):
+        if not ends_in_question(item):
             q_fails.append(f"open item needs a question mark at the end: {item!r}")
         elif why == "hole" and outcome == "fail":
             q_fails.append(f"open item is only a template hole; fill it: {item!r}")
@@ -563,12 +593,12 @@ def landing(item):
 
 def answers(decided, parked):
     """(source, brief slot, value) for every answer the brief will hold: each Decided value, each Evals case body,
-    and each Parked `out of scope:` line, which the mapper puts in Constraints."""
+    and each Parked `out of scope:` line that is not a question, which the mapper puts in Constraints."""
     out = []
     for slot, value, label in map(landing, decided):
         out += [("Decided", slot, value)] if value else []
         out += [("Decided", slot, body.strip().rstrip(";,").strip()) for _, body in eval_cases(value)] if label == "evals" else []
-    return out + [("Parked", "Constraints", scoped(row)) for row in parked if OUT_OF_SCOPE.match(row.strip())]
+    return out + [("Parked", "Constraints", scoped(row)) for row in parked if parked_limit(row)]
 
 
 def brief_findings(text):
@@ -620,14 +650,20 @@ def asks(text):
 
 
 def read(path):
-    """(text without a BOM, None), or (None, why) when the path cannot be read as UTF-8 text."""
+    """(text without a BOM, None), or (None, why) when the path cannot be read as UTF-8 text, or a heading matches a
+    section name only by Unicode case rules."""
     try:
         with open(path, encoding="utf-8-sig") as handle:
-            return handle.read(), None
+            text = handle.read()
     except UnicodeDecodeError:
         return None, "not UTF-8 text"
     except OSError as err:
         return None, err.strerror or str(err)
+    for line in split_fences(text)[0].splitlines():
+        head = HEAD.match(line.strip())
+        if head and not canon(head.group(1)):
+            return None, f"heading {line.strip()!r} is not one of " + ", ".join(SECTIONS + ["Confirmed"])
+    return text, None
 
 
 def unreadable(path, why):

@@ -16,7 +16,7 @@ An Open `tools:`, `agents:`, `evals:` or `decide:` question replaces that stock 
 Outcome asks them. It does not invent a tool, a role, or a pass and fail case.
 A Decided `write first:` line goes under Tools. Each Decided line lands where
 check_decisions.landing() says. A Parked line stays in the Parking lot. An `out of scope:` tag,
-bold or not, also puts it in Constraints. No other word moves it.
+bold or not, also puts it in Constraints, unless it is a question. No other word moves it.
 Bad arguments, or a path that cannot be read, exit 3 with one line on stderr.
 """
 import os
@@ -25,12 +25,13 @@ import sys
 
 sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "shape-idea", "check")))
 from check_decisions import (  # noqa: E402
-    OUT_OF_SCOPE,
     bare,
+    ends_in_question,
     extra_of,
-    is_question,
     landing,
+    parked_limit,
     parse,
+    question_end,
     read,
     real_items,
     report,
@@ -70,9 +71,9 @@ def question_of(row):
     text = (slot_value(row) if slot_of(row) else extra[1] if extra else row).strip()
     text = re.sub(r"^(unknown:\s*)", "", text, flags=re.I)
     text = re.sub(r"^(stated:\s*)", "", text, flags=re.I)
-    if not is_question(text):
-        text = text.rstrip(".") + "?"
-    return text
+    end = question_end(text)
+    # check_brief reads only an ASCII `?`, so the mark that ends the question is written as one.
+    return text.rstrip(".") + "?" if end is None else text[:end] + "?" + text[end + 1:]
 
 
 def unknown(text):
@@ -107,7 +108,7 @@ def map_text(text):
     lands = [landing(row) for row in decided]
     named = {label: value for _, value, label in lands if label in ASKED + ("write first",) and bare(value)}
     limits_out = [value for _, value, label in lands if label == "out of scope"]
-    limits_out += [scoped(row) for row in parked if OUT_OF_SCOPE.match(row.strip())]
+    limits_out += [scoped(row) for row in parked if parked_limit(row)]
     other = [value for _, value, label in lands if label is None]
     # An Open tools:, agents:, evals: or decide: question asks for that slot, in place of the stock question.
     asked, rest = {}, []
@@ -129,7 +130,7 @@ def map_text(text):
     ordered = [goal] * goal_unknown + [done] * done_unknown
     ordered += [question[name] for name in ASKED if name in question]
     ordered += [output] * output_unknown + [verify] * verify_unknown + [limits] * limits_unknown + rest
-    ordered += [unknown(row) for row in parked if is_question(row)]
+    ordered += [unknown(row) for row in parked if ends_in_question(row)]
     lines = ["# Brief: from decisions", ""]
     lines.append(f"- Goal: {goal}")
     # Goal holds only the user's lines. The stock or Open decide question waits in Unknowns, so no line the mapper

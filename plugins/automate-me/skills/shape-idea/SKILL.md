@@ -146,7 +146,7 @@ Outcome reads the sections like this. This skill does not ask Tools, Agents and 
 | A decided `output:` line | Output |
 | An open slot | That slot as `unknown:`, and again under Unknowns |
 | The `constraints:` line | Constraints |
-| A Parked line tagged `out of scope:` | Constraints as `out of scope:`, and the Parking lot |
+| A Parked line tagged `out of scope:` | Constraints as `out of scope:`, and the Parking lot. A tagged question goes to the Parking lot and Unknowns |
 | A Parked question | Unknowns as `unknown: <question>?`, and the Parking lot |
 | Other Parked lines | Parking lot |
 | The `verify:` line | Verification |

@@ -571,6 +571,43 @@ got = subprocess.run([sys.executable, CHECK_MAP, "-h", "x"], capture_output=True
 if got.returncode != 3:
     FAILS.append(f"r5 help with an extra argument is a usage error: exit {got.returncode}")
 
+for label, text in (("closing quote", out('"the winner only, or the full tally?"')),
+                    ("closing bracket", out("(a list or a page?)")),
+                    ("full-width mark", out("勝者だけ、それとも全票？")),
+                    *((f"mark {mark!r}", out(f"a list or a page{mark}")) for mark in "؟;⁇⁈⁉﹖")):
+    expect(f"r6 a Decided question fails: {label}", text, {DECIDED})
+    RAN.append(f"r6 a Decided question message: {label}")
+    if "move it to Open" not in reason(text, DECIDED):
+        FAILS.append(f"r6 a Decided question message: {label}: {reason(text, DECIDED)}")
+expect("r6 an opening question mark is not a question", out("¿a list or a page"), set())
+for line in ("- 投票は20分で締め切る？", "- Should the button say 'What's next?' or 'Continue'?",
+             "- is it a list (or a page?)", "- 結果は「一覧？」"):
+    expect(f"r6 an Open question passes: {line}", open_q(line), set())
+
+for label, text in (("deadline", added("- deadline: unknown")), ("tools sub-label", added("- tools: chat API: unknown")),
+                    ("agents sub-label", added("- agents: reviewer: unknown")), ("output sub-label", out("status: unknown")),
+                    ("bold sub-label", out("**status:** unknown for now"))):
+    expect(f"r6 an unknown after the last label fails: {label}", text, {DECIDED})
+for label, text in (("url", out("https://unknown.example.org/status")),
+                    ("code span", out("`status: unknown` is the literal header")),
+                    ("time", added("- the poll closes at 9:30"))):
+    expect(f"r6 a colon that is not a label stays: {label}", text, set())
+
+DOTLESS = swap("## Decided", "## Decıded")
+for name, script in (("check", SCRIPT), ("map", CHECK_MAP)):
+    RAN.append(f"r6 an unmapped heading is a usage error: {name}")
+    got = subprocess.run([sys.executable, script, write(DOTLESS)], capture_output=True, text=True)
+    if got.returncode != 3 or got.stdout or len(got.stderr.strip().splitlines()) != 1 or "Traceback" in got.stderr:
+        FAILS.append(f"r6 an unmapped heading is a usage error: {name}: exit {got.returncode}, stderr {got.stderr[-300:]!r}")
+
+for question in ("out of scope: a watch app, or later?", "out of scope: a watch app？"):
+    text = parked(f"- {question}")
+    expect(f"r6 a Parked out-of-scope question passes: {question}", text, set())
+    brief = map_brief(text)
+    RAN.append(f"r6 a Parked out-of-scope question stays a question: {question}")
+    if f"  - {question}\n" in brief.split("- Tools", 1)[0] or f"unknown: {question[:-1]}?" not in brief:
+        FAILS.append(f"r6 a Parked out-of-scope question stays a question: {question}\n{brief}")
+
 CHECKER = open(SCRIPT, encoding="utf-8").read()
 RAN.append("r4 docstring names the map line")
 if "map:" not in CHECKER.split('"""', 2)[1].split("Fails (exit 1) when:", 1)[1].split("Asks (exit 2", 1)[0]:

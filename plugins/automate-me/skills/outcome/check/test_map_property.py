@@ -59,6 +59,9 @@ DECIDED = [
     "stated: `<col>` is the literal header", "`stated: the header row is fixed`", "goal: default new users to dark mode",
     "constraints: unknown senders get nothing", "out of scope: stated: unknown for now", "stated: how: clean",
     "out of scope\uff1acatering", "decide: default to the cheapest spot",
+    'output: "the winner only, or the full tally?"', "output: (a list or a page?)", "output: 勝者だけ、それとも全票？",
+    "deadline: unknown", "tools: chat API: unknown", "agents: reviewer: unknown", "output: status: unknown",
+    "output: https://unknown.example.org/status",
 ]
 OPEN = [
     "tools: ?", "evals: TBD?", "agents: unknown: ?", "decide: ?", "tools: Should the poll run in <channel>?",
@@ -66,7 +69,7 @@ OPEN = [
     'should the label say "Continue?"', "should it sync with https://example.org/sync?", "unknown: ?",
     "is it a list (or a page?) or both?", "who votes? and when?", "output: what comes back?", "**tools:** which one?",
     "should the bot use <channel>?", "reminders are not settled", "Should it press <Enter> to confirm each move?",
-    "goal: which spot first?", "tools: stated: ?",
+    "goal: which spot first?", "tools: stated: ?", "投票は20分で締め切る？",
 ]
 PARKED = [
     "out of scope: AI", "**out of scope:** AI", "out of scope: a watch app", "out of scope: unknown for now",
@@ -74,6 +77,7 @@ PARKED = [
     "ship it later?", "the form submits on <Enter>", "later, perhaps", "TBD", "unknown", "unknown senders get a folder",
     "investigate: the old app", "how: ok", "clean", "ask about <channel> later", "a share button for later",
     "stated:", "out of scope: stated:", "out of scope\uff1acatering", "stated: run `make check` first",
+    "out of scope: a watch app, or later?",
 ]
 EMPTY = ["decide: stated:", "tools: stated:", "agents: stated:", "evals: stated:", "write first: stated:", "stated:",
          "**stated:**", "out of scope: stated:", "goal: stated:", "output: **stated:**", "decide: `stated:`"]
