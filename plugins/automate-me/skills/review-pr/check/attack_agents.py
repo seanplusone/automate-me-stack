@@ -13,6 +13,7 @@ undecodable output writes `Parse: error`. A merge does not treat either as
 an approve.
 This script does not decide what to attack, and it does not pick a fallback agent.
 """
+import datetime
 import json
 import os
 import shutil
@@ -43,7 +44,8 @@ CLAUDE_JSON_KEEP = (
 )
 STALE_SECONDS = 3600
 LOGIN_MAX = 8 * 1024 * 1024
-DROP_CONFIG = ("projects", "hooks", "plugins", "mcp_servers", "notify", "history")
+DROP_CONFIG = ("projects", "hooks", "plugins", "mcp_servers", "notify")
+_DROP = object()
 LIVE = []
 
 
@@ -158,10 +160,35 @@ def _inside(path, root):
     return target == base or target.startswith(base + os.sep)
 
 
-def _copy_tree(src, dst, root):
+def _case_key_id(root):
+    key = os.path.join(os.path.dirname(root), "key.md")
+    try:
+        info = os.stat(key)
+    except OSError:
+        return None
+    return (info.st_dev, info.st_ino)
+
+
+def _linked_key(source, key_id):
+    if not key_id or os.path.islink(source):
+        return False
+    try:
+        info = os.stat(source)
+    except OSError:
+        return False
+    return info.st_nlink > 1 and (info.st_dev, info.st_ino) == key_id
+
+
+def _copy_tree(src, dst, root, key_id=None):
     """Copy a tree. A symlink that points outside the tree is skipped."""
+    if key_id is None:
+        key_id = _case_key_id(root)
     os.makedirs(dst, exist_ok=True)
-    for name in os.listdir(src):
+    try:
+        names = os.listdir(src)
+    except OSError:
+        return
+    for name in names:
         if name == "key.md":
             continue
         source = os.path.join(src, name)
@@ -172,7 +199,9 @@ def _copy_tree(src, dst, root):
             os.symlink(os.readlink(source), target)
             continue
         if os.path.isdir(source):
-            _copy_tree(source, target, root)
+            _copy_tree(source, target, root, key_id)
+            continue
+        if _linked_key(source, key_id):
             continue
         shutil.copy2(source, target, follow_symlinks=False)
 
@@ -214,7 +243,7 @@ def agent_cwd(cwd):
     cases = _copyable_cases(cwd)
     if not cases:
         return cwd, False
-    temp = tempfile.mkdtemp(prefix="attack-cwd-")
+    temp = tempfile.mkdtemp(prefix="attack-cwd-%s-" % os.getpid())
     single = len(cases) == 1
     copied = False
     for case in cases:
@@ -228,7 +257,7 @@ def agent_cwd(cwd):
             copied = True
     if not copied:
         shutil.rmtree(temp, ignore_errors=True)
-        return cwd, False
+        return None, False
     return temp, True
 
 
@@ -251,7 +280,7 @@ def _stripped_claude_json(src):
     return json.dumps(kept).encode("utf-8")
 
 
-def _is_host_path(value):
+def _is_host_path(value, roots):
     if not isinstance(value, str):
         return False
     text = value.strip()
@@ -259,37 +288,49 @@ def _is_host_path(value):
         return True
     if not text.startswith("/"):
         return False
-    home = os.path.expanduser("~")
-    if home and (text == home or text.startswith(home + os.sep)):
-        return True
-    return os.path.isdir(text)
+    for root in roots:
+        if not root:
+            continue
+        base = os.path.abspath(root)
+        if text == base or text.startswith(base + os.sep):
+            return True
+    return False
 
 
-def _clean_config(data):
+def _clean_value(value, roots):
+    if isinstance(value, dict):
+        return _clean_config(value, roots)
+    if isinstance(value, list):
+        cleaned = []
+        for item in value:
+            if isinstance(item, (dict, list)):
+                cleaned.append(_clean_value(item, roots))
+            elif not _is_host_path(item, roots):
+                cleaned.append(item)
+        return cleaned
+    if _is_host_path(value, roots):
+        return _DROP
+    return value
+
+
+def _clean_config(data, roots):
     if not isinstance(data, dict):
         return data
     out = {}
     for key, value in data.items():
         if key in DROP_CONFIG:
             continue
-        if isinstance(value, dict):
-            cleaned = _clean_config(value)
-            if cleaned:
-                out[key] = cleaned
+        cleaned = _clean_value(value, roots)
+        if cleaned is _DROP:
             continue
-        if isinstance(value, list):
-            if any(_is_host_path(item) for item in value):
-                continue
-            out[key] = value
+        if isinstance(value, dict) and not cleaned:
             continue
-        if _is_host_path(value):
-            continue
-        out[key] = value
+        out[key] = cleaned
     return out
 
 
 def _toml_key(key):
-    if all(ch.isalnum() or ch in "_-" for ch in key):
+    if key and all(ch.isascii() and (ch.isalnum() or ch in "_-") for ch in key):
         return key
     return '"' + key.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
@@ -307,6 +348,15 @@ def _toml_string(value):
 def _toml_scalar(value):
     if isinstance(value, bool):
         return "true" if value else "false"
+    if isinstance(value, datetime.datetime):
+        text = value.isoformat()
+        if value.tzinfo is not None and text.endswith("+00:00"):
+            text = text[:-6] + "Z"
+        return text
+    if isinstance(value, datetime.date):
+        return value.isoformat()
+    if isinstance(value, datetime.time):
+        return value.isoformat()
     if isinstance(value, int):
         return str(value)
     if isinstance(value, float):
@@ -334,8 +384,19 @@ def _toml_emit(data, prefix, lines):
         _toml_emit(value, child, lines)
 
 
-def _minimal_codex_config(text):
-    """Drop host tables and host paths. Keep every other setting, including dotted keys."""
+def _config_roots(roots):
+    found = []
+    home = os.path.expanduser("~")
+    if home:
+        found.append(os.path.abspath(home))
+    for root in roots or ():
+        if root:
+            found.append(os.path.abspath(root))
+    return found
+
+
+def _minimal_codex_config(text, roots=()):
+    """Drop host tables and paths under the home directory or the repo."""
     import tomllib
     try:
         data = tomllib.loads(text)
@@ -344,7 +405,7 @@ def _minimal_codex_config(text):
         return b""
     if not isinstance(data, dict):
         return b""
-    cleaned = _clean_config(data)
+    cleaned = _clean_config(data, _config_roots(roots))
     if not cleaned:
         return b""
     lines = []
@@ -352,7 +413,7 @@ def _minimal_codex_config(text):
     return ("\n".join(lines).strip() + "\n").encode("utf-8")
 
 
-def _login_feeds():
+def _login_feeds(roots=()):
     """(payload, sandbox dest). payload is a host path or bytes. Nothing is written to disk."""
     feeds = []
     codex = _host_codex_dir()
@@ -365,7 +426,7 @@ def _login_feeds():
             text = open(config, encoding="utf-8", errors="replace").read()
         except OSError:
             text = ""
-        body = _minimal_codex_config(text)
+        body = _minimal_codex_config(text, roots)
         if body.strip():
             feeds.append((body, "/home/agent/.codex/" + CODEX_FILES[1]))
     claude = _host_claude_dir()
@@ -390,8 +451,31 @@ def _is_empty_dir(path):
         return False
 
 
+def _pid_alive(pid):
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _work_pid(name):
+    if not name.startswith("attack-cwd-"):
+        return None
+    pid_text, sep, _tail = name[len("attack-cwd-"):].partition("-")
+    if not sep or not pid_text.isdigit():
+        return None
+    return int(pid_text)
+
+
 def cleanup_stale():
-    """Drop leftover homes and empty work copies now, and old work copies after an hour."""
+    """Drop leftover homes, dead work copies, and empty work copies."""
     now = time.time()
     root = tempfile.gettempdir()
     try:
@@ -401,35 +485,94 @@ def cleanup_stale():
     for name in names:
         path = os.path.join(root, name)
         try:
-            empty_work = name.startswith("attack-cwd-") and _is_empty_dir(path)
-            old_work = name.startswith("attack-cwd-") and now - os.path.getmtime(path) > STALE_SECONDS
-            if name.startswith("attack-home-") or empty_work or old_work:
+            if name.startswith("attack-home-"):
+                shutil.rmtree(path, ignore_errors=True)
+                continue
+            if not name.startswith("attack-cwd-"):
+                continue
+            pid = _work_pid(name)
+            alive = pid is not None and _pid_alive(pid)
+            old = now - os.path.getmtime(path) > STALE_SECONDS
+            dead = pid is not None and not alive
+            if dead or old or (_is_empty_dir(path) and not alive):
                 shutil.rmtree(path, ignore_errors=True)
         except OSError:
             continue
 
 
+def _named_key(directory):
+    """True when key.md can be stated here. An error means the directory cannot be checked."""
+    try:
+        os.stat(os.path.join(directory, "key.md"))
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def _dir_blocks(directory):
+    """True when this directory holds key.md or cannot be listed."""
+    key = os.path.join(directory, "key.md")
+    try:
+        os.listdir(directory)
+    except OSError:
+        return _named_key(directory) or True
+    try:
+        return os.path.isfile(key)
+    except OSError:
+        return True
+
+
 def key_reachable(path):
-    """True when key.md is under path, following links and dot dirs, or in a parent up to root."""
+    """True when key.md is under path or a parent, or a directory on the way cannot be read."""
     path = os.path.abspath(path or ".")
     start = path if os.path.isdir(path) else os.path.dirname(path)
+    blocked = []
+
+    def onerror(err):
+        blocked.append(err)
+        filename = getattr(err, "filename", None)
+        if filename:
+            _named_key(filename)
+
     seen = set()
     if os.path.isdir(start):
-        for dirpath, dirnames, filenames in os.walk(start, followlinks=True):
-            real = os.path.realpath(dirpath)
+        try:
+            walker = os.walk(start, followlinks=True, onerror=onerror)
+        except OSError:
+            return True
+        for dirpath, dirnames, filenames in walker:
+            if blocked:
+                return True
+            try:
+                real = os.path.realpath(dirpath)
+            except OSError:
+                return True
             if real in seen:
                 dirnames[:] = []
                 continue
             seen.add(real)
             if "key.md" in filenames:
                 return True
-    current = os.path.realpath(start)
-    while True:
-        if os.path.isfile(os.path.join(current, "key.md")):
+            for dirname in list(dirnames):
+                if _named_key(os.path.join(dirpath, dirname)):
+                    return True
+        if blocked:
             return True
+    try:
+        current = os.path.realpath(start)
+    except OSError:
+        return True
+    while True:
         parent = os.path.dirname(current)
         if parent == current:
             return False
+        try:
+            if _dir_blocks(parent):
+                return True
+        except OSError:
+            return True
         current = parent
 
 
@@ -581,7 +724,7 @@ def bwrap_command(cmd, binary, work, forbidden, host_tmp=None):
     ]
     fds = []
     try:
-        for payload, dest in _login_feeds():
+        for payload, dest in _login_feeds(forbidden):
             _feed(fds, payload, dest, argv)
     except ValueError:
         for fd in fds:
@@ -731,7 +874,7 @@ def run_all(brief_path, out_dir, search_path=None, runner=None, timeout=DEFAULT_
         return 2
     planted = key_reachable(origin)
     if planted and not _copyable_cases(origin):
-        print("error: a key.md is reachable, and this directory is not a case with head and base. Refusing to run.", file=sys.stderr)
+        print("error: a key.md is reachable or a directory could not be read. Refusing to run.", file=sys.stderr)
         return 2
     if planted and chosen != "bwrap":
         print("error: a practice run needs a sandbox. Refusing to run.", file=sys.stderr)
@@ -745,6 +888,9 @@ def run_all(brief_path, out_dir, search_path=None, runner=None, timeout=DEFAULT_
     elif chosen == "none":
         print("warning: --sandbox none leaves the whole filesystem visible.", file=sys.stderr)
     work, made = agent_cwd(origin)
+    if work is None:
+        print("error: the case copy could not be read. Refusing to run.", file=sys.stderr)
+        return 2
     env = _agent_env(work, [origin] + practice_roots(origin))
     previous = {sig: signal.signal(sig, _on_stop) for sig in _stop_signals()}
     try:

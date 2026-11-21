@@ -3,6 +3,7 @@
 Practice-case agents must not see the case key. bwrap is the reference
 sandbox. When it is missing, the live probe prints SKIP.
 """
+import datetime
 import os
 import shutil
 import stat
@@ -12,7 +13,7 @@ import time
 import tomllib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from attack_agents import _minimal_codex_config, bwrap_command, cleanup_stale, command, key_reachable, practice_roots, resolve_sandbox, run_all  # noqa: E402
+from attack_agents import _minimal_codex_config, agent_cwd, bwrap_command, cleanup_stale, command, key_reachable, practice_roots, resolve_sandbox, run_all  # noqa: E402
 
 FAILS = []
 CHECKS = []
@@ -120,11 +121,28 @@ cleanup_stale()
 expect("a stale copy is removed", os.path.isdir(stale), False)
 expect("a fresh copy stays", os.path.isdir(fresh), True)
 expect("an empty work copy is removed", os.path.isdir(empty), False)
-host_dir = tempfile.mkdtemp()
+dead_pid = None
+for candidate in range(1 << 22, (1 << 22) + 50):
+    try:
+        os.kill(candidate, 0)
+    except OSError:
+        dead_pid = candidate
+        break
+dead = tempfile.mkdtemp(prefix="attack-cwd-%s-" % dead_pid)
+open(os.path.join(dead, "head.txt"), "w").write("x\n")
+cleanup_stale()
+expect("a dead run's work copy is removed", os.path.isdir(dead), False)
+home = os.path.expanduser("~")
+repo = tempfile.mkdtemp()
 sample = "\n".join([
     'model_reasoning_effort = "high"',
     'openai_base_url = "https://example.test/v1"',
     'cli_auth_credentials_store = "file"',
+    '"" = 1',
+    '"modèle" = "oui"',
+    "when = 1979-05-27T07:32:00Z",
+    "day = 1979-05-27",
+    'cwd = "/"',
     'model_providers.openai.name = "OpenAI"',
     'model_providers.openai.base_url = "https://example.test/v1"',
     'model_providers.openai.wire_api = "responses"',
@@ -133,38 +151,117 @@ sample = "\n".join([
     "alpha",
     "beta \"quote\" and \\slash",
     "'''",
-    'sandbox_cwd = "%s"' % host_dir,
+    'sandbox_cwd = "%s"' % os.path.join(repo, "proj"),
     "",
     "[profiles.work]",
     'model = "gpt"',
+    "",
+    "[[tools]]",
+    'name = "local"',
+    'path = "%s"' % os.path.join(home, "tool"),
+    'note = "keep"',
     "",
     '[projects."/secret/host-project"]',
     'trust_level = "trusted"',
     "",
     "[hooks]",
-    'run = "/home/me/hook.sh"',
+    'run = "%s"' % os.path.join(home, "hook.sh"),
     "",
     'notify = ["/usr/bin/notify-send"]',
     "",
     "[history]",
-    'path = "/home/me/.codex/history.jsonl"',
+    'persistence = "none"',
+    'path = "%s"' % os.path.join(home, ".codex", "history.jsonl"),
     "",
     "[mcp_servers.local]",
     'command = "/usr/bin/local-mcp"',
     "",
     "[plugins]",
-    'path = "/home/me/plugins"',
+    'path = "%s"' % os.path.join(home, "plugins"),
 ])
-original = tomllib.loads(sample)
-written = _minimal_codex_config(sample)
+written = _minimal_codex_config(sample, [repo])
 parsed = tomllib.loads(written.decode())
-expect("config keeps a multi-line string", parsed["note"], original["note"])
-expect("config keeps dotted provider keys", parsed["model_providers"], original["model_providers"])
-expect("config keeps effort and auth settings", parsed["model_reasoning_effort"] == "high" and parsed["openai_base_url"] == "https://example.test/v1" and parsed["cli_auth_credentials_store"] == "file", True)
-dropped = ("projects", "hooks", "plugins", "mcp_servers", "notify", "history", "sandbox_cwd")
-expect("config drops host tables and host paths", all(name not in parsed for name in dropped), True)
-expect("config round trip parses again", tomllib.loads(written.decode()), parsed)
+expected = {
+    "model_reasoning_effort": "high",
+    "openai_base_url": "https://example.test/v1",
+    "cli_auth_credentials_store": "file",
+    "": 1,
+    "modèle": "oui",
+    "when": datetime.datetime(1979, 5, 27, 7, 32, tzinfo=datetime.timezone.utc),
+    "day": datetime.date(1979, 5, 27),
+    "cwd": "/",
+    "model_providers": {
+        "openai": {
+            "name": "OpenAI",
+            "base_url": "https://example.test/v1",
+            "wire_api": "responses",
+            "extra": "kept",
+        },
+    },
+    "note": "alpha\nbeta \"quote\" and \\slash\n",
+    "profiles": {"work": {"model": "gpt"}},
+    "tools": [{"name": "local", "note": "keep"}],
+    "history": {"persistence": "none"},
+}
+expect("config round trip matches the kept settings", parsed, expected)
 shutil.rmtree(fresh, ignore_errors=True)
+shutil.rmtree(repo, ignore_errors=True)
+
+def locked_tree(mode):
+    tree = tempfile.mkdtemp()
+    secret = os.path.join(tree, "secret")
+    os.makedirs(secret)
+    open(os.path.join(tree, "x.py"), "w").write("x\n")
+    open(os.path.join(secret, "key.md"), "w").write("Planted: SECRETLINE\n")
+    os.chmod(secret, mode)
+    return tree, secret
+
+peek = os.path.join(tempfile.mkdtemp(), "codex")
+open(peek, "w").write(
+    "#!/bin/sh\n"
+    "chmod 700 /work/secret 2>/dev/null\n"
+    "if [ -f /work/secret/key.md ]; then cat /work/secret/key.md; else echo NOKEY; fi\n"
+)
+os.chmod(peek, 0o755)
+for label, mode in (("mode 0111", 0o111), ("mode 000", 0o000)):
+    tree, secret = locked_tree(mode)
+    try:
+        expect("key_reachable sees %s" % label, key_reachable(tree), True)
+        code = run_all(brief, tempfile.mkdtemp(), search_path=os.path.dirname(peek), cwd=tree, sandbox="bwrap")
+        expect("%s is refused" % label, code, 2)
+        expect("%s does not change the host mode" % label, os.stat(secret).st_mode & 0o777, mode)
+    finally:
+        os.chmod(secret, 0o755)
+        shutil.rmtree(tree, ignore_errors=True)
+parent = tempfile.mkdtemp()
+child = os.path.join(parent, "repo", "child")
+os.makedirs(child)
+open(os.path.join(parent, "repo", "key.md"), "w").write("Planted: SECRETLINE\n")
+open(os.path.join(child, "x.py"), "w").write("x\n")
+os.chmod(os.path.join(parent, "repo"), 0o111)
+try:
+    expect("an unreadable parent hides a key", key_reachable(child), True)
+    expect("an unreadable parent is refused", run_all(
+        brief, tempfile.mkdtemp(), search_path=os.path.dirname(peek), cwd=child, sandbox="bwrap",
+    ), 2)
+finally:
+    os.chmod(os.path.join(parent, "repo"), 0o755)
+    shutil.rmtree(parent, ignore_errors=True)
+link_case = os.path.join(tempfile.mkdtemp(), "cases", "item")
+link_head = os.path.join(link_case, "head")
+os.makedirs(link_head)
+link_key = os.path.join(link_case, "key.md")
+open(link_key, "w").write("Planted: SECRETLINE\n")
+open(os.path.join(link_head, "cap.py"), "w").write("x\n")
+os.link(link_key, os.path.join(link_head, "alias.md"))
+link_work, link_made = agent_cwd(link_head)
+link_names = []
+if link_work:
+    for dirpath, dirnames, filenames in os.walk(link_work):
+        link_names.extend(filenames)
+expect("a hardlinked key is not copied", "alias.md" not in link_names, True)
+if link_made and link_work:
+    shutil.rmtree(link_work, ignore_errors=True)
 
 if shutil.which("bwrap") is None:
     print("SKIP bwrap is not installed")
@@ -301,6 +398,7 @@ else:
                 os.environ.pop(name, None)
             else:
                 os.environ[name] = value
+        shutil.rmtree(wide, ignore_errors=True)
     wide_body = open(os.path.join(wide_out, "codex.md")).read() if os.path.isfile(os.path.join(wide_out, "codex.md")) else ""
     wide_size = 0
     for token in wide_body.split():
@@ -373,6 +471,7 @@ else:
                 os.environ.pop(name, None)
             else:
                 os.environ[name] = value
+        shutil.rmtree(fake, ignore_errors=True)
     seen = open(os.path.join(canary_out, "codex.md")).read() if os.path.isfile(os.path.join(canary_out, "codex.md")) else ""
     expect("canary run exits 0", code, 0)
     leak = ""
