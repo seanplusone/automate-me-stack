@@ -52,7 +52,8 @@ Neither script checks the flow in `SKILL.md`. These parts are instructions only,
 - that the read-back comes before anything runs, and that nothing runs without a yes;
 - that the 3 questions are the right ones, ranked decision, then limits and scope, then intent;
 - the checker and the trap list at hand-off;
-- the iterate step (only changed lines shown) and the learn step (offered once).
+- the iterate step (only changed lines shown) and the learn step (offered once);
+- the batch note, except where `shared-template` asks the brief to flag a template that breaks one kind.
 
 ## Blind runs
 
@@ -162,6 +163,12 @@ outcome/
                                     each of the last three: input.md, key.md, runs/run-1/brief.md, runs/score.md
     missing-evals/                  shape only: a brief with every required slot except Evals
       runs/run-1/brief.md           check_brief.py fails, and the only failure is "missing slot: Evals"
+    shared-template/                one prompt for a deck of cards; the template breaks one kind
+      input.md                      the ramble, the only thing the skill is given
+      key.md                        the brief must flag that the template bans the order cue
+      runs/run-1/brief.md           hand-written, passes
+      runs/run-2/brief.md           passes the shape check, misses the risk and guesses a count
+      runs/score.md                 why run-2 fails, scorer outputs
 ```
 
 ## Run the checks
