@@ -224,6 +224,12 @@ class CheckPlan(unittest.TestCase):
             json.dump([], handle)
         ran = subprocess.run([sys.executable, os.path.join(here, "render_plan.py"), "--prompt", "A", path], capture_output=True, text=True)
         self.assertEqual((ran.returncode, "Traceback" in ran.stderr), (3, False))
+        for body in ({"items": [{"id": "A"}]}, {"items": [1]}):
+            with open(path, "w") as handle:
+                json.dump(body, handle)
+            for mode in (["--prompt", "A"], ["--text"], []):
+                ran = subprocess.run([sys.executable, os.path.join(here, "render_plan.py"), *mode, path], capture_output=True, text=True)
+                self.assertEqual((ran.returncode, len(ran.stderr.strip().splitlines()), ran.stdout), (3, 1, ""), (body, mode, ran.stderr))
 
     def test_too_many_items_fails(self):
         p = copy.deepcopy(GOOD)

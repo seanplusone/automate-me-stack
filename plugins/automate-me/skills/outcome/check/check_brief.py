@@ -37,6 +37,7 @@ dots dropped from a dotted initialism (T.B.D.), and `-`, `_` or `.` between lett
 The rule is deliberately narrow. check_brief FAILs only what is unambiguous. When in doubt it ASKs
 (exit 2, one ASK line each), and the agent stops and asks the person. Asking is cheap, and a wrong
 FAIL blocks a real brief. The read-back catches the rest.
+It is a review aid, not a gate on meaning. README.md lists the known misses.
 
 Fails (exit 1) when:
 - a required slot is missing, or any slot label appears more than once;
