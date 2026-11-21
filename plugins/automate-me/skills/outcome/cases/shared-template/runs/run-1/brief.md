@@ -20,11 +20,11 @@
 - Evals:
   - Pass: a name-the-tool card with one object and four labels. The right label is on the back.
   - Fail: an order-the-steps card made from the shared template. The template bans more than one object, so the step sequence cannot be shown.
-  - The shared template fits name-the-tool and breaks order-the-steps.
+  - The shared template does not fit order-the-steps. It cannot show the sequence.
   - A score on these cards is a review aid until the same check is tried on a fresh held-out set.
 - Verification:
   - Check the cards blind. The judge does not see the prompt.
-  - Include one order-the-steps card next to a plausible name-the-tool lookalike.
+  - Include an order-the-steps card next to a plausible name-the-tool lookalike.
   - Read them as half-sheets, held at arm's length.
   - Every claim names the card, or says guess.
 - Skills: none.
