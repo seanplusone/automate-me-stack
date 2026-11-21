@@ -1,7 +1,6 @@
 # Brief: from decisions
 
 - Goal: a small box for saving links on my phone
-  - unknown: What will you decide with the result?
 - Done:
   - I can save one link and see it again
 - Output: unknown: what comes back, a list or a page?

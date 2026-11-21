@@ -2,6 +2,7 @@
 import contextlib
 import io
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -146,9 +147,11 @@ rest = swap(HANDOFF, "").replace("# Decisions: water habit\n\n", "", 1)
 expect("sections out of order", "# Decisions: water habit\n\n" + HANDOFF + "\n" + rest, {ORDER})
 expect("lone none in Open is empty", swap("- Do you want a reminder?", "- none"), set())
 expect("a non-slot line is optional", swap("- the one habit is drinking water\n", ""), set())
-for token in ("TBD", "TODO", "n/a", "...", "<the want...>"):
+for token in ("TBD", "TODO", "n/a", "<the want...>"):
     expect(f"placeholder slot values fail {token}",
            swap("- goal: a tiny habit tracker on my phone", f"- goal: {token}"), {BRIEF})
+expect("a slot value that is only punctuation is empty",
+       swap("- goal: a tiny habit tracker on my phone", "- goal: ..."), {"slot values are not empty"})
 expect("placeholder slot values fail ?",
        swap("- goal: a tiny habit tracker on my phone", "- goal: ?"),
        {DECIDED, "slot values are not empty"})
@@ -365,8 +368,8 @@ for label, text in (
 
 expect("fix3 a curly quoted label is not a second question, though the writing check bans curly quotes",
        open_q("- Should the button say \u2018Vote?\u2019 or \u2018Pick\u2019?"), {"prose passes the writing check"})
-expect("fix3 fails: default goal without a decide line",
-       swap(GOAL_LINE, "- goal: Default to water when I forget which habit"), {BRIEF})
+expect("r5 passes: default goal without a decide line, since the stock decide question is not in Goal",
+       swap(GOAL_LINE, "- goal: Default to water when I forget which habit"), set())
 for value in ("maybe", "not sure yet", "ok"):
     RAN.append(f"fix3 decide asks: {value}")
     text = added(f"- decide: {value}")
@@ -391,7 +394,6 @@ for label, text in (
         ("output stated Unknown dash", out("stated: Unknown - CSV or JSON")),
         ("tools unknown parens", added("- tools: unknown (Slack or Teams)")),
         ("tools unknown semicolon", added("- tools: unknown; ask Sam")),
-        ("output unknown at the moment", out("unknown at the moment")),
         ("evals unknown case bodies", added("- evals: pass: unknown for now; fail: unknown, ask Sam")),
         ("decided out of scope unknown", added("- out of scope: unknown for now")),
         ("parked out of scope unknown", parked("- out of scope: unknown for now"))):
@@ -429,13 +431,9 @@ expect("r4 an apostrophe inside a quoted label does not end the question",
        open_q("- Should the button say 'What's next?' or 'Continue'?"), set())
 expect("r4 a question may end inside a closing quote", open_q('- should the label say "Continue?"'), set())
 for label, line in (("tools ?", "- tools: ?"), ("evals TBD?", "- evals: TBD?"), ("agents unknown: ?", "- agents: unknown: ?"),
-                    ("decide ?", "- decide: ?"), ("tools hole", "- tools: Should the poll run in <channel>?"),
-                    ("slot hole", "- verify: should I check it in <app>?")):
+                    ("decide ?", "- decide: ?"), ("bare hole", "- <question>?")):
     text = open_q(f"- Do you want a reminder?\n{line}")
-    if line.startswith("- verify:"):
-        text = swap("- verify: mark today once and read the streak\n", "", text).replace(
-            "- stop: done", "- stop: turn-cap").replace("- turns: 1", "- turns: 10")
-    expect(f"r4 an Open item that is a placeholder or holds a hole fails: {label}", text, {QUESTION})
+    expect(f"r4 an Open item that is a placeholder or only a hole fails: {label}", text, {QUESTION})
 
 for label, text, want in (
         ("hole in a non-slot Decided line", added("- the form submits on <Enter>"),
@@ -457,6 +455,121 @@ for label, line in (("bold tools", "- **tools:** Slack only"), ("bold decide", "
     expect(f"r4 a loose extra label is still that line: {label}", added(line), set())
     added_twice = added(line + "\n" + line.replace("**", ""))
     expect(f"r4 a loose extra label counts as a repeat: {label}", added_twice, {EXTRA})
+
+# Round 5. One normalization reads an answer's first word: markup, brackets, link syntax and every leading label go
+# first. A label with nothing after it fails. `stated:` keeps code spans. An injected line never fails a user's slot.
+CHECK_MAP = os.path.normpath(os.path.join(os.path.dirname(SCRIPT), "..", "..", "outcome", "check", "map_decisions.py"))
+for label, text in (
+        ("paren unknown before a list", out("(unknown), CSV or JSON")),
+        ("unknown as link text", out("[unknown](https://example.org/status)")),
+        ("bold paren unknown", out("**(unknown)** for now")),
+        ("linked unknown tools", added("- tools: [unknown](https://example.org/tools), Slack or Teams")),
+        ("compound out of scope stated unknown", added("- out of scope: stated: unknown for now")),
+        ("parked compound out of scope stated unknown", parked("- out of scope: stated: unknown for now")),
+        ("stated after how", added("- how: stated: unknown")),
+        ("full-width parked out of scope unknown", parked("- out of scope：unknown for now"))):
+    expect(f"r5 unknown is a question: {label}", text, {DECIDED})
+    RAN.append(f"r5 unknown message: {label}")
+    if "move it to Open as a question" not in reason(text, DECIDED):
+        FAILS.append(f"r5 unknown message: {label}: {reason(text, DECIDED)}")
+
+for label, text, words in (
+        ("stated then how clean", added("- stated: how: clean"), "no visible signal"),
+        ("how then stated clean", added("- how: stated: clean"), "no visible signal"),
+        ("out of scope then stated TBD", added("- out of scope: stated: TBD"), "placeholder")):
+    expect(f"r5 compound labels hide nothing: {label}", text, {BRIEF})
+    RAN.append(f"r5 compound message: {label}")
+    if words not in reason(text, BRIEF):
+        FAILS.append(f"r5 compound message: {label}: {reason(text, BRIEF)}")
+
+EMPTY = [("decide stated", added("- decide: stated:")), ("tools stated", added("- tools: stated:")),
+         ("agents stated", added("- agents: stated:")), ("evals stated", added("- evals: stated:")),
+         ("write first stated", added("- write first: stated:")), ("bold decide bold stated", added("- **decide:** **stated:**")),
+         ("code stated decide", added("- decide: `stated:`")), ("other line stated", added("- stated:")),
+         ("other line bold stated", added("- **stated:**")), ("out of scope stated", added("- out of scope: stated:")),
+         ("output stated", out("stated:")), ("output bold stated", out("**stated:**")),
+         ("parked stated", parked("- stated:")), ("parked out of scope stated", parked("- out of scope: stated:")),
+         ("goal stated", swap(GOAL_LINE, "- goal: stated:"))]
+for label, text in EMPTY:
+    RAN.append(f"r5 an empty labelled value fails clearly: {label}")
+    said = {}
+    for name, script in (("check", SCRIPT), ("map", CHECK_MAP)):
+        got = subprocess.run([sys.executable, script, write(text)], capture_output=True, text=True)
+        said[name] = got
+    bad = [f"{name} exit {got.returncode}" for name, got in said.items() if got.returncode != 1]
+    bad += [f"{name} wrote to stderr: {got.stderr[-300:]}" for name, got in said.items() if got.stderr]
+    if not re.search(r"(empty value|needs a value|no value)", said["check"].stdout):
+        bad.append(f"no empty-value message:\n{said['check'].stdout[-600:]}")
+    if bad:
+        FAILS.append(f"r5 an empty labelled value fails clearly: {label}: {bad}")
+
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(SCRIPT), "..", "..", "outcome", "check")))
+from map_decisions import map_text as map_brief  # noqa: E402
+
+for label, text, kept in (
+        ("stated before a code span", added("- stated: `<col>` is the literal header"), "`<col>` is the literal header"),
+        ("bold stated before a code span", added("- **stated:** `<col>` is the literal header"),
+         "`<col>` is the literal header"),
+        ("stated inside a code span", added("- `stated: <col> is the literal header`"),
+         "`<col> is the literal header`"),
+        ("parked stated before a command", parked("- stated: run `make check` before a release"),
+         "run `make check` before a release")):
+    expect(f"r5 stated keeps code spans: {label}", text, set())
+    RAN.append(f"r5 stated keeps code spans in the brief: {label}")
+    if asks(text) or f"  - {kept}\n" not in map_brief(text):
+        FAILS.append(f"r5 stated keeps code spans in the brief: {label}: {asks(text)}\n{map_brief(text)}")
+
+DARK = GOOD.replace(GOAL_LINE, "- goal: default new users to dark mode").replace(
+    "- done: mark today done in under 10 seconds", "- done: new accounts open in dark mode")
+expect("r5 a goal that starts with default is valid", DARK, set())
+expect_exit("r5 a goal that starts with default exits 0", DARK, 0)
+OPEN_GOAL = swap(GOAL_LINE, "", added("- decide: default to water on a busy day")).replace(
+    "- Do you want a reminder?", "- goal: which habit comes first?\n- Do you want a reminder?").replace(
+    "- stop: done", "- stop: turn-cap").replace("- turns: 1", "- turns: 10")
+expect("r5 an Open goal beside a decide line that starts with default", OPEN_GOAL, set())
+
+for label, text, slot, value in (
+        ("unknown senders get nothing", swap("- constraints: no accounts, it's only me",
+                                             "- constraints: unknown senders get nothing"),
+         "Constraints", "unknown senders get nothing"),
+        ("unknown at the moment", out("unknown at the moment"), "Output", "unknown at the moment")):
+    expect(f"r5 a 3-word unknown asks: {label}", text, set())
+    code, said = ask_out(text)
+    RAN.append(f"r5 a 3-word unknown ask line: {label}")
+    if code != 2 or f"ASK: {slot}: Is '{value}' decided, or still unknown?" not in said:
+        FAILS.append(f"r5 a 3-word unknown ask line: {label}: exit {code}\n{said}")
+    RAN.append(f"r5 a Confirmed line lifts the 3-word unknown: {label}")
+    if ask_out(text + f"\n## Confirmed\n\n- {slot}: {value}\n")[0] != 0:
+        FAILS.append(f"r5 a Confirmed line lifts the 3-word unknown: {label}")
+for label, text in (("unknown until Friday", out("unknown until Friday")), ("unknown so far", out("unknown so far"))):
+    expect(f"r5 unknown and two words is a question: {label}", text, {DECIDED})
+
+for label, line, question in (
+        ("hole in an Open question", "- Should it press <Enter> to confirm each move?",
+         "Should it press <Enter> to confirm each move?"),
+        ("hole in an Open tools question", "- tools: Should the poll run in <channel>?",
+         "Should the poll run in <channel>?")):
+    text = open_q(f"- Do you want a reminder?\n{line}")
+    expect(f"r5 an Open hole asks: {label}", text, set())
+    code, said = ask_out(text)
+    RAN.append(f"r5 an Open hole ask line: {label}")
+    if code != 2 or f"ASK: Unknowns: Is '{question}' a real question, or a hole to fill?" not in said:
+        FAILS.append(f"r5 an Open hole ask line: {label}: exit {code}\n{said}")
+    RAN.append(f"r5 a Confirmed line lifts the Open hole: {label}")
+    if ask_out(text + f"\n## Confirmed\n\n- Unknowns: {question}\n")[0] != 0:
+        FAILS.append(f"r5 a Confirmed line lifts the Open hole: {label}")
+
+for args in ([], ["a.md", "b.md"]):
+    for name, script in (("check", SCRIPT), ("map", CHECK_MAP)):
+        RAN.append(f"r5 usage error is one stderr line: {name} {args}")
+        got = subprocess.run([sys.executable, script, *args], capture_output=True, text=True)
+        if got.returncode != 3 or got.stdout or len(got.stderr.strip().splitlines()) != 1:
+            FAILS.append(f"r5 usage error is one stderr line: {name} {args}: exit {got.returncode}, "
+                         f"{len(got.stdout.splitlines())} stdout lines, stderr {got.stderr!r}")
+RAN.append("r5 help with an extra argument is a usage error")
+got = subprocess.run([sys.executable, CHECK_MAP, "-h", "x"], capture_output=True, text=True)
+if got.returncode != 3:
+    FAILS.append(f"r5 help with an extra argument is a usage error: exit {got.returncode}")
 
 CHECKER = open(SCRIPT, encoding="utf-8").read()
 RAN.append("r4 docstring names the map line")

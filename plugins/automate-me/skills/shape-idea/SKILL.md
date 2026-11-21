@@ -61,9 +61,9 @@ Five slots are required: goal, done, output, verify, and constraints. Each one i
 
 A hedge is "maybe", "I think", or "not sure". It is not a decision. If a wrong guess would change the shape, it goes to Open. "Later" goes to Parked, even when it is hedged. A Parked line stays in outcome's Parking lot. Only an `out of scope:` tag makes it an exclusion.
 
-"Unknown" is not a decision either. A slot, or a `tools:`, `agents:`, `evals:` or `decide:` line, that the user calls unknown goes to Open as a question. The check fails a Decided value that is `unknown` alone, `unknown` and punctuation (`unknown:`, `unknown, Slack or Teams`), or `unknown` and at most three words (`unknown for now`). A longer value that starts with the word, such as "unknown senders get a folder", may be prose. The check asks `Is '<value>' decided, or still unknown?`, and a Confirmed line records a yes.
+"Unknown" is not a decision either. A slot, or a `tools:`, `agents:`, `evals:` or `decide:` line, that the user calls unknown goes to Open as a question. The check fails a Decided value that is `unknown` alone, `unknown` and punctuation (`unknown:`, `unknown, Slack or Teams`), or `unknown` and at most two words (`unknown for now`). Markup, brackets, link syntax and labels in front do not hide it. A longer value that starts with the word, such as "unknown senders get nothing", may be prose. The check asks `Is '<value>' decided, or still unknown?`, and a Confirmed line records a yes.
 
-A Decided `evals:` line names one case that should pass and one that should fail, as `evals: pass: <case>; fail: <case>` or `evals: <case> should pass, <case> should fail`. A Decided `decide:` line says what the user will decide with the result. It goes to Goal in place of outcome's decide question. A Decided `out of scope:` line is a firm exclusion.
+A Decided `evals:` line names one case that should pass and one that should fail, as `evals: pass: <case>; fail: <case>` or `evals: <case> should pass, <case> should fail`. A Decided `decide:` line says what the user will decide with the result. It goes to Goal. Without it, outcome's decide question waits in Unknowns. A Decided `out of scope:` line is a firm exclusion.
 
 A self-correction replaces the line it fixes. "Actually X" or "no wait, X" keeps only the new line.
 
@@ -141,7 +141,7 @@ Outcome reads the sections like this. This skill does not ask Tools, Agents and 
 | The `goal:` line | Goal |
 | The `done:` line | Done |
 | A decided `out of scope:` line | Constraints |
-| A decided `decide:` line | Goal, in place of the decide question |
+| A decided `decide:` line | Goal. Without one, the decide question goes to Unknowns |
 | Other Decided lines | Done |
 | A decided `output:` line | Output |
 | An open slot | That slot as `unknown:`, and again under Unknowns |

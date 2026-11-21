@@ -38,11 +38,13 @@ Fails (exit 1) when:
 - a section is missing or repeated, or the sections are out of order;
 - a code fence sits under Decided, Open or Parked, because its text would not reach the brief;
 - an Open item does not end with `?`, or `?` and closing quotes or brackets. Only the end counts. The question after
-  any slot, line or `unknown:` label is only a placeholder such as `?` or `TBD?`, or holds a template hole;
+  any slot, line or `unknown:` label is only a placeholder such as `?` or `TBD?`, or only a template hole;
 - a Decided value ends in `?`;
 - an answer is an unknown. An answer is a Decided value, an Evals case body, or a Parked `out of scope:` line.
-  Once check_brief's core() strips markup and `stated:` is gone, it is `unknown` alone, `unknown` and punctuation,
-  or `unknown` and at most three words (`unknown for now`). It belongs in Open as a question;
+  Read by bare(), which runs check_brief's core() and strips link syntax, every leading label and leading markup or
+  brackets, it is `unknown` alone, `unknown` and punctuation, or `unknown` and at most two words (`unknown for now`,
+  `(unknown), CSV`). It belongs in Open as a question;
+- a Decided or Parked line, or a slot or line label, has nothing left once bare() strips its labels (`decide: stated:`);
 - a Decided `tools:`, `agents:` (or `agents and roles:`), `evals:`, `decide:`, or `write first:` line is empty or
   repeated. Bold and a singular label (`**tools:**`, `tool:`, `eval:`) name the same line;
 - a slot is missing from both Decided and Open, is repeated, is in both, or has an empty value.
@@ -60,8 +62,10 @@ Asks (exit 2, when nothing fails):
 - for each value check_brief asks about on the mapped brief, such as `ok` in a slot, a hole inside a longer line,
   an Evals line with no pass or fail case, or a Parked `out of scope: AI`. It prints check_brief's ASK line,
   `ASK: <slot>: Is '<value>' a real answer for <slot>?`;
-- for each answer that starts with `unknown` and is longer than the fails above, such as `unknown file types go
-  to Other`. It prints `ASK: <slot>: Is '<value>' decided, or still unknown?`.
+- for each answer that starts with `unknown` and is longer than the fails above, such as `unknown senders get
+  nothing`. It prints `ASK: <slot>: Is '<value>' decided, or still unknown?`;
+- for each Open question with a hole inside it, such as `Should it press <Enter>?`. It prints
+  `ASK: Unknowns: Is '<question>' a real question, or a hole to fill?`, and a yes is `- Unknowns: <question>`.
 This is the break point: stop, ask the person that yes/no question, and record the answer. A yes goes under
 `## Confirmed` at the end of the file as `- <Slot>: <value>`, and the mapper copies it into the brief. A no
 replaces the value, or moves the slot to Open as a question. A confirmation never lifts a fail.
@@ -96,7 +100,7 @@ SLOTS = ["goal", "done", "output", "verify", "constraints"]
 # A slot label may have spaces before the colon, and the colon may be full-width.
 # `Output : value` and `output： value` are the output slot. `goalpost:` is not goal.
 SLOT_HEAD = re.compile(r"^(goal|done|output|verify|constraints)\s*[:\uff1a]\s*(.*)$", re.I)
-OUT_OF_SCOPE = re.compile(r"^[*_]*out of scope[*_]*\s*:[*_]*\s*", re.I)
+OUT_OF_SCOPE = re.compile(r"^[*_]*out of scope[*_]*\s*[:\uff1a][*_]*\s*", re.I)
 ASCII_DIGITS = re.compile(r"^[0-9]+$")
 # A fence is ``` or ~~~, three or more, with optional info. A closer matches the
 # innermost fence's character and length and has no info. A different length or
@@ -114,11 +118,20 @@ LOOSE_SLOT = re.compile(r"^(?:\d+[.)]\s*)?[*_]+\s*(goal|done|output|verify|const
 BRIEF_SLOT = {"goal": "Goal", "done": "Done", "output": "Output", "verify": "Verification",
               "constraints": "Constraints", "tools": "Tools", "agents": "Agents and roles", "evals": "Evals",
               "decide": "Goal", "write first": "Tools"}
-STATED = re.compile(r"^\s*[*_`]*\s*stated\s*[*_`]*\s*:\s*[*_`]*\s*", re.I)
+# A `stated:` label. Markup before it with none after it wraps the whole value, so that markup stays around the rest.
+STATED = re.compile(r"^([*_`]*)\s*stated\s*([*_`]*)\s*[:\uff1a]\s*([*_]*)\s*", re.I)
+# A brief tag that may lead a line. unstated() keeps it and drops any `stated:` beside it.
+TAG_LABEL = re.compile(r"^[*_]*(?:investigate|out of scope|how|write first)[*_]*\s*[:\uff1a][*_]*\s*", re.I)
+# A label that may lead an answer, bold, in code or not. bare() strips every one, so no label hides another.
+LABEL = re.compile(r"^[\W_]*(?:stated|write first|investigate|out of scope|how|pass|fail|goal|done|output|verify"
+                   r"|constraints|tools?|agents and roles|agents?|evals?|decide)[*_`\s]*[:\uff1a]\s*", re.I)
+LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 UNKNOWN_LEAD = re.compile(r"^unknown(?![^\W_])(.*)$")
-SHORT_TAIL = 3
+SHORT_TAIL = 2
 VALUE_CHECKS = {"no placeholder", "no template hole", "no bare trap adjective"}
-MAPPED_STATED = re.compile(r"^(\s+- )stated: ", re.M)
+MAPPED_STATED = re.compile(r"^(\s+- )stated: (.*)$")
+BRIEF_LABELS = re.compile(r"^(?:(?:investigate|out of scope|how|write first)\s*[:\uff1a]\s*)+", re.I)
+BRIEF_CHECK = "the mapped brief passes outcome's brief check"
 
 
 def canon(name):
@@ -169,21 +182,44 @@ def split_fences(text):
 
 
 def unstated(value):
-    """The value with every leading `stated:` label gone, bold or not. The rules judge what is left."""
-    text = (value or "").strip()
-    while STATED.match(text):
-        text = STATED.sub("", text, count=1).strip()
+    """The value with every `stated:` label among its leading labels gone, bold or not. A tag such as `how:` stays.
+
+    Markup is kept. A code span after the label keeps both backticks, and a label inside a code span leaves the span
+    around the rest.
+    """
+    text, tags = (value or "").strip(), ""
+    while True:
+        label = STATED.match(text)
+        tag = TAG_LABEL.match(text)
+        if label:
+            wrap = "" if label.group(2) or label.group(3) else label.group(1)
+            text = (wrap + text[label.end():]).strip()
+        elif tag:
+            tags, text = tags + tag.group(), text[tag.end():]
+        else:
+            return (tags + text).strip()
+
+
+def bare(value):
+    """An answer as its first word is read. check_brief's core() runs, then link syntax, every leading label, and
+    leading markup or brackets go. Every unknown and empty-value rule reads this, so none of them hides a value."""
+    text, prev = value or "", None
+    while text != prev:
+        prev = text
+        while LABEL.match(text):
+            text = LABEL.sub("", text, count=1)
+        text = re.sub(r"^[\W_]+", "", LINK.sub(r"\1", core(text)))
     return text
 
 
 def unknown_shape(value):
     """'question' when an answer is an unknown that belongs in Open, 'ask' when it only starts with the word, else None.
 
-    The value is read as check_brief's core() reads it, so markup and a `stated:` label hide nothing. `unknown` alone,
-    `unknown` and punctuation (`unknown:`, `unknown,`, `unknown (`), or `unknown` and at most three words is a question.
-    A longer value may be prose such as `unknown file types go to Other`, so the person says whether it is decided.
+    The value is read by bare(), so markup, brackets, a link and labels hide nothing. `unknown` alone, `unknown` and
+    punctuation (`unknown:`, `unknown,`, `unknown)`), or `unknown` and at most two words is a question. A longer value
+    may be prose such as `unknown senders get nothing`, so the person says whether it is decided.
     """
-    match = UNKNOWN_LEAD.match(core(unstated(value)))
+    match = UNKNOWN_LEAD.match(bare(value))
     if not match:
         return None
     tail = match.group(1)
@@ -210,7 +246,7 @@ def open_body(item):
 
 def scoped(item):
     """An `out of scope:` line, bold or not, as the brief writes it in Constraints."""
-    return "out of scope: " + OUT_OF_SCOPE.sub("", item.strip(), count=1)
+    return "out of scope: " + unstated(OUT_OF_SCOPE.sub("", item.strip(), count=1))
 
 
 def extra_of(item):
@@ -340,8 +376,8 @@ def check(text):
         outcome, why = judge(open_body(item))
         if not is_question(item):
             q_fails.append(f"open item needs a question mark at the end: {item!r}")
-        elif why == "hole":
-            q_fails.append(f"open item holds a template hole; fill it: {item!r}")
+        elif why == "hole" and outcome == "fail":
+            q_fails.append(f"open item is only a template hole; fill it: {item!r}")
         elif outcome == "fail":
             q_fails.append(f"open item is a placeholder, not a question: {item!r}")
     add("every open item ends with a question", q_fails)
@@ -374,7 +410,7 @@ def check(text):
             both_fails.append(f"slot {slot} is both Decided and Open")
         for item in in_decided + in_open:
             value = slot_value(item)
-            if value is None or value.strip().strip("?").strip() == "":
+            if value is None or not bare(value):
                 empty_fails.append(f"slot {slot} has an empty value: {item!r}")
     add("no duplicate slot", dup_fails)
     add("a slot is not in Decided and Open", both_fails)
@@ -386,11 +422,15 @@ def check(text):
         if name in seen_extra:
             extra_fails.append(f"{name}: is on more than one Decided line")
         seen_extra.add(name)
-        if not value:
+        if not bare(value):
             extra_fails.append(f"{name}: needs a value")
     add("tools, agents, evals, and decide lines are usable", extra_fails)
 
     parked = real_items(sections.get("Parked", []))
+    add("every line has a value",
+        [f"{source} line {item!r} has no value once its labels are gone; write the value or drop the line"
+         for source, rows in (("Decided", [row for row in decided if not slot_of(row) and not extra_of(row)]),
+                              ("Parked", parked)) for item in rows if not bare(item)])
     add("Decided values are decisions",
         [f"{slot}: {value!r} {why}" for source, slot, value in answers(decided, parked)
          for why in [undecided(source, value)] if why])
@@ -500,7 +540,7 @@ def check(text):
     prose = visible if not hidden else visible + "\n" + hidden
     add("prose passes the writing check", prose_fails(prose))
     if not any(fails for _, fails in results):
-        add("the mapped brief passes outcome's brief check", brief_findings(text)[0])
+        add(BRIEF_CHECK, brief_findings(text)[0])
     return results
 
 
@@ -535,14 +575,21 @@ def brief_findings(text):
     """(fails, asks) from outcome's check_brief on the brief the mapper writes for `text`. asks are (slot, value, line).
 
     The mapper puts `stated:` in front of a line whose tag belongs in another slot. check_brief judges the brief as
-    written, and judges each value again without that prefix, so the prefix hides no placeholder, hole, trap or ask.
+    written, then judges each such line again without the prefix, and once more without its tags too, so neither the
+    prefix nor a tag hides a placeholder, hole, trap or ask.
     """
     import map_decisions  # map_decisions imports this module, so it is loaded on first use.
 
     brief = map_decisions.map_text(text)
-    plain = MAPPED_STATED.sub(r"\1", brief)
+    plain, untagged = [], []
+    for line in brief.splitlines():
+        match = MAPPED_STATED.match(line)
+        plain.append(match.group(1) + match.group(2) if match else line)
+        untagged.append(match.group(1) + BRIEF_LABELS.sub("", match.group(2)) if match else line)
+    plain, untagged = "\n".join(plain) + "\n", "\n".join(untagged) + "\n"
     fails = [fail for _, items in check_brief(brief) for fail in items]
-    fails += [fail for name, items in check_brief(plain) if name in VALUE_CHECKS for fail in items if fail not in fails]
+    for again in (plain, untagged):
+        fails += [fail for name, items in check_brief(again) if name in VALUE_CHECKS for fail in items if fail not in fails]
     asked = []
     for found in (brief, plain):
         asked += [(slot, value, line) for (slot, value), line in zip(brief_asks(found), ask_lines(found))
@@ -560,6 +607,10 @@ def found_asks(text):
     for _, slot, value in answers(real_items(sections.get("Decided", [])), real_items(sections.get("Parked", []))):
         if unknown_shape(value) == "ask" and (slot, core(value)) not in confirmed:
             asked.append((slot, value, f"ASK: {slot}: Is '{value}' decided, or still unknown?"))
+    for item in real_items(sections.get("Open", [])):
+        body = open_body(item)
+        if judge(body) == ("ask", "hole") and ("Unknowns", core(body)) not in confirmed:
+            asked.append(("Unknowns", body, f"ASK: Unknowns: Is '{body}' a real question, or a hole to fill?"))
     return asked
 
 
@@ -609,7 +660,10 @@ def main(path):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2 or sys.argv[1] in ("-h", "--help"):
+    if sys.argv[1:] in (["-h"], ["--help"]):
         print(__doc__.strip())
-        sys.exit(0 if len(sys.argv) == 2 else 3)
+        sys.exit(0)
+    if len(sys.argv) != 2:
+        print("usage: python3 check/check_decisions.py <decisions.md>", file=sys.stderr)
+        sys.exit(3)
     sys.exit(main(sys.argv[1]))

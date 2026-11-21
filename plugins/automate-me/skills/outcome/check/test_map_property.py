@@ -1,13 +1,20 @@
 """Run: python3 check/test_map_property.py
 
 Property: the mapper and check_brief agree on every decisions file. The files are the committed fixtures and cases,
-plus seeded random mutations of the ones that pass, so most mutations reach the brief check. For each file, `brief` is map_text's brief and `cb` is check_brief's exit on it.
+plus seeded random mutations of the ones that pass, so most mutations reach the brief check. For each file, `brief` is
+map_text's brief and `cb` is check_brief's exit on it. map_text never raises, on any file.
 - the mapper exits as check_decisions does;
 - mapper exit 0 means it printed that brief, and cb is 0;
 - cb 1 means mapper exit 1, and cb 2 means the mapper does not exit 0;
-- mapper exit 2 means cb is not 1, and the mapper printed ASK lines and no brief.
-A mapper ask with cb 0 comes from a rule check_brief cannot see: a value that starts with "unknown", or a value the
-mapper prefixed with `stated:`.
+- mapper exit 2 means cb is not 1, and the mapper printed ASK lines and no brief;
+- when no mapper-only rule fires, the mapper exit equals cb.
+The mapper-only rules, the only ways the two may differ:
+- shape: a check_decisions check other than the brief check fails (sections, Handoff, slots, an unknown, a label with
+  no value, the writing check);
+- stated: check_brief fails or asks on a line the mapper prefixed with `stated:`, judged again without that prefix;
+- unknown: an answer starts with "unknown" and is long enough to be prose, so the person says whether it is decided;
+- open hole: an Open question holds a template hole inside a longer question.
+Every label that empties its value (`decide: stated:`) fails, on its own and inside the mutations.
 """
 import contextlib
 import io
@@ -24,8 +31,11 @@ from check_brief import ask_lines, check  # noqa: E402
 from map_decisions import main as map_main, map_text  # noqa: E402
 
 sys.path.insert(0, os.path.normpath(os.path.join(HERE, "..", "..", "shape-idea", "check")))
-from check_decisions import main as decisions_main  # noqa: E402
+from check_decisions import brief_findings, found_asks, main as decisions_main  # noqa: E402
+from check_decisions import check as decisions_check  # noqa: E402
+from check_brief import asks as brief_asks, check as brief_check  # noqa: E402
 
+BRIEF_CHECK = "the mapped brief passes outcome's brief check"
 SKILLS = os.path.normpath(os.path.join(HERE, "..", ".."))
 SEED = 4
 COUNT = 400
@@ -44,20 +54,29 @@ DECIDED = [
     "the form submits on <Enter>", "it should look clean", "should a link expire?", "unknown until Friday",
     "Unknown senders get a folder", "the button says 'What's next?'", "goal: Default to a poll in the chat",
     "done: investigate: why a vote is lost", "verify: it looks good", "constraints: none",
+    "output: (unknown), CSV or JSON", "output: [unknown](https://example.org/status)", "decide: stated:",
+    "tools: stated:", "agents: **stated:**", "evals: stated:", "write first: stated:", "stated:", "out of scope: stated:",
+    "stated: `<col>` is the literal header", "`stated: the header row is fixed`", "goal: default new users to dark mode",
+    "constraints: unknown senders get nothing", "out of scope: stated: unknown for now", "stated: how: clean",
+    "out of scope\uff1acatering", "decide: default to the cheapest spot",
 ]
 OPEN = [
     "tools: ?", "evals: TBD?", "agents: unknown: ?", "decide: ?", "tools: Should the poll run in <channel>?",
     "tools: Slack or Teams?", "evals: which case should fail?", "Should the button say 'What's next?' or 'Continue'?",
     'should the label say "Continue?"', "should it sync with https://example.org/sync?", "unknown: ?",
     "is it a list (or a page?) or both?", "who votes? and when?", "output: what comes back?", "**tools:** which one?",
-    "should the bot use <channel>?", "reminders are not settled",
+    "should the bot use <channel>?", "reminders are not settled", "Should it press <Enter> to confirm each move?",
+    "goal: which spot first?", "tools: stated: ?",
 ]
 PARKED = [
     "out of scope: AI", "**out of scope:** AI", "out of scope: a watch app", "out of scope: unknown for now",
     "dark mode, maybe not now", "I think we should skip dietary tags, not now", "a native app, later",
     "ship it later?", "the form submits on <Enter>", "later, perhaps", "TBD", "unknown", "unknown senders get a folder",
     "investigate: the old app", "how: ok", "clean", "ask about <channel> later", "a share button for later",
+    "stated:", "out of scope: stated:", "out of scope\uff1acatering", "stated: run `make check` first",
 ]
+EMPTY = ["decide: stated:", "tools: stated:", "agents: stated:", "evals: stated:", "write first: stated:", "stated:",
+         "**stated:**", "out of scope: stated:", "goal: stated:", "output: **stated:**", "decide: `stated:`"]
 
 
 def sources():
@@ -102,6 +121,25 @@ def brief_exit(brief):
     return 2 if ask_lines(brief) else 0
 
 
+def mapper_only(text, brief):
+    """The mapper-only rules that fire on `text`, by name. See the module docstring."""
+    fired = set()
+    if any(fails for name, fails in decisions_check(text) if name != BRIEF_CHECK):
+        return {"shape"}
+    if set(brief_findings(text)[0]) - {fail for _, fails in brief_check(brief) for fail in fails}:
+        fired.add("stated")
+    seen = brief_asks(brief)
+    for slot, value, line in found_asks(text):
+        if (slot, value) in seen:
+            continue
+        fired.add("unknown" if line.endswith("decided, or still unknown?") else
+                  "open hole" if line.endswith("a real question, or a hole to fill?") else "stated")
+    return fired
+
+
+EQUAL = []
+
+
 def violations(text):
     path = os.path.join(tempfile.mkdtemp(), "decisions.md")
     with open(path, "w", encoding="utf-8") as handle:
@@ -111,6 +149,10 @@ def violations(text):
     brief = map_text(text)
     cb = brief_exit(brief)
     bad = []
+    if not mapper_only(text, brief):
+        EQUAL.append(code)
+        if code != cb:
+            bad.append(f"no mapper-only rule fired, mapper exit {code}, check_brief exit {cb}")
     if code != dec:
         bad.append(f"mapper exit {code}, check_decisions exit {dec}")
     if code == 0 and (said != brief or cb != 0):
@@ -148,12 +190,25 @@ for number, text in enumerate(texts):
         FAILS.append(f"{number}: {bad}\n{text}")
 if min(spread.values()) < COUNT // 20:
     FAILS.append(f"mutations do not reach every exit: {spread}")
+if len(EQUAL) < COUNT // 4 or len(set(EQUAL)) < 2:
+    FAILS.append(f"verdict equality ran on too few files or exits: {len(EQUAL)}, exits {sorted(set(EQUAL))}")
+for line in EMPTY:
+    for head in ("## Open", "## Handoff"):
+        text = ready[0].replace(head, f"- {line}\n\n{head}", 1)
+        try:
+            map_text(text)
+            got = exit_of(text)
+        except Exception as exc:
+            got = f"crashed: {exc!r}"
+        if got != 1:
+            FAILS.append(f"an empty label does not fail before {head}: {line!r}: {got}")
 elapsed = time.time() - start
 
 if __name__ == "__main__":
     for item in FAILS[:15]:
         print(f"FAIL {item}")
-    print(f"{len(texts) - len(FAILS)}/{len(texts)} files agree, seed {SEED}, exits {spread}, {elapsed:.1f}s")
+    print(f"{len(texts) - len(FAILS)}/{len(texts)} files agree, seed {SEED}, exits {spread}, "
+          f"{len(EQUAL)} with equal verdicts, {elapsed:.1f}s")
     if elapsed > 30:
         print(f"FAIL property test took {elapsed:.1f}s, over 30s")
     sys.exit(1 if FAILS or elapsed > 30 else 0)

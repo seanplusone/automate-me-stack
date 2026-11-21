@@ -10,13 +10,14 @@ check_brief passed, so the mapper and check_brief always agree.
 
 Shape-idea records goal, done, output, constraints, and verify.
 Tools, Agents and roles, and Evals are not asked there. They are written
-as unknown questions, unless a Decided line already names that slot.
+as unknown questions, unless a Decided line already names that slot. Goal holds only the
+user's lines. The decide question, stock or Open, goes to Unknowns unless a Decided `decide:` line answers it.
 An Open `tools:`, `agents:`, `evals:` or `decide:` question replaces that stock question.
 Outcome asks them. It does not invent a tool, a role, or a pass and fail case.
 A Decided `write first:` line goes under Tools. Each Decided line lands where
 check_decisions.landing() says. A Parked line stays in the Parking lot. An `out of scope:` tag,
 bold or not, also puts it in Constraints. No other word moves it.
-A path that cannot be read exits 3 with one line.
+Bad arguments, or a path that cannot be read, exit 3 with one line on stderr.
 """
 import os
 import re
@@ -25,6 +26,7 @@ import sys
 sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "shape-idea", "check")))
 from check_decisions import (  # noqa: E402
     OUT_OF_SCOPE,
+    bare,
     extra_of,
     is_question,
     landing,
@@ -48,7 +50,7 @@ EVALS = "What is one case that should pass, and one that should fail?"
 DECIDE = "What will you decide with the result?"
 ASKED = ("decide", "tools", "agents", "evals")
 # A brief tag and the one brief slot where it may lead an item.
-TAG_LEAD = re.compile(r"^(investigate|out of scope|how)\s*:", re.I)
+TAG_LEAD = re.compile(r"^(investigate|out of scope|how)\s*[:\uff1a]", re.I)
 TAG_HOME = {"investigate": "Done", "out of scope": "Constraints", "how": "Agents and roles"}
 DEFAULT_LEAD = re.compile(r"^default\b", re.I)
 
@@ -103,7 +105,7 @@ def map_text(text):
     found = items(text)
     decided, opens, parked = found["Decided"], found["Open"], found["Parked"]
     lands = [landing(row) for row in decided]
-    named = {label: value for _, value, label in lands if label in ASKED + ("write first",)}
+    named = {label: value for _, value, label in lands if label in ASKED + ("write first",) and bare(value)}
     limits_out = [value for _, value, label in lands if label == "out of scope"]
     limits_out += [scoped(row) for row in parked if OUT_OF_SCOPE.match(row.strip())]
     other = [value for _, value, label in lands if label is None]
@@ -130,7 +132,9 @@ def map_text(text):
     ordered += [unknown(row) for row in parked if is_question(row)]
     lines = ["# Brief: from decisions", ""]
     lines.append(f"- Goal: {goal}")
-    lines.append(f"  - {named.get('decide') or question['decide']}")
+    # Goal holds only the user's lines. The stock or Open decide question waits in Unknowns, so no line the mapper
+    # adds sits beside the user's goal.
+    lines += [f"  - {brief_item(named['decide'], 'Goal')}"] if "decide" in named else []
     lines.append("- Done:")
     lines.append(f"  - {done}")
     lines += [f"  - {brief_item(row, 'Done')}" for row in other]
@@ -172,7 +176,10 @@ def main(path):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2 or sys.argv[1] in ("-h", "--help"):
+    if sys.argv[1:] in (["-h"], ["--help"]):
         print(__doc__.strip())
-        sys.exit(0 if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help") else 3)
+        sys.exit(0)
+    if len(sys.argv) != 2:
+        print("usage: python3 check/map_decisions.py <decisions.md>", file=sys.stderr)
+        sys.exit(3)
     sys.exit(main(sys.argv[1]))

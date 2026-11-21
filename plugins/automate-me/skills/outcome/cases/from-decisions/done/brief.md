@@ -1,7 +1,6 @@
 # Brief: from decisions
 
 - Goal: a bot the team can use to pick a lunch spot
-  - unknown: What will you decide with the result?
 - Done:
   - a person can start a poll and the winner is posted back in the same chat
   - we are about 12 people
