@@ -13,21 +13,22 @@ Voice is only how the text arrives. The skill works on the transcript, typos and
 
 ## A decisions file
 
-If the user brings a `decisions.md` from [shape-idea](../shape-idea/SKILL.md), map that file. Do not sort it as a ramble. Then fill every brief slot. A slot the file does not settle is `unknown: <question>?`. Run `python3 "$SKILL_DIR"/check/check_brief.py` on the brief.
+If the user brings a `decisions.md` from [shape-idea](../shape-idea/SKILL.md), map that file. Do not sort it as a ramble. Shape-idea does not ask which tool to use, who does the work, or which two cases prove it. Those three stay `unknown:` until the user answers. Do not invent them. Run `python3 "$SKILL_DIR"/check/check_brief.py` on the brief.
 
 | In the decisions file | In the brief |
 |---|---|
 | The `goal:` line | Goal |
+| The `done:` line | Done |
+| Other Decided lines | Done, as further criteria the user stated |
 | A decided `output:` line | Output |
 | An open `output:` line | Output as `unknown:`, and again under Unknowns |
-| A decided `verify:` line | Verify, plus the evidence sentence |
-| An open `verify:` line | Verify as `unknown:`, and again under Unknowns |
-| `constraints:`, `done:`, and every other Decided line | Must-haves |
-| A Parked line that says not now or later | Must-haves as `out of scope:`, and Parking lot |
+| The `constraints:` line | Constraints |
+| A Parked line that says not now or later | Constraints as `out of scope:`, and Parking lot |
 | Other Parked lines | Parking lot |
+| The `verify:` line | Verification, plus the evidence sentence |
 | Each other Open line | Unknowns |
 
-Plan first is the agent's call. Write `none needed` for one brief. Decision is `unknown: What will you decide with the result?` unless a Decided line states it. Context is the other Decided lines, or `unknown: What already exists?`. Taste is `unknown: What should be flagged but not required?` unless a line states a taste. If stuck says report only and do not guess. Skills says none until the user names one. Ask at most 3 of the unknowns. The same traps apply.
+Goal also gets `unknown: What will you decide with the result?` unless the file already says that. Tools is `unknown: Which tool must the run use, and what, if anything, must be written first?`. Agents and roles is `unknown: Who does the work, and does anyone else check it?`. Evals is `unknown: What is one case that should pass, and one that should fail?`. Ask those three first. After the user answers, rewrite each slot in their words. A `write first:` line appears only then. Constraints also says report only, and not to run or post, because shape-idea never does. Ask at most 3 questions. The same traps apply.
 
 ## When to offer it
 

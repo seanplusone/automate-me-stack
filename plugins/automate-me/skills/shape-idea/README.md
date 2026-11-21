@@ -68,10 +68,10 @@ Neither script checks the flow in `SKILL.md`. These parts are instructions only,
 - stop: done | turn-cap | open-cap
 - turns: <n>
 - writing: pass
-- map: goal goes to Goal. output goes to Output. verify goes to Verify. constraints, done, and every other Decided line go to Must-haves. Open goes to Unknowns. Parked goes to the Parking lot.
+- map: goal goes to Goal. done goes to Done. output goes to Output. constraints goes to Constraints. verify goes to Verification. Tools, Agents and roles, and Evals stay unknown.
 ```
 
-Outcome reads `goal:` as Goal, `output:` as Output, and `verify:` as Verify. The `constraints:` line, the `done:` line, and every other Decided line are must-haves. Open is Unknowns. Parked is the Parking lot. A slot that is still open is an Unknown, not a must-have.
+Outcome reads `goal:` as Goal, `done:` as Done, `output:` as Output, `constraints:` as Constraints, and `verify:` as Verification. Tools, Agents and roles, and Evals stay unknown until the user answers. Open is Unknowns. Parked is the Parking lot. A slot that is still open is an unknown, not a filled slot.
 
 ## Key format
 

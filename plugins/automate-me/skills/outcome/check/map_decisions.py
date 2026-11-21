@@ -3,11 +3,11 @@
 Usage: python3 check/map_decisions.py <decisions.md>
 
 This is the literal mapping in ../SKILL.md, "A decisions file".
-Plan first is the agent's call: none needed. Decision, Context, and Taste
-are filled from a non-slot line when one is labeled, and otherwise marked unknown.
-A parked line that says "not now" or "later" is also an out-of-scope must-have.
-An open slot fills that brief slot with unknown, and the same question is listed
-under Unknowns.
+Shape-idea records goal, done, output, constraints, and verify.
+Tools, Agents and roles, and Evals are not asked there. They are written
+as unknown questions. Outcome asks them. It does not invent a tool, a role,
+or a pass and fail case. write first is part of the Tools question until
+the user answers.
 """
 import os
 import re
@@ -18,6 +18,10 @@ from check_decisions import parse, real_items, slot_of, slot_value, split_fences
 
 EVIDENCE = "Every claim names its run, file:line or photo, or says guess."
 LATER = re.compile(r"\b(not now|later)\b", re.I)
+TOOLS = "Which tool must the run use, and what, if anything, must be written first?"
+AGENTS = "Who does the work, and does anyone else check it?"
+EVALS = "What is one case that should pass, and one that should fail?"
+DECIDE = "What will you decide with the result?"
 
 
 def items(text):
@@ -31,7 +35,7 @@ def slot_lines(rows, slot):
 
 
 def question_of(row):
-    text = (slot_value(row) or row).strip()
+    text = (slot_value(row) if slot_of(row) else row).strip()
     text = re.sub(r"^(unknown:\s*)", "", text, flags=re.I)
     if not text.endswith("?"):
         text = text.rstrip(".") + "?"
@@ -42,65 +46,69 @@ def unknown(text):
     return f"unknown: {question_of(text)}"
 
 
+def slot_text(decided, opens, slot, fallback):
+    """A decided value, or an unknown from the open line, or the fallback question."""
+    firm = slot_lines(decided, slot)
+    if firm and slot_value(firm[0]):
+        return slot_value(firm[0]), False
+    pending = slot_lines(opens, slot)
+    if pending:
+        return unknown(pending[0]), True
+    return unknown(fallback), True
+
+
 def map_text(text):
     found = items(text)
     decided, opens, parked = found["Decided"], found["Open"], found["Parked"]
     other = [row for row in decided if slot_of(row) is None]
-    goal = slot_lines(decided, "goal")
-    output = slot_lines(decided, "output") or slot_lines(opens, "output")
-    verify = slot_lines(decided, "verify") or slot_lines(opens, "verify")
-    output_open = bool(slot_lines(opens, "output")) and not slot_lines(decided, "output")
-    verify_open = bool(slot_lines(opens, "verify")) and not slot_lines(decided, "verify")
-    must = []
-    for slot in ("done", "constraints"):
-        for row in slot_lines(decided, slot):
-            must.append(slot_value(row))
-    must.extend(other)
+    goal, goal_unknown = slot_text(decided, opens, "goal", "What is the want?")
+    done, done_unknown = slot_text(decided, opens, "done", "What does finished look like?")
+    output, output_unknown = slot_text(decided, opens, "output", "What comes back?")
+    verify, verify_unknown = slot_text(decided, opens, "verify", "How will you check it?")
+    limits, limits_unknown = slot_text(decided, opens, "constraints", "What must the run not do?")
+    decision = unknown(DECIDE)
+    tools = unknown(TOOLS)
+    agents = unknown(AGENTS)
+    evals = unknown(EVALS)
+    unknowns = [tools, agents, evals, decision]
+    if goal_unknown:
+        unknowns.append(goal)
+    if done_unknown:
+        unknowns.append(done)
+    if output_unknown:
+        unknowns.append(output)
+    if verify_unknown:
+        unknowns.append(verify)
+    if limits_unknown:
+        unknowns.append(limits)
+    for row in opens:
+        if slot_of(row):
+            continue
+        unknowns.append(unknown(row))
+    lines = ["# Brief: from decisions", "", f"- Goal: {goal}", f"  - {decision}", "- Done:"]
+    lines.append(f"  - {done}")
+    for row in other:
+        lines.append(f"  - {row}")
+    lines.append(f"- Output: {output}")
+    lines.append("- Constraints:")
+    lines.append(f"  - {limits}")
+    lines.append("  - Report only. Do not run or post until the user says to.")
     for row in parked:
         if LATER.search(row):
-            must.append(f"out of scope: {row}")
-    unknowns = []
-    if not other:
-        context = unknown("What already exists?")
-        unknowns.append(context)
-    else:
-        context = " ".join(other)
-    decision = unknown("What will you decide with the result?")
-    taste = unknown("What should be flagged but not required?")
-    unknowns.extend([decision, taste])
-    if output_open:
-        output_line = unknown(output[0])
-        unknowns.append(output_line)
-    else:
-        output_line = slot_value(output[0]) if output else unknown("What comes back?")
-        if output_line.startswith("unknown:"):
-            unknowns.append(output_line)
-    if verify_open:
-        verify_line = unknown(verify[0])
-        unknowns.append(verify_line)
-    else:
-        verify_line = slot_value(verify[0]) if verify else unknown("How will you check it?")
-        if str(verify_line).startswith("unknown:"):
-            unknowns.append(verify_line)
-    lines = [
-        "# Brief: from decisions",
-        "",
-        "- Plan first: none needed",
-        f"- Goal: {slot_value(goal[0]) if goal else unknown('What is the want?')}",
-        f"- Decision: {decision}",
-        f"- Context: {context}",
-        "- Must-haves:",
-    ]
-    for item in must or ["unknown: What must the result include?"]:
-        lines.append(f"  - {item}")
-    lines.append(f"- Taste: {taste}")
-    lines.append(f"- Output: {output_line}")
-    lines.append("- Verify:")
-    lines.append(f"  - {verify_line}")
+            lines.append(f"  - out of scope: {row}")
+    lines.append("- Tools:")
+    lines.append(f"  - {tools}")
+    lines.append("- Agents and roles:")
+    lines.append(f"  - {agents}")
+    lines.append("- Evals:")
+    lines.append(f"  - {evals}")
+    lines.append("- Verification:")
+    lines.append(f"  - {verify}")
     lines.append(f"  - {EVIDENCE}")
-    lines.append("- If stuck: Report only. Do not guess an unknown. Stop and ask.")
-    lines.append("- Skills: none")
-    lines.append("- Parking lot: " + (" ".join(parked) if parked else "none"))
+    if parked:
+        lines.append("- Parking lot:")
+        for row in parked:
+            lines.append(f"  - {row}")
     lines.append("- Unknowns:")
     for item in unknowns:
         lines.append(f"  - {item}")
