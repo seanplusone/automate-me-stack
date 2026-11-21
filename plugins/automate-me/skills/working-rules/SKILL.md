@@ -21,7 +21,11 @@ The user can keep their own `examples.md` next to the profile, with cases from p
 The argument after `working-rules` picks what to do. A ticket is a key in the project's format (`<profile: ticket_key_format>`, for example `PROJ-123`) or words from its summary. For words, search with `<profile: ticket_search>` and confirm the match with the user before starting.
 
 - `fix <ticket>` runs `playbooks/fix.md`. Any steps the user adds replace that plan.
-- `pickup <ticket>` resumes work. Find the worktree whose branch carries the key (`git worktree list`), read its `RESUME.md`, say in a few lines where it stands and the next action, then continue. A checkpoint recorded there still waits for the user. No `RESUME.md`: say so, and summarize the branch's commits and its PR instead.
+- `pickup <ticket>` resumes work. `pickup <path to a resume file>` works too. Find the worktree whose branch carries the key (`git worktree list`) and its `RESUME.md`. No `RESUME.md`: say so, and summarize the branch's commits and its PR instead. Otherwise:
+  1. Run `python3 "$SKILL_DIR"/../shared/check_resume.py <RESUME.md>` from the worktree. On FAIL, say what it flagged and stop.
+  2. Recheck each inherited Done item through its evidence pointer: the log must still exist and be non-empty, the script's exit or the SHA must still resolve. A log of only "tests passed", or an empty file, is not proof. For a bug fix, read the parent and head SHAs from the Repro lines (or from the branch if those lines name them) and run `python3 "$SKILL_DIR"/../shared/check_repro.py --test <Repro test> --parent <sha> --head <sha>`. If you cannot name both SHAs, say so and stop; do not skip the rerun. The written "done" is not proof. When a pointer no longer resolves, or the repro no longer fails at parent and passes at head, say so and stop.
+  3. When Status is `waiting on user`, ask the Waiting on question and stop. A checkpoint recorded there still waits for the user.
+  4. Say in a few lines where it stands, then continue from Next step. Do not redo work whose evidence still resolves.
 - Anything else, or nothing, loads these rules for the task the user describes.
 
 ## Response style
@@ -66,8 +70,9 @@ The argument after `working-rules` picks what to do. A ticket is a key in the pr
 ## Process
 
 - Use one worktree per ticket, off `<profile: base_remote>`/`<profile: base_branch>`, with real copies of the gitignored runtime files the profile lists under `<profile: worktree_copy>`. A repo the profile marks `worktree: no` branches in place instead.
-- Task state lives in `RESUME.md` at the worktree root, untracked. At each checkpoint and on "pause safely": finish the step, make a `wip:` commit, update `RESUME.md`, stop.
+- Task state lives in `RESUME.md` at the worktree root, untracked, in the shape of `../shared/resume-shape.md`. Every Done item ends in an evidence pointer: a log, a script with its exit and log, or a commit SHA. At each checkpoint and on "pause safely": finish the step, make a `wip:` commit, write `RESUME.md`, run `python3 "$SKILL_DIR"/../shared/check_resume.py RESUME.md`, fix what it flags, then stop.
 - When context runs long, offer a stop point and a fresh session that picks up from `RESUME.md`.
+- A bug fix records its new test in the Repro slots: it fails at the parent and passes at head. `check_repro.py` reruns it, so a tweaked old test that already passed does not count.
 - PRs open as drafts on the org repo, with the ticket link in the body and the PR's prose checked by `../shared/pr_prose.py`. Moving to ready, posting, approving and merging wait for the user's word.
 - Never amend or force-push a PR someone has reviewed. Stack the fixes as small PRs and resolve the threads they address. Never base a PR on a test or integration branch.
 

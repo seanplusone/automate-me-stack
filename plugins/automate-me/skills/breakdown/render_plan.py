@@ -181,7 +181,7 @@ def render_prompt(p, iid):
         *([REVIEW] if s.get("harness") != "findings file" else []),
         f'Run on: {s.get("model")} at {s.get("effort")} effort.',
         f'If stuck: at most {lp.get("max")} tries. {lp.get("exit_when", "")}',
-        'At the end: update RESUME.md with the goal, what is done and verified, the next step, key files and gotchas.',
+        "At the end: update RESUME.md in the shape of ../shared/resume-shape.md and run python3 \"$SKILL_DIR\"/../shared/check_resume.py RESUME.md. Every done item needs a resolving evidence pointer.",
         'Never say done or correct. Report what you ran and its output, and the verifier decides.',
         f'Tools: {", ".join(s.get("tools", [])) or "none named"}. Report only; push, post or message nothing unless the limits allow it.',
     ]) + "\n"

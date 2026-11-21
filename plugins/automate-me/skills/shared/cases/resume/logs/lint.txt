@@ -1,0 +1,3 @@
+$ sh checks/lint.sh
+PASS lint: 3 files checked
+exit 0
