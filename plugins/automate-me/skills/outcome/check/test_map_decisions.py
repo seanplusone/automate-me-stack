@@ -112,8 +112,8 @@ for name in ("done", "capped"):
         FAILS.append("capped open output is not both a slot and an Unknown")
     if name == "done" and "out of scope:" in brief:
         FAILS.append("done brief turned a hedged later line into out of scope")
-    if name == "capped" and "out of scope: a native app, later" not in brief:
-        FAILS.append("capped brief dropped the standalone later line")
+    if name == "capped" and ("out of scope: a native app" in brief or "  - a native app, later" not in brief):
+        FAILS.append("capped brief moved a parked later line out of the Parking lot")
 
 for src in sorted(__import__("pathlib").Path(SHAPE).glob("*/runs/run-1/decisions.md")):
     name = src.parents[2].name
@@ -131,7 +131,7 @@ for src in sorted(__import__("pathlib").Path(SHAPE).glob("*/runs/run-1/decisions
 # 1. A placeholder slot stops the mapper before any brief is written.
 tbd = decisions(BASE.replace("- goal: a tiny habit tracker on my phone", "- goal: TBD"))
 code, out = run_main(tbd)
-tbd_bad = [] if code == 1 and "slot values are not placeholders" in out and "# Brief" not in out else [f"exit {code}"]
+tbd_bad = [] if code == 1 and "the mapped brief passes outcome's brief check" in out and "# Brief" not in out else [f"exit {code}"]
 print(f"{'PASS' if not tbd_bad else 'FAIL'} a placeholder slot stops the mapper")
 FAILS.extend(f"a placeholder slot stops the mapper: {item}" for item in tbd_bad)
 
@@ -172,19 +172,17 @@ if quoted_bad or missing:
 else:
     print("PASS quoted lines still pass the brief check")
 
-# 5. Later means not now, or later on its own.
+# 5. A Parked line always stays in the Parking lot. Only an `out of scope:` tag also puts it in Constraints.
 later = decisions(
     BASE,
     parked="""- ship the poster not now
 - a native app, later
 - a share button for later
-- a native app later
 - voters who join later can still vote
-- a native app, perhaps later
-- no later than Friday
+- dark mode, maybe not now
+- I think we should skip dietary tags, not now
 - ship it later?
-- maybe a web app later
-- dietary tags later, not sure""",
+- out of scope: a watch app""",
 )
 later_brief = map_text(later)
 later_limits = later_brief.split("- Constraints:", 1)[1].split("- Tools:", 1)[0]
@@ -192,17 +190,17 @@ later_park = later_brief.split("- Parking lot:", 1)[1].split("- Unknowns:", 1)[0
 later_bad = []
 if failed(later_brief):
     later_bad.append(str(failed(later_brief)))
-for line in ("ship the poster not now", "a native app, later", "a share button for later"):
-    if f"out of scope: {line}" not in later_limits or line not in later_park:
-        later_bad.append(f"dropped {line}")
-for line in ("a native app later", "voters who join later can still vote", "a native app, perhaps later",
-             "no later than Friday", "ship it later?", "maybe a web app later", "dietary tags later, not sure"):
-    if f"out of scope: {line}" in later_brief:
-        later_bad.append(f"scoped {line}")
-if "unknown: ship it later?" not in later_brief or "ship it later?" not in later_park:
+for line in ("ship the poster not now", "a native app, later", "a share button for later",
+             "voters who join later can still vote", "dark mode, maybe not now",
+             "I think we should skip dietary tags, not now", "ship it later?"):
+    if line in later_limits or f"  - {line}" not in later_park:
+        later_bad.append(f"moved {line}")
+if "  - out of scope: a watch app" not in later_limits:
+    later_bad.append("dropped the tagged out of scope line")
+if "unknown: ship it later?" not in later_brief:
     later_bad.append("parked question was not kept")
-print(f"{'PASS' if not later_bad else 'FAIL'} later means not now or standalone later")
-FAILS.extend(f"later means not now or standalone later: {item}" for item in later_bad)
+print(f"{'PASS' if not later_bad else 'FAIL'} parked lines stay parked unless tagged out of scope")
+FAILS.extend(f"parked lines stay parked unless tagged out of scope: {item}" for item in later_bad)
 
 # 6. A bad file exits 1 with the checker failures, and no brief.
 bad_files = {
@@ -322,6 +320,11 @@ for skill in (shape_skill, outcome_skill):
         doc_bad.append("question order")
     if "Other Decided lines" not in skill or "out of scope:" not in skill or "Unknowns" not in skill:
         doc_bad.append("handoff table")
+for skill in (shape_skill, outcome_skill):
+    if "ends in not now" in skill or "Constraints as `out of scope:`, and the Parking lot" not in skill:
+        doc_bad.append("parked mapping row")
+    if "The words stay and the tag does not" in skill:
+        doc_bad.append("stated tag wording")
 if 'python3 "$SKILL_DIR"/../shape-idea/check/check_decisions.py' not in outcome_skill:
     doc_bad.append("check_decisions first")
 print(f"{'PASS' if not doc_bad else 'FAIL'} docs match the checks")
@@ -375,7 +378,7 @@ REPROS = [
      lambda d, b: "move it to Open as a question" in d),
     ("notsure_out", edit((OUT, "- output: not sure yet")), 2, None, lambda d, b: "ASK: Output: Is 'not sure yet'" in d),
     ("tbd_phrase", edit((OUT, "- output: to be decided"), ("- verify:", "- verify: see notes")), 1, None,
-     lambda d, b: "placeholder: 'to be decided'" in d),
+     lambda d, b: "slot Output is only a placeholder" in d),
     ("trap_verify", edit(("- verify:", "- verify: it looks good")), 1, None, lambda d, b: "no visible signal" in d),
     ("trap_done", edit(("- done:", "- done: clean")), 1, None, lambda d, b: "no visible signal" in d),
     ("tools_unknown", edit((ADD, "&\n- tools: unknown: waiting to pick Python or Node")), 1, None,
@@ -399,7 +402,8 @@ REPROS = [
     ("quoted_later", edit(("- I should probably", '- the snooze button says "Remind me later"')), 0, 0,
      lambda d, b: "out of scope: the snooze" not in b and "Remind me later" in b),
     ("not_now", HABIT_TEXT, 0, 0,
-     lambda d, b: "out of scope: maybe later a way to share streaks" in block(b, "- Constraints:", "- Tools:")),
+     lambda d, b: "out of scope:" not in b
+     and "  - maybe later a way to share streaks" in block(b, "- Parking lot:", "- Unknowns:")),
     ("decided_oos", edit(("- the one habit", "- out of scope: syncing to a watch")), 0, 0,
      lambda d, b: "  - out of scope: syncing to a watch" in block(b, "- Constraints:", "- Tools:")
      and "watch" not in block(b, "- Done:", "- Output:")),
@@ -415,9 +419,9 @@ REPROS = [
     ("open_url", edit(("- what should I call", "- should it sync with https://example.org/sync?")), 0, 0,
      lambda d, b: "unknown: should it sync with https://example.org/sync?" in b),
     ("bom", "\ufeff" + HABIT_TEXT, 0, 0, lambda d, b: b.startswith("# Brief")),
-    ("writefirst", edit((ADD, "&\n- tools: write first: none")), 1, None, lambda d, b: "tools: needs a real value" in d),
+    ("writefirst", edit((ADD, "&\n- tools: write first: none")), 1, None, lambda d, b: "Tools is only a placeholder" in d),
     ("evals_tbdfail", edit((ADD, "&\n- evals: marking today should pass. TBD should fail.")), 1, None,
-     lambda d, b: "evals: Evals: '. TBD' is a placeholder" in d),
+     lambda d, b: "Evals: '. TBD' is a placeholder" in d),
     ("ask_output", edit((OUT, "- output: ok")), 2, None,
      lambda d, b: "ASK: Output: Is 'ok' a real answer for Output?" in d),
     # Independent review (codex), round 3.
@@ -433,13 +437,13 @@ REPROS = [
     ("slot_tag_home", edit(("- done:", "- done: investigate: why a streak breaks")), 0, 0,
      lambda d, b: "  - investigate: why a streak breaks" in block(b, "- Done:", "- Output:")),
     ("goal_default", edit(("- goal:", "- goal: default to a poll in the chat")), 1, None,
-     lambda d, b: "starts with 'default'" in d),
+     lambda d, b: "default beside an unknown" in d),
     ("parked_hedge", edit(("- I should probably", "- later, perhaps")), 1, None,
      lambda d, b: "'later, perhaps' is a placeholder" in d),
     ("open_hole", edit(("- what should I call", "- should the bot use <channel>?")), 1, None,
      lambda d, b: "template hole" in d),
-    ("parked_hole", edit(("- I should probably", "- ask about <channel> later")), 1, None,
-     lambda d, b: "template hole" in d),
+    ("parked_hole", edit(("- I should probably", "- ask about <channel> later")), 2, None,
+     lambda d, b: "ASK: Parking lot: Is 'ask about <channel> later' a real answer for Parking lot, or a hole to fill?" in d),
     ("open_bare_q", edit(("- what should I call", "- ?")), 1, None, lambda d, b: "placeholder, not a question" in d),
     ("how_ok", edit(("- the one habit", "- how: ok")), 2, None, lambda d, b: "ASK: Done: Is 'how: ok'" in d),
     ("how_line", edit(("- the one habit", "- how: fold the paper first")), 0, 0,
@@ -468,10 +472,10 @@ REPROS = [
     ("paren_agents", edit((ADD, "&\n- agents: (unknown yet)")), 1, None, lambda d, b: "move it to Open" in d),
     ("italic_eval", edit((ADD, "&\n- evals: pass: *unknown*; fail: a missed day keeps the streak")), 1, None,
      lambda d, b: "move it to Open" in d),
-    ("unknown_prose_done", edit(("- done:", "- done: unknown drinks count as water")), 0, 0,
-     lambda d, b: "  - unknown drinks count as water" in block(b, "- Done:", "- Output:")),
-    ("unknown_prose_out", edit((OUT, "- output: Unknown days listed with a count")), 0, 0,
-     lambda d, b: "- Output: Unknown days listed with a count" in b),
+    ("unknown_prose_done", edit(("- done:", "- done: unknown drinks count as water")), 2, None,
+     lambda d, b: "ASK: Done: Is 'unknown drinks count as water' decided, or still unknown?" in d),
+    ("unknown_prose_out", edit((OUT, "- output: Unknown days listed with a count")), 2, None,
+     lambda d, b: "ASK: Output: Is 'Unknown days listed with a count' decided, or still unknown?" in d),
     ("default_goal_decide", edit(("- goal:", "- goal: Default to water when I forget which habit"),
                                  ("- the one habit", "- decide: which habit to keep")), 0, 0,
      lambda d, b: "- Goal: Default to water" in b and DECIDE not in b),
@@ -482,7 +486,7 @@ REPROS = [
     ("later_perhaps", edit(("- I should probably", "- a watch app, perhaps later")), 0, 0,
      lambda d, b: "out of scope: a watch" not in b and "a watch app, perhaps later" in b),
     ("later_comma", edit(("- I should probably", "- a watch app, later")), 0, 0,
-     lambda d, b: "  - out of scope: a watch app, later" in block(b, "- Constraints:", "- Tools:")),
+     lambda d, b: "out of scope: a watch" not in b and "  - a watch app, later" in block(b, "- Parking lot:", "- Unknowns:")),
     ("parked_oos", edit(("- I should probably", "- out of scope: a watch app later")), 0, 0,
      lambda d, b: "out of scope: out of scope" not in b
      and "  - out of scope: a watch app later" in block(b, "- Constraints:", "- Tools:")),
@@ -503,6 +507,55 @@ REPROS = [
      lambda d, b: "under Open" in d),
     ("fence_parked", edit(("- I should probably", "&\n~~~\n- sync between phones, not now\n~~~")), 1, None,
      lambda d, b: "under Parked" in d),
+    # Round 4. Unknown is never ready, a Parked line stays parked unless tagged, and the mapper agrees with check_brief.
+    ("r4_tools_for_now", edit((ADD, "&\n- tools: Unknown for now")), 1, None, lambda d, b: "move it to Open" in d),
+    ("r4_tools_comma", edit((ADD, "&\n- tools: unknown, Slack or Teams")), 1, None, lambda d, b: "move it to Open" in d),
+    ("r4_output_for_now", edit((OUT, "- output: unknown for now")), 1, None, lambda d, b: "move it to Open" in d),
+    ("r4_agents_for_now", edit((ADD, "&\n- agents: unknown for now")), 1, None, lambda d, b: "move it to Open" in d),
+    ("r4_decide_so_far", edit(("- the one habit", "- decide: unknown so far")), 1, None, lambda d, b: "move it to Open" in d),
+    ("r4_output_quoted", edit((OUT, '- output: "unknown": CSV or JSON')), 1, None, lambda d, b: "move it to Open" in d),
+    ("r4_output_stated_dash", edit((OUT, "- output: stated: Unknown - CSV or JSON")), 1, None,
+     lambda d, b: "move it to Open" in d),
+    ("r4_evals_unknown_tails", edit((ADD, "&\n- evals: pass: unknown for now; fail: unknown, ask Sam")), 1, None,
+     lambda d, b: "move it to Open" in d),
+    ("r4_unknown_prose_confirmed", edit((OUT, "- output: Unknown days listed with a count"))
+     + "\n## Confirmed\n\n- Output: Unknown days listed with a count\n", 0, 0,
+     lambda d, b: "- Output: Unknown days listed with a count" in b),
+    ("r4_parked_oos_ai", edit(("- I should probably", "- out of scope: AI")), 2, None,
+     lambda d, b: "ASK: Constraints: Is 'out of scope: AI' a real answer for Constraints?" in d),
+    ("r4_parked_bold_oos_ai", edit(("- I should probably", "- **out of scope:** AI")), 2, None,
+     lambda d, b: "ASK: Constraints: Is 'out of scope: AI'" in d),
+    ("r4_parked_oos_confirmed", edit(("- I should probably", "- out of scope: AI"))
+     + "\n## Confirmed\n\n- Constraints: out of scope: AI\n", 0, 0,
+     lambda d, b: "  - out of scope: AI" in block(b, "- Constraints:", "- Tools:")),
+    ("r4_dark_mode", edit(("- I should probably", "- dark mode, maybe not now")), 0, 0,
+     lambda d, b: "out of scope: dark" not in b and "  - dark mode, maybe not now" in block(b, "- Parking lot:", "- Unknowns:")),
+    ("r4_skip_tags", edit(("- I should probably", "- I think we should skip dietary tags, not now")), 0, 0,
+     lambda d, b: "out of scope: I think" not in b
+     and "  - I think we should skip dietary tags, not now" in block(b, "- Parking lot:", "- Unknowns:")),
+    ("r4_apostrophe_question", edit(("- what should I call", "- Should the button say 'What's next?' or 'Continue'?")), 0, 0,
+     lambda d, b: "unknown: Should the button say 'What's next?' or 'Continue'?" in b),
+    ("r4_closing_quote_question", edit(("- what should I call", '- should the label say "Continue?"')), 0, 0,
+     lambda d, b: '1. ' in b and 'should the label say "Continue?"\n' in b),
+    ("r4_open_tools_bare", edit(("- what should I call", "- tools: ?")), 1, None, lambda d, b: "placeholder, not a question" in d),
+    ("r4_open_evals_tbd", edit(("- what should I call", "- evals: TBD?")), 1, None, lambda d, b: "placeholder, not a question" in d),
+    ("r4_open_agents_unknown", edit(("- what should I call", "- agents: unknown: ?")), 1, None,
+     lambda d, b: "placeholder, not a question" in d),
+    ("r4_open_tools_hole", edit(("- what should I call", "- tools: Should the poll run in <channel>?")), 1, None,
+     lambda d, b: "template hole" in d),
+    ("r4_decided_hole", edit(("- the one habit", "- the form submits on <Enter>")), 2, None,
+     lambda d, b: "ASK: Done: Is 'the form submits on <Enter>' a real answer for Done, or a hole to fill?" in d),
+    ("r4_parked_hole", edit(("- I should probably", "- the form submits on <Enter>")), 2, None,
+     lambda d, b: "or a hole to fill?" in d),
+    ("r4_evals_unlabeled", edit((ADD, "&\n- evals: a poll with 3 choices works and a poll with none errors")), 2, None,
+     lambda d, b: "ASK: Evals: Is there a pass case and a fail case here?" in d),
+    ("r4_bold_tools", edit((ADD, "&\n- **tools:** Slack only")), 0, 0,
+     lambda d, b: "- Tools: Slack only" in b and TOOLS not in b and "Slack" not in block(b, "- Done:", "- Output:")),
+    ("r4_bold_decide", edit(("- the one habit", "- **decide:** whether to keep the bot")), 0, 0,
+     lambda d, b: "  - whether to keep the bot" in block(b, "- Goal:", "- Done:") and DECIDE not in b),
+    ("r4_singular_tool", edit((ADD, "&\n- tool: Slack only")), 0, 0, lambda d, b: "- Tools: Slack only" in b),
+    ("r4_singular_eval", edit((ADD, "&\n- eval: pass: mark today and the streak goes up; fail: miss a day and it still grows")),
+     0, 0, lambda d, b: "- Evals: pass: mark today" in b and EVALS not in b),
 ]
 repro_bad = []
 for name, text, want_dec, want_brief, ok in REPROS:

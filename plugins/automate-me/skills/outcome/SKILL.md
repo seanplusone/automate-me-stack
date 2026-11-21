@@ -25,7 +25,7 @@ If the user brings a `decisions.md` from [shape-idea](../shape-idea/SKILL.md), r
 | A decided `output:` line | Output |
 | An open slot | That slot as `unknown:`, and again under Unknowns |
 | The `constraints:` line | Constraints |
-| A Parked `out of scope:` line, or one that ends in not now, `, later` or `for later` | Constraints as `out of scope:`, and the Parking lot |
+| A Parked line tagged `out of scope:` | Constraints as `out of scope:`, and the Parking lot |
 | A Parked question | Unknowns as `unknown: <question>?`, and the Parking lot |
 | Other Parked lines | Parking lot |
 | The `verify:` line | Verification, plus the evidence sentence |
@@ -33,11 +33,11 @@ If the user brings a `decisions.md` from [shape-idea](../shape-idea/SKILL.md), r
 | Tools, Agents and roles, and Evals when unset | Unknowns |
 | The Confirmed section | The brief's `## Confirmed` block |
 
-A Parked line becomes `out of scope:` when it is tagged `out of scope:`, or ends in not now, `, later` or `for later`. A later inside double quotes does not count. A later in the middle of a line, as in "voters who join later can still vote", keeps its meaning and stays parked. So does a later hedged with maybe, perhaps, probably, possibly, I think, or not sure, a line that ends in `?`, and a line the brief check would not pass as written. A tagged line keeps one `out of scope:`. A parked question stays a question.
+A Parked line always stays in the Parking lot, in its own words. Only an `out of scope:` tag, bold or not, also makes it a Constraints item. "Later", "not now" and a hedge do not, so "dark mode, maybe not now" stays parked. A tagged line keeps one `out of scope:`. A parked question stays a question.
 
 Goal also gets `unknown: What will you decide with the result?` unless a Decided line starts with `decide:`. That line's value goes under Goal instead, with no `decide:` in front, as the template writes it. Tools is `unknown: Which tool must the run use, and what, if anything, must be written first?`. Agents and roles is `unknown: Who does the work, and does anyone else check it?`. Evals is `unknown: What is one case that should pass, and one that should fail?`. A decided `tools:`, `agents:` (or `agents and roles:`), or `evals:` line fills that slot instead. An Open `tools:`, `agents:`, `evals:` or `decide:` question takes the stock question's place. A decided `write first:` line goes under Tools. After the user answers, rewrite each slot in their words.
 
-Some lines start with a brief tag outside its home slot, or with `default`. When such a line is a Decided line that is not a slot, or a Parked line, it is prefixed with `stated:`. The words stay and the tag does not. A slot value is never prefixed. `stated:` never hides an unknown, a trap word, a placeholder or an ask: the decisions check judges every line without it, and fails or asks first.
+Some lines start with a brief tag outside its home slot, or with `default`. When such a line is a Decided line that is not a slot, or a Parked line, it is prefixed with `stated:`. The words and the tag both stay after `stated:`. A slot value is never prefixed. `stated:` never hides an unknown, a trap word, a placeholder or an ask. The decisions check maps the file, runs the brief check on the brief, and judges each prefixed line again without `stated:`. It fails or asks before any brief is shown.
 
 The read-back asks at most 3 questions, in this order: an open goal or done question, then the decide question, then Tools, then Agents and roles, then Evals. Unasked ones stay in Unknowns. Constraints also says report only, and not to run or post, because shape-idea never does. The same traps apply.
 

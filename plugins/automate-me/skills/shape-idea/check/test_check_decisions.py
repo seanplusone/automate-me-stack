@@ -60,6 +60,8 @@ MATCH = "stop matches the file"
 ONE_LINE = "no item longer than one line"
 NEXT = "handoff names outcome"
 WRITING = "handoff says writing pass"
+BRIEF = "the mapped brief passes outcome's brief check"
+DECIDED = "Decided values are decisions"
 
 
 def failed(text):
@@ -144,20 +146,19 @@ rest = swap(HANDOFF, "").replace("# Decisions: water habit\n\n", "", 1)
 expect("sections out of order", "# Decisions: water habit\n\n" + HANDOFF + "\n" + rest, {ORDER})
 expect("lone none in Open is empty", swap("- Do you want a reminder?", "- none"), set())
 expect("a non-slot line is optional", swap("- the one habit is drinking water\n", ""), set())
-PLACE = "slot values are not placeholders"
 for token in ("TBD", "TODO", "n/a", "...", "<the want...>"):
     expect(f"placeholder slot values fail {token}",
-           swap("- goal: a tiny habit tracker on my phone", f"- goal: {token}"), {PLACE})
+           swap("- goal: a tiny habit tracker on my phone", f"- goal: {token}"), {BRIEF})
 expect("placeholder slot values fail ?",
        swap("- goal: a tiny habit tracker on my phone", "- goal: ?"),
-       {PLACE, "slot values are not empty"})
+       {DECIDED, "slot values are not empty"})
 expect("decided value ending in a question fails",
-       swap("- goal: a tiny habit tracker on my phone", "- goal: a tiny habit tracker?"), {PLACE})
+       swap("- goal: a tiny habit tracker on my phone", "- goal: a tiny habit tracker?"), {DECIDED})
 open_tbd = swap("- output: the current streak on the phone\n", "")
 open_tbd = swap("- Do you want a reminder?", "- output: TBD?", open_tbd)
 open_tbd = swap("- stop: done", "- stop: turn-cap", open_tbd)
 open_tbd = swap("- turns: 1", "- turns: 10", open_tbd)
-expect("open placeholder slot fails", open_tbd, {PLACE})
+expect("open placeholder slot fails", open_tbd, {QUESTION})
 expect("question mark in a url or code",
        swap("- Do you want a reminder?",
             "- see https://example.com/a?b=1 and the `flag?` bit?"), set())
@@ -195,9 +196,9 @@ for label in ("pass: mark today and the streak goes up; fail: miss a day and it 
               "Pass: mark today and the streak goes up; Fail: miss a day and it still grows",
               "marking today should pass, and a missed day that keeps the streak should fail"):
     expect(f"evals line passes: {label[:20]}", added(f"- evals: {label}"), set())
-expect("evals with a TBD fail case fails", added("- evals: marking today should pass. TBD should fail."), {EXTRA})
-expect("evals with only a pass case fails", added("- evals: pass: mark today"), {EXTRA})
-expect("tools write first none fails", added("- tools: write first: none"), {EXTRA})
+expect("evals with a TBD fail case fails", added("- evals: marking today should pass. TBD should fail."), {BRIEF})
+expect("evals with only a pass case asks, as check_brief does", added("- evals: pass: mark today"), set())
+expect("tools write first none fails", added("- tools: write first: none"), {BRIEF})
 
 
 def reason(text, check_name):
@@ -205,9 +206,9 @@ def reason(text, check_name):
 
 
 for label, text, check_name in (
-        ("output: unknown", swap("- output: the current streak on the phone", "- output: unknown"), PLACE),
-        ("tools: unknown: X or Y", added("- tools: unknown: waiting to pick Python or Node"), EXTRA),
-        ("agents: unknown yet", added("- agents: unknown yet"), EXTRA)):
+        ("output: unknown", swap("- output: the current streak on the phone", "- output: unknown"), DECIDED),
+        ("tools: unknown: X or Y", added("- tools: unknown: waiting to pick Python or Node"), DECIDED),
+        ("agents: unknown yet", added("- agents: unknown yet"), DECIDED)):
     expect(f"unknown is not ready: {label}", text, {check_name})
     RAN.append(f"unknown message: {label}")
     if "move it to Open as a question" not in reason(text, check_name):
@@ -215,10 +216,10 @@ for label, text, check_name in (
 for label, line in (("verify: it looks good", "- verify: it looks good"), ("done: clean", "- done: clean")):
     slot = line[2:line.index(":")]
     old = next(row for row in GOOD.splitlines() if row.startswith(f"- {slot}:"))
-    expect(f"trap word slot fails: {label}", swap(old, line), {PLACE})
+    expect(f"trap word slot fails: {label}", swap(old, line), {BRIEF})
 for value in ("to be decided", "same as above", "fill in later"):
     expect(f"placeholder phrase fails: {value}",
-           swap("- output: the current streak on the phone", f"- output: {value}"), {PLACE})
+           swap("- output: the current streak on the phone", f"- output: {value}"), {BRIEF})
 expect("a phrase off the fixed list passes to the read-back",
        swap("- output: the current streak on the phone", "- output: not sure yet"), set())
 expect("an autolink is not template text",
@@ -230,8 +231,8 @@ expect("an Open question may end in a URL",
        swap("- Do you want a reminder?", "- should it sync with https://example.org/sync?"), set())
 expect("an Open question may quote a question",
        swap("- Do you want a reminder?", '- should the button say "Done?" or "Mark"?'), set())
-expect("two questions in one Open item still fail",
-       swap("- Do you want a reminder?", "- Do you want a reminder? Or a badge?"), {QUESTION})
+expect("only the end of an Open item matters",
+       swap("- Do you want a reminder?", "- Do you want a reminder? Or a badge?"), set())
 for label, line in (("bold", "- **goal:** a tiny habit tracker on my phone"),
                     ("numbered", "1. goal: a tiny habit tracker on my phone")):
     text = missing_slot("- goal: a tiny habit tracker on my phone\n").replace("## Open", f"{line}\n\n## Open")
@@ -256,7 +257,7 @@ RAN.append("a confirmation lifts the ask")
 if asks(CONFIRMED):
     FAILS.append(f"a confirmation lifts the ask: {asks(CONFIRMED)}")
 expect("a confirmation never lifts a fail",
-       swap("- output: ok", "- output: TBD", CONFIRMED).replace("- Output: ok", "- Output: TBD"), {PLACE})
+       swap("- output: ok", "- output: TBD", CONFIRMED).replace("- Output: ok", "- Output: TBD"), {BRIEF})
 expect("a Confirmed line needs a brief slot", CONFIRMED.replace("- Output: ok", "- output ok"),
        {"confirmed lines name a brief slot"})
 expect("Confirmed before Handoff is out of order",
@@ -305,7 +306,6 @@ expect_code("usage exits 3", [], 3)
 expect_code("help exits 0", ["--help"], 0)
 
 # Round 3, fix 3. Every Decided line is judged by the same rules, whatever its label or prefix.
-READY = "other Decided and Parked lines are ready"
 OUT_LINE = "- output: the current streak on the phone"
 
 
@@ -322,23 +322,23 @@ def parked(line):
 
 
 for label, text, check_name, words in (
-        ("stated italic unknown output", out("stated: *unknown*"), PLACE, "move it to Open as a question"),
-        ("stated TBD output", out("stated: TBD"), PLACE, "placeholder"),
-        ("italic unknown output", out("_unknown_"), PLACE, "move it to Open as a question"),
-        ("quoted unknown output", out('"unknown"'), PLACE, "move it to Open as a question"),
-        ("paren unknown yet agents", added("- agents: (unknown yet)"), EXTRA, "move it to Open as a question"),
-        ("italic unknown tools", added("- tools: *unknown*: Slack or Teams"), EXTRA, "move it to Open as a question"),
-        ("italic unknown eval case", added("- evals: pass: *unknown*; fail: a missed day keeps the streak"), EXTRA,
+        ("stated italic unknown output", out("stated: *unknown*"), DECIDED, "move it to Open as a question"),
+        ("stated TBD output", out("stated: TBD"), BRIEF, "placeholder"),
+        ("italic unknown output", out("_unknown_"), DECIDED, "move it to Open as a question"),
+        ("quoted unknown output", out('"unknown"'), DECIDED, "move it to Open as a question"),
+        ("paren unknown yet agents", added("- agents: (unknown yet)"), DECIDED, "move it to Open as a question"),
+        ("italic unknown tools", added("- tools: *unknown*: Slack or Teams"), DECIDED, "move it to Open as a question"),
+        ("italic unknown eval case", added("- evals: pass: *unknown*; fail: a missed day keeps the streak"), DECIDED,
          "move it to Open as a question"),
         ("extra TBD eval case", added("- evals: pass: mark today and the streak goes up; fail: miss a day and it"
-                                      " still grows; pass: TBD"), EXTRA, "placeholder"),
-        ("other line trap", added("- it should look clean and modern"), READY, "no visible signal"),
-        ("other line unknown", added("- unknown: which browser"), READY, "move it to Open as a question"),
-        ("other line stated unknown", added("- stated: unknown"), READY, "move it to Open as a question"),
-        ("other line stated TBD", added("- stated: TBD"), "no placeholder line", "placeholder"),
-        ("other line question", added("- should a link expire?"), READY, "move it to Open"),
-        ("parked unknown", parked("- unknown"), READY, "move it to Open as a question"),
-        ("parked trap", parked("- clean"), READY, "no visible signal"),
+                                      " still grows; pass: TBD"), BRIEF, "placeholder"),
+        ("other line trap", added("- it should look clean and modern"), BRIEF, "no visible signal"),
+        ("other line unknown", added("- unknown: which browser"), DECIDED, "move it to Open as a question"),
+        ("other line stated unknown", added("- stated: unknown"), DECIDED, "move it to Open as a question"),
+        ("other line stated TBD", added("- stated: TBD"), BRIEF, "placeholder"),
+        ("other line question", added("- should a link expire?"), DECIDED, "move it to Open"),
+        ("parked unknown", parked("- unknown"), BRIEF, "is not 'unknown: <question>?'"),
+        ("parked trap", parked("- clean"), BRIEF, "no visible signal"),
         ("fence under Open", open_q("- Do you want a reminder?\n```\n- sync between phones?\n```"), FENCE, "under Open"),
         ("fence under Parked", parked("- share streaks with friends\n~~~\n- sync between phones, not now\n~~~"), FENCE,
          "under Parked")):
@@ -349,14 +349,10 @@ for label, text, check_name, words in (
 
 expect("fix3 fails: an Open unknown with no question", open_q("- unknown: ?"), {QUESTION})
 expect("fix3 fails: an Open slot unknown with no question", swap(OUT_LINE, "", open_q("- output: unknown: ?")).replace(
-    "- stop: done", "- stop: turn-cap").replace("- turns: 1", "- turns: 10"), {PLACE})
+    "- stop: done", "- stop: turn-cap").replace("- turns: 1", "- turns: 10"), {QUESTION})
 
 GOAL_LINE = "- goal: a tiny habit tracker on my phone"
 for label, text in (
-        ("unknown prose in done", swap("- done: mark today done in under 10 seconds",
-                                       "- done: unknown file types go to an Other folder")),
-        ("Unknown prose in output", out("Unknown senders listed with a count")),
-        ("unknown-file prose in tools", added("- tools: Unknown-file detector script in tools/")),
         ("default goal with a decide line", added("- decide: which habit to keep").replace(
             GOAL_LINE, "- goal: Default to water when I forget which habit")),
         ("single quoted label in an Open question", open_q("- Should the button say 'Vote?' or 'Pick'?")),
@@ -370,7 +366,7 @@ for label, text in (
 expect("fix3 a curly quoted label is not a second question, though the writing check bans curly quotes",
        open_q("- Should the button say \u2018Vote?\u2019 or \u2018Pick\u2019?"), {"prose passes the writing check"})
 expect("fix3 fails: default goal without a decide line",
-       swap(GOAL_LINE, "- goal: Default to water when I forget which habit"), {PLACE})
+       swap(GOAL_LINE, "- goal: Default to water when I forget which habit"), {BRIEF})
 for value in ("maybe", "not sure yet", "ok"):
     RAN.append(f"fix3 decide asks: {value}")
     text = added(f"- decide: {value}")
@@ -381,6 +377,91 @@ for line, want in (("- how: ok", [("Done", "how: ok")]), ("- stated: ok", [("Don
     if asks(added(line)) != want:
         FAILS.append(f"fix3 a prefix does not hide an ask: {line}: {asks(added(line))}")
 expect_exit("fix3 exit 2 on decide: maybe", added("- decide: maybe"), 2)
+
+
+# Round 4. An answer whose first word is "unknown" is never ready. Bare, `unknown:`, or the word and punctuation or a
+# short tail is a question for Open. Any longer value asks whether it is decided. Only the shape decides, not a word list.
+for label, text in (
+        ("tools Unknown for now", added("- tools: Unknown for now")),
+        ("tools unknown, Slack or Teams", added("- tools: unknown, Slack or Teams")),
+        ("output unknown for now", out("unknown for now")),
+        ("agents unknown for now", added("- agents: unknown for now")),
+        ("decide unknown so far", added("- decide: unknown so far")),
+        ("output quoted unknown colon", out('"unknown": CSV or JSON')),
+        ("output stated Unknown dash", out("stated: Unknown - CSV or JSON")),
+        ("tools unknown parens", added("- tools: unknown (Slack or Teams)")),
+        ("tools unknown semicolon", added("- tools: unknown; ask Sam")),
+        ("output unknown at the moment", out("unknown at the moment")),
+        ("evals unknown case bodies", added("- evals: pass: unknown for now; fail: unknown, ask Sam")),
+        ("decided out of scope unknown", added("- out of scope: unknown for now")),
+        ("parked out of scope unknown", parked("- out of scope: unknown for now"))):
+    expect(f"r4 unknown is a question: {label}", text, {DECIDED})
+    RAN.append(f"r4 unknown message: {label}")
+    if "move it to Open as a question" not in reason(text, DECIDED):
+        FAILS.append(f"r4 unknown message: {label}: {reason(text, DECIDED)}")
+
+
+def ask_out(text):
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        code = main(write(text))
+    return code, buf.getvalue()
+
+
+for label, text, slot, value in (
+        ("unknown prose in done", swap("- done: mark today done in under 10 seconds",
+                                       "- done: unknown file types go to an Other folder"),
+         "Done", "unknown file types go to an Other folder"),
+        ("Unknown prose in output", out("Unknown senders listed with a count"), "Output",
+         "Unknown senders listed with a count"),
+        ("unknown-file prose in tools", added("- tools: Unknown-file detector script in tools/"), "Tools",
+         "Unknown-file detector script in tools/")):
+    expect(f"r4 unknown prose asks: {label}", text, set())
+    code, said = ask_out(text)
+    RAN.append(f"r4 unknown prose ask line: {label}")
+    if code != 2 or f"ASK: {slot}: Is '{value}' decided, or still unknown?" not in said:
+        FAILS.append(f"r4 unknown prose ask line: {label}: exit {code}\n{said}")
+    RAN.append(f"r4 a Confirmed line lifts the unknown ask: {label}")
+    if ask_out(text + f"\n## Confirmed\n\n- {slot}: {value}\n")[0] != 0:
+        FAILS.append(f"r4 a Confirmed line lifts the unknown ask: {label}")
+
+expect("r4 an apostrophe inside a quoted label does not end the question",
+       open_q("- Should the button say 'What's next?' or 'Continue'?"), set())
+expect("r4 a question may end inside a closing quote", open_q('- should the label say "Continue?"'), set())
+for label, line in (("tools ?", "- tools: ?"), ("evals TBD?", "- evals: TBD?"), ("agents unknown: ?", "- agents: unknown: ?"),
+                    ("decide ?", "- decide: ?"), ("tools hole", "- tools: Should the poll run in <channel>?"),
+                    ("slot hole", "- verify: should I check it in <app>?")):
+    text = open_q(f"- Do you want a reminder?\n{line}")
+    if line.startswith("- verify:"):
+        text = swap("- verify: mark today once and read the streak\n", "", text).replace(
+            "- stop: done", "- stop: turn-cap").replace("- turns: 1", "- turns: 10")
+    expect(f"r4 an Open item that is a placeholder or holds a hole fails: {label}", text, {QUESTION})
+
+for label, text, want in (
+        ("hole in a non-slot Decided line", added("- the form submits on <Enter>"),
+         [("Done", "the form submits on <Enter>")]),
+        ("hole in a Parked line", parked("- the form submits on <Enter>"),
+         [("Parking lot", "the form submits on <Enter>")]),
+        ("unlabeled evals", added("- evals: a poll with 3 choices works and a poll with none errors"),
+         [("Evals", "a poll with 3 choices works and a poll with none errors")]),
+        ("parked out of scope AI", parked("- out of scope: AI"), [("Constraints", "out of scope: AI")]),
+        ("parked bold out of scope AI", parked("- **out of scope:** AI"), [("Constraints", "out of scope: AI")])):
+    expect(f"r4 asks, not fails: {label}", text, set())
+    RAN.append(f"r4 ask value: {label}")
+    if asks(text) != want:
+        FAILS.append(f"r4 ask value: {label}: {asks(text)}")
+
+for label, line in (("bold tools", "- **tools:** Slack only"), ("bold decide", "- **decide:** whether to keep the bot"),
+                    ("singular tool", "- tool: Slack only"),
+                    ("singular eval", "- eval: pass: a poll with 3 choices; fail: a poll with none")):
+    expect(f"r4 a loose extra label is still that line: {label}", added(line), set())
+    added_twice = added(line + "\n" + line.replace("**", ""))
+    expect(f"r4 a loose extra label counts as a repeat: {label}", added_twice, {EXTRA})
+
+CHECKER = open(SCRIPT, encoding="utf-8").read()
+RAN.append("r4 docstring names the map line")
+if "map:" not in CHECKER.split('"""', 2)[1].split("Fails (exit 1) when:", 1)[1].split("Asks (exit 2", 1)[0]:
+    FAILS.append("r4 docstring names the map line")
 
 
 def expect_unreadable(name, path):

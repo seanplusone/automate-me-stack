@@ -57,10 +57,11 @@ Five slots are required: goal, done, output, verify, and constraints. Each one i
 | Any other firm choice | Decided, its own line |
 | A hedge, or another gap | Open, one line that ends in `?` |
 | For later, or off the idea | Parked, or `none` |
+| A firm exclusion | Decided `out of scope:`, or Parked tagged `out of scope:` |
 
-A hedge is "maybe", "I think", or "not sure". It is not a decision. If a wrong guess would change the shape, it goes to Open. "Later" goes to Parked, even when it is hedged.
+A hedge is "maybe", "I think", or "not sure". It is not a decision. If a wrong guess would change the shape, it goes to Open. "Later" goes to Parked, even when it is hedged. A Parked line stays in outcome's Parking lot. Only an `out of scope:` tag makes it an exclusion.
 
-"Unknown" is not a decision either. A slot, or a `tools:`, `agents:` or `evals:` line, that the user calls unknown goes to Open as a question. The check rejects a Decided value that is `unknown`, `unknown: ...`, or `unknown yet`. Prose that starts with the word, such as "unknown senders get a folder", is fine.
+"Unknown" is not a decision either. A slot, or a `tools:`, `agents:`, `evals:` or `decide:` line, that the user calls unknown goes to Open as a question. The check fails a Decided value that is `unknown` alone, `unknown` and punctuation (`unknown:`, `unknown, Slack or Teams`), or `unknown` and at most three words (`unknown for now`). A longer value that starts with the word, such as "unknown senders get a folder", may be prose. The check asks `Is '<value>' decided, or still unknown?`, and a Confirmed line records a yes.
 
 A Decided `evals:` line names one case that should pass and one that should fail, as `evals: pass: <case>; fail: <case>` or `evals: <case> should pass, <case> should fail`. A Decided `decide:` line says what the user will decide with the result. It goes to Goal in place of outcome's decide question. A Decided `out of scope:` line is a firm exclusion.
 
@@ -145,7 +146,7 @@ Outcome reads the sections like this. This skill does not ask Tools, Agents and 
 | A decided `output:` line | Output |
 | An open slot | That slot as `unknown:`, and again under Unknowns |
 | The `constraints:` line | Constraints |
-| A Parked `out of scope:` line, or one that ends in not now, `, later` or `for later` | Constraints as `out of scope:`, and the Parking lot |
+| A Parked line tagged `out of scope:` | Constraints as `out of scope:`, and the Parking lot |
 | A Parked question | Unknowns as `unknown: <question>?`, and the Parking lot |
 | Other Parked lines | Parking lot |
 | The `verify:` line | Verification |
@@ -157,7 +158,7 @@ The read-back asks at most 3 questions, in this order: an open goal or done ques
 
 Run `python3 "$SKILL_DIR"/check/check_decisions.py <decisions.md>` after you write Handoff. Exit 1 means fix what it flags before you show the file. The checks are listed in `README.md`. A code fence does not hide a slot, and a fence under Decided, Open or Parked fails, because its text would not reach the brief. `writing: pass` does not override a writing failure.
 
-Exit 2 is a break point. Each `ASK: <slot>: Is '<value>' a real answer for <slot>?` line is a value outcome's brief check cannot judge, such as `ok` or `maybe`. Stop and ask the user that yes/no question, one line each. Do not guess the answer. On a yes, add the line under a `## Confirmed` section at the end of the file, as `- <Slot>: <value>`, and run the check again. On a no, replace the value with the user's answer, or move the slot to Open as a question. The handoff is ready only on exit 0.
+Exit 2 is a break point. Each `ASK:` line is a value the checks cannot judge. `ASK: <slot>: Is '<value>' a real answer for <slot>?` comes from outcome's brief check on the mapped brief, for values such as `ok` or `maybe`. `ASK: <slot>: Is '<value>' decided, or still unknown?` is a value that starts with "unknown". Stop and ask the user that yes/no question, one line each. Do not guess the answer. On a yes, add the line under a `## Confirmed` section at the end of the file, as `- <Slot>: <value>`, and run the check again. On a no, replace the value with the user's answer, or move the slot to Open as a question. The handoff is ready only on exit 0.
 
 The placeholder list is outcome's, and it is deliberately narrow: TBD, TODO, n/a, none, "to be decided", "same as above", and a few more, plus template holes such as `<goal>`. A phrase off the list, such as "Por determinar", passes the check. A phrase of only hedge words, such as "not sure yet", is an ASK. The ask and outcome's read-back catch the rest.
 

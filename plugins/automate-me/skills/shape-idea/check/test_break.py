@@ -38,7 +38,6 @@ EXPECT = {
     "18_none_plus_items_open.md": "every open item ends with a question",
     "19_negative_turns.md": "turn count recorded and at most 10",
     "20_turns_unicode_digit.md": "turn count recorded and at most 10",
-    "21_open_multi_question.md": "every open item ends with a question",
     "22_no_map_line.md": "handoff has a map line",
     "23_unknown_section.md": "no item longer than one line",
     "24_decided_slot_via_bold.md": "every slot is decided or open",
