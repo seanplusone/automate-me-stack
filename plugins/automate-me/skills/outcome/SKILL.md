@@ -104,6 +104,8 @@ Skip this when each output has its own prompt. Use it when one template makes a 
 
 Before any output is made, name the item kinds. Check the shared template against each kind. Flag it when the template fits one kind and bans a cue that distinguishes another. Put that flag in Evals.
 
+Prove 1-3 items, one at a time, with the prompt shown, before scaling.
+
 After the batch exists, check the outputs blind. The judge does not see the prompt that made them. Where two items can be confused, include a plausible lookalike. Judge them in the conditions the person will actually use. For a picture, that includes the size on their screen. For anything else, use the matching real condition, such as the printed card, the spoken line, or the page they read. Put this check in Verification.
 
 A score tuned on the same items it scores is a review aid, not a gate. It stays that way until the same check is tried on a fresh held-out set. Do not treat the first score as certain. Say that next to the score.

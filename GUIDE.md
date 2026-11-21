@@ -46,9 +46,10 @@ These need `.claude/project-profile.md`, which `/automate-me:setup` writes. Tick
 
 ## A batch from one template
 
-When one shared prompt will make many outputs, outcome adds three notes to the brief. They apply to any batch, not only pictures. Nothing here needs a particular model or tool.
+When one shared prompt will make many outputs, outcome adds four notes to the brief. They apply to any batch, not only pictures. Nothing here needs a particular model or tool.
 
 - Before spending, name the item kinds. Flag a template that fits one kind and bans a cue that sets another kind apart.
+- Prove 1-3 items, one at a time, with the prompt shown, before scaling.
 - After the batch exists, someone who did not see the prompt checks the outputs, including a lookalike where items can be confused, in the real use conditions. For a picture, that includes the size on the person's screen. For other output, use the matching real condition.
 - A score tuned on the same items is a review aid, not a pass or fail gate, until it is tried on a fresh held-out set. Do not treat that first score as certain.
 
