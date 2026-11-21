@@ -49,7 +49,7 @@ Both widths, on every run.
 
 | Id | What it measures |
 |---|---|
-| G1 | A card is no taller than its content plus its own padding, border, and the child margins. Tolerance is 16px in total, not per side. At 1280 the main column is at least 60 percent of the viewport. |
+| G1 | A card is no taller than its content plus its own padding, border, and the child margins. Tolerance is 16px in total, and the gap must also exceed 3 percent of the card. At 1280 the main column is at least 60 percent of the viewport. |
 | G2 | The gap between groups is at least 2 times the gap inside a group. Design notes often use 3 or 4 times. Raise the ratio for that. |
 | G3 | Containers of one kind share padding within 2px. Kind is the role plus the class list. |
 | G4 | Headings, paragraphs, cards, and buttons in a column share a left edge within 2px. The check uses the spread, not the distance from the middle. A horizontal row counts as one edge, the leftmost item. Right-aligned and centered items are ignored. |
@@ -58,6 +58,8 @@ Both widths, on every run.
 A card is an element with `data-ui` of `card`, `tile`, or `panel`, or a class token `card`, `tile`, `panel`, or one ending in `-card`, `-tile`, or `-panel`. A box with a border, a solid background, or a shadow is also a card, even when the padding sits on its child. A group uses `data-ui="group"` or a class ending in `-group`. The bare class `group` is not a group. The column is `data-ui="column"` or `data-ui="main"`, then the `main` element, then the body.
 
 Text inside a card, a padded box, a list, or a quote is not part of the column's left edge. Open shadow roots are measured. Iframes are skipped and named in the report.
+
+A box with overflow hidden is a frame when its content covers most of the height, or when it holds a code block, a canvas, or a video. A gradient laid over a picture is not a card. A box that only wraps a footer is not a card. Content taken out of flow still counts when it covers the card.
 
 ## Report
 

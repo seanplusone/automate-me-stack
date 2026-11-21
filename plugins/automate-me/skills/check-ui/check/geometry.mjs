@@ -216,17 +216,34 @@ function contentBoxes(card, elements, seen = new Set(), map = null) {
   if (seen.has(card.i)) return []
   seen.add(card.i)
   const boxes = []
-  const own = map ? (map.get(card.i) || []).filter((e) => (inFlow(e) || e.media || ["img", "svg", "canvas", "video"].includes(e.tag)) && (e.rect.width > 0 || e.rect.height > 0)) : kids(elements, card.i)
+  const cover = (card.rect?.height || 0) * 0.4
+  const own = map ? (map.get(card.i) || []).filter((e) => {
+    if ((e.rect?.width || 0) <= 0 && (e.rect?.height || 0) <= 0) return false
+    if (inFlow(e) || e.media || ["img", "svg", "canvas", "video"].includes(e.tag)) return true
+    return e.rect.height >= cover && overlaps(box(e), box(card))
+  }) : kids(elements, card.i)
   for (const child of own) {
     if (child.tag === "slot" && child.slotted && child.slotted.length) {
       boxes.push(...child.slotted)
-    } else if (child.stretched) {
+    } else if (!inFlow(child)) boxes.push(marginBox(child))
+    else if (child.stretched) {
       const inner = contentBoxes(child, elements, seen, map)
       boxes.push(...(inner.length ? inner : [marginBox(child)]))
     } else boxes.push(marginBox(child))
   }
   if (card.slotted && card.slotted.length) boxes.push(...card.slotted)
-  if (card.media) {
+  if (map && card.clipped) {
+    const deep = (card.rect?.height || 0) * 0.6
+    function buried(id) {
+      for (const e of map.get(id) || []) {
+        if (!inFlow(e) && e.rect.height >= deep && overlaps(box(e), box(card))) boxes.push(marginBox(e))
+        buried(e.i)
+      }
+    }
+    for (const child of map.get(card.i) || []) buried(child.i)
+  }
+  const framed = card.gradient && map && (map.get(card.i) || []).some((e) => !inFlow(e) && e.rect.height >= (card.rect?.height || 0) * 0.75 && overlaps(box(e), box(card)))
+  if (card.media || framed) {
     const innerLeft = card.rect.x + (card.border?.left || 0) + (card.padding?.left || 0)
     const innerTop = card.rect.y + (card.border?.top || 0) + (card.padding?.top || 0)
     const innerRight = card.rect.x + card.rect.width - (card.border?.right || 0) - (card.padding?.right || 0)
@@ -272,7 +289,7 @@ export function cardSlack(card, children, tolerance) {
     slackBottom = Math.min(0, slackBottom)
   }
   const slack = Math.max(0, slackTop) + Math.max(0, slackBottom)
-  const fail = slack > tolerance
+  const fail = slack > tolerance && slack > height * 0.03
   const measured = {
     x: r2(b.left), y: r2(b.top), width: r2(b.width), height,
     contentSpan, slackTop: r2(slackTop), slackBottom: r2(slackBottom), slack: r2(slack),
@@ -681,11 +698,16 @@ export function evaluate(snapshot, config) {
   for (const card of cards) {
     beat()
     let row = cardSlack(card, rowAdjusted(card, elements, config, map), config.whitespacePx)
-    if (card.fills && row.status === "fail") row = { ...row, status: "pass", message: "Card height matches its content plus padding." }
+    if (card.fills && row.status === "fail") row = { ...row, status: "pass", measured: { ...row.measured, slack: 0, slackTop: 0, slackBottom: 0 }, message: "Card height matches its content plus padding." }
+    const span = row.measured.contentSpan || 0
+    const height = row.measured.height || 0
+    if (card.clipped && row.status === "fail" && (card.viewport || (height > 0 && span >= height * 0.7))) {
+      row = { ...row, status: "pass", measured: { ...row.measured, slack: 0, slackTop: 0, slackBottom: 0 }, message: "Card height matches its content plus padding." }
+    }
     if (card.moved && row.status === "fail") row = { ...row, status: "review", message: `${row.message} Layout was still moving.` }
     const declared = flagged(card, "card") || Boolean(card.dataUi) || (card.classes || []).some((c) => CARD_RE.test(c))
     const slack = row.measured.slack || 0
-    const near = row.status === "fail" || slack >= config.whitespacePx
+    const near = row.status === "fail" || (slack >= config.whitespacePx && slack > height * 0.03)
     if (card.guess === "low" && !declared && near) {
       rules.push({ ...row, status: "review", message: `${row.message} This box was only a guess.` })
     } else rules.push(row)

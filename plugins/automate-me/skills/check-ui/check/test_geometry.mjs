@@ -67,6 +67,10 @@ check("fitted card passes", cardSlack(fitted, [child], 4).status === "pass")
 check("tall card fails", cardSlack({ ...fitted, rect: { ...fitted.rect, height: 220 } }, [child], 4).status === "fail")
 check("slack equal to tolerance passes", cardSlack({ ...fitted, rect: { ...fitted.rect, height: 94 } }, [child], 4).status === "pass")
 check("slack over tolerance fails", cardSlack({ ...fitted, rect: { ...fitted.rect, height: 130 } }, [child], 4).status === "fail")
+check(
+  "small slack on a tall card passes",
+  cardSlack({ ...fitted, rect: { ...fitted.rect, height: 2000 } }, [{ top: 117, bottom: 2060 }], 16).status === "pass",
+)
 check("empty tall card fails", cardSlack({ ...fitted, rect: { ...fitted.rect, height: 220 } }, [], 4).status === "fail")
 check(
   "empty card that is only padding passes",
