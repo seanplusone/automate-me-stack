@@ -30,7 +30,9 @@ override a writing failure.
 Fails when:
 - the file has no `# Decisions` title;
 - a section is missing or repeated, or the four sections are out of order;
-- an Open item does not end with exactly one `?`;
+- an Open item does not end with one `?` outside of a URL or inline code;
+- a slot value is template text (`<...>`), a placeholder (TBD, TODO, n/a, none, `...`, `?`), or a Decided value that ends in `?`;
+- a Decided `tools:`, `agents:`, or `evals:` line is empty, a placeholder, a question, repeated, or an `evals:` line with no pass case and no fail case;
 - a slot is missing from both Decided and Open, is repeated, is in both, or has an empty value;
 - stop is missing, repeated, or not one of done, turn-cap, open-cap;
 - stop does not match the file (done, open-cap, or turn-cap rules above);
@@ -53,6 +55,9 @@ import tempfile
 sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "shared")))
 from check_writing import check_writing  # noqa: E402
 
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "outcome", "check")))
+from check_brief import is_fail, is_pass, is_placeholder  # noqa: E402
+
 SECTIONS = ["Decided", "Open", "Parked", "Handoff"]
 HEAD = re.compile(r"^##\s+(Decided|Open|Parked|Handoff)\s*$", re.I)
 BULLET = re.compile(r"^[-*]\s+(.*)$")
@@ -66,8 +71,14 @@ SLOTS = ["goal", "done", "output", "verify", "constraints"]
 # `Output : value` and `output： value` are the output slot. `goalpost:` is not goal.
 SLOT_HEAD = re.compile(r"^(goal|done|output|verify|constraints)\s*[:\uff1a]\s*(.*)$", re.I)
 ASCII_DIGITS = re.compile(r"^[0-9]+$")
-FENCE = re.compile(r"^\s*```")
+# A fence is ``` or ~~~, three or more, with optional info. A closer matches the
+# innermost fence's character and length and has no info. A different length or
+# the other character opens a nested fence. Text inside any of them is hidden.
+FENCE_LINE = re.compile(r"^(\s*)(`{3,}|~{3,})(.*)$")
 HANDOFF_FIELD = re.compile(r"^(next|stop|turns|writing|map)\s*[:\uff1a]\s*(.*)$", re.I)
+EXTRA_HEAD = re.compile(r"^(tools|agents|evals)\s*[:\uff1a]\s*(.*)$", re.I)
+TEMPLATE = re.compile(r"<[^>\n]*>")
+URL_OR_CODE = re.compile(r"`[^`]*`|https?://\S+")
 
 
 def canon(name):
@@ -88,17 +99,56 @@ def real_items(items):
 def split_fences(text):
     """Returns (visible, hidden, unclosed). Fence markers themselves are dropped.
 
+    ``` and ~~~ both count, at any length of 3 or more. A fence inside a fence
+    is nested: it hides its own text and does not close the outer fence unless
+    it is the same character, the same length, and has no info string.
     Headings and slots inside a fence are hidden, so they do not count as structure.
     Hidden prose is still returned so the writing check can see it.
     """
-    visible, hidden = [], []
-    fenced = False
+    visible, hidden, stack = [], [], []
     for line in text.splitlines():
-        if FENCE.match(line):
-            fenced = not fenced
+        match = FENCE_LINE.match(line)
+        if match:
+            mark = match.group(2)
+            char, length, info = mark[0], len(mark), match.group(3).strip()
+            if stack and char == stack[-1][0] and length == stack[-1][1] and info == "":
+                stack.pop()
+            else:
+                stack.append((char, length))
             continue
-        (hidden if fenced else visible).append(line)
-    return "\n".join(visible), "\n".join(hidden), fenced
+        (hidden if stack else visible).append(line)
+    return "\n".join(visible), "\n".join(hidden), bool(stack)
+
+
+def placeholder_value(value):
+    """True when the value is template text or on check_brief's placeholder list.
+
+    The list is check_brief.PLACEHOLDER, applied with is_placeholder, so both
+    checkers reject the same tokens. A trailing ? is stripped once, so an Open
+    `TBD?` is still a placeholder.
+    """
+    text = (value or "").strip()
+    if not text:
+        return False
+    if TEMPLATE.search(text):
+        return True
+    if is_placeholder(text, "Goal"):
+        return True
+    core = text[:-1].rstrip() if text.endswith("?") else text
+    return core != text and is_placeholder(core, "Goal")
+
+
+def extra_of(item):
+    """(name, value) when the line is tools:, agents:, or evals:, else None."""
+    match = EXTRA_HEAD.match(item.strip())
+    if not match:
+        return None
+    return match.group(1).lower(), match.group(2).strip()
+
+
+def question_body(item):
+    """The line with inline code and URLs removed, so a ? inside them does not count."""
+    return URL_OR_CODE.sub("", item)
 
 
 def parse(text):
@@ -207,7 +257,8 @@ def check(text):
     opens = real_items(sections.get("Open", []))
     q_fails = []
     for item in opens:
-        if item.count("?") != 1 or not item.endswith("?"):
+        body = question_body(item)
+        if not item.endswith("?") or body.count("?") != 1:
             q_fails.append(f"open item needs one question at the end: {item!r}")
     add("every open item ends with a question", q_fails)
     add("every slot is decided or open",
@@ -233,6 +284,37 @@ def check(text):
     add("no duplicate slot", dup_fails)
     add("a slot is not in Decided and Open", both_fails)
     add("slot values are not empty", empty_fails)
+
+    ph_fails = []
+    for slot in SLOTS:
+        for item in (row for row in decided if slot_of(row) == slot):
+            value = slot_value(item) or ""
+            if placeholder_value(value):
+                ph_fails.append(f"slot {slot} is a placeholder: {value!r}")
+            elif value.strip().endswith("?"):
+                ph_fails.append(f"slot {slot} is a question, not a decision: {value!r}")
+        for item in (row for row in opens if slot_of(row) == slot):
+            value = slot_value(item) or ""
+            if placeholder_value(value):
+                ph_fails.append(f"slot {slot} is a placeholder: {value!r}")
+    add("slot values are not placeholders", ph_fails)
+
+    extra_fails = []
+    seen_extra = {}
+    for item in decided:
+        got = extra_of(item)
+        if not got:
+            continue
+        name, value = got
+        if name in seen_extra:
+            extra_fails.append(f"{name}: is on more than one Decided line")
+        seen_extra[name] = value
+        if not value or placeholder_value(value) or value.endswith("?"):
+            extra_fails.append(f"{name}: needs a real value, not a placeholder or a question")
+            continue
+        if name == "evals" and not (is_pass(value) and is_fail(value)):
+            extra_fails.append("evals: needs a pass case and a fail case, in the user's words")
+    add("tools, agents, and evals lines are usable", extra_fails)
 
     handoff = sections.get("Handoff", [])
     handoff_ready = counts.get("Handoff") == 1

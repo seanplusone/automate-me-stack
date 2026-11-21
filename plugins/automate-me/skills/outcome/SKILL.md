@@ -13,22 +13,30 @@ Voice is only how the text arrives. The skill works on the transcript, typos and
 
 ## A decisions file
 
-If the user brings a `decisions.md` from [shape-idea](../shape-idea/SKILL.md), map that file. Do not sort it as a ramble. Shape-idea does not ask which tool to use, who does the work, or which two cases prove it. Those three stay `unknown:` until the user answers. Do not invent them. Run `python3 "$SKILL_DIR"/check/check_brief.py` on the brief.
+If the user brings a `decisions.md` from [shape-idea](../shape-idea/SKILL.md), run `python3 "$SKILL_DIR"/../shape-idea/check/check_decisions.py` on that file first. If it fails, stop and show the failures. Do not map a file the check rejects. Then map it. Do not sort it as a ramble. Shape-idea does not ask which tool to use, who does the work, or which two cases prove it. Those three stay `unknown:` until the user answers, unless a Decided line already names that slot. Do not invent them. Run `python3 "$SKILL_DIR"/check/check_brief.py` on the brief.
 
 | In the decisions file | In the brief |
 |---|---|
 | The `goal:` line | Goal |
 | The `done:` line | Done |
-| Other Decided lines | Done, as further criteria the user stated |
+| Other Decided lines | Done |
 | A decided `output:` line | Output |
-| An open `output:` line | Output as `unknown:`, and again under Unknowns |
+| An open slot | That slot as `unknown:`, and again under Unknowns |
 | The `constraints:` line | Constraints |
-| A Parked line that says not now or later | Constraints as `out of scope:`, and Parking lot |
+| A Parked line that says not now, or a standalone later | Constraints as `out of scope:`, and the Parking lot |
+| A Parked question | Unknowns as `unknown: <question>?`, and the Parking lot |
 | Other Parked lines | Parking lot |
 | The `verify:` line | Verification, plus the evidence sentence |
-| Each other Open line | Unknowns |
+| A decided `tools:`, `agents:`, or `evals:` line | That slot, in the user's words |
+| Tools, Agents and roles, and Evals when unset | Unknowns |
 
-Goal also gets `unknown: What will you decide with the result?` unless the file already says that. Tools is `unknown: Which tool must the run use, and what, if anything, must be written first?`. Agents and roles is `unknown: Who does the work, and does anyone else check it?`. Evals is `unknown: What is one case that should pass, and one that should fail?`. Ask those three first. After the user answers, rewrite each slot in their words. A `write first:` line appears only then. Constraints also says report only, and not to run or post, because shape-idea never does. Ask at most 3 questions. The same traps apply.
+`out of scope:` is only for a Parked statement that says not now, or later on its own. It is not for "no later than", a line that ends in `?`, or a line hedged with maybe or not sure. A parked question stays a question.
+
+Goal also gets `unknown: What will you decide with the result?` only when no Decided line already says decide or decision. Tools is `unknown: Which tool must the run use, and what, if anything, must be written first?`. Agents and roles is `unknown: Who does the work, and does anyone else check it?`. Evals is `unknown: What is one case that should pass, and one that should fail?`. A decided `tools:`, `agents:`, or `evals:` line fills that slot instead. After the user answers, rewrite each slot in their words. A `write first:` line appears only then.
+
+Do not add the decide question, "Report only", or the evidence sentence beside a placeholder. A placeholder slot stays a placeholder so the brief check still flags it. A line whose first words would trip a brief tag is prefixed with `stated:` so the words stay and the tag does not.
+
+The read-back asks at most 3 questions, in this order: an open goal or done question, then the decide question, then Tools, then Agents and roles, then Evals. Unasked ones stay in Unknowns. Constraints also says report only, and not to run or post, because shape-idea never does. The same traps apply.
 
 ## When to offer it
 

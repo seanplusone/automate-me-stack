@@ -113,15 +113,13 @@ Record that turn as `turns: <n>` in Handoff. The number is from 1 through 10.
 
 The five slots do not count toward open-cap. A slot label still counts when a space sits before the colon, or the colon is the full-width one. `Output : still open?` is the output slot.
 
-On turn 1, Open may hold at most 5 lines that are not slots. Park the rest, each with its question. Do not stop on turn 1 for the cap. A parked gap is not dropped. Outcome reads Parked as the Parking lot. A finished file that still has more than 5 of those lines on turn 1 fails the check.
+On turn 1, Open may hold at most 5 lines that are not slots. Park the rest, each with its question. Do not stop on turn 1 for the cap. A parked gap is not dropped. Outcome reads Parked as the Parking lot.
 
 Every part of the user's message lands in Decided, Open, or Parked. A hedge stays Open or Parked. Do not write it as a firm line.
 
 ## 4. Hand off
 
-A finished file has a Handoff section. A run without one fails the check.
-
-`stop` is the first match from the list above. `next` is one line, `/automate-me:outcome`. A second next line, or a bold twin such as `**stop:**`, fails the check. Case does not matter: `DONE` and `PASS` are the same as `done` and `pass`. The map line in the template is required.
+A finished file has a Handoff section. `stop` is the first match from the list above. `next` is `/automate-me:outcome`. The map line in the template is required. Case does not matter.
 
 Before you write Handoff, run the repo's shared writing check. From this skill that script is `../shared/check_writing.py`. Run `python3 "$SKILL_DIR"/../shared/check_writing.py <decisions.md>`. Fix the lines it flags. Do not change the user's numbers or names. If a fix changes a line, run the check again.
 
@@ -131,23 +129,26 @@ When the writing check passes, add `writing: pass` under Handoff.
 
 Tell the user the next step in one line. They type `/automate-me:outcome` and give it `decisions.md`. Do not run outcome yourself.
 
-Outcome reads the sections like this.
+Outcome reads the sections like this. This skill does not ask Tools, Agents and roles, or Evals, and it does not invent them.
 
-| Section | Lands in the brief as |
+| In the decisions file | In the brief |
 |---|---|
 | The `goal:` line | Goal |
 | The `done:` line | Done |
-| The `output:` line | Output |
+| Other Decided lines | Done |
+| A decided `output:` line | Output |
+| An open slot | That slot as `unknown:`, and again under Unknowns |
 | The `constraints:` line | Constraints |
+| A Parked line that says not now, or a standalone later | Constraints as `out of scope:`, and the Parking lot |
+| A Parked question | Unknowns as `unknown: <question>?`, and the Parking lot |
+| Other Parked lines | Parking lot |
 | The `verify:` line | Verification |
-| Open | Unknowns |
-| Parked | Parking lot |
+| A decided `tools:`, `agents:`, or `evals:` line | That slot, in the user's words |
+| Tools, Agents and roles, and Evals when unset | Unknowns |
 
-Tools, Agents and roles, and Evals are not slots here. Outcome writes each as an unknown and asks. It does not invent them.
+The read-back asks at most 3 questions, in this order: an open goal or done question, then the decide question, then Tools, then Agents and roles, then Evals. Unasked ones stay in Unknowns.
 
-Run `python3 "$SKILL_DIR"/check/check_decisions.py <decisions.md>` after you write Handoff. Fix what it flags before you show the file. It checks the shape, and it runs the shared writing check on the file. A `writing: pass` line does not override a writing failure. The four sections are present once, in order. Every Open item ends with one question mark. Each slot is one Decided line or one Open line, with a value. `stop` matches the file. `turns` is a whole number from 1 through 10. No item runs past one line. Handoff names outcome.
-
-A code fence does not hide a heading, a title, or a slot. An unclosed fence fails the check. Prose inside a fence is still part of the writing check.
+Run `python3 "$SKILL_DIR"/check/check_decisions.py <decisions.md>` after you write Handoff. Fix what it flags before you show the file. The checks are listed in `README.md`. A code fence does not hide a slot. `writing: pass` does not override a writing failure.
 
 The reply follows the [writing rules](../shared/writing-rules.md). Inside `decisions.md`, keep the user's numbers and names, and rewrite any line the writing check flags.
 
