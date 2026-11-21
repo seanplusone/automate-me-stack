@@ -373,6 +373,33 @@ os.link(
 expect("a hard link from another repo is refused", run_all(
     brief, tempfile.mkdtemp(), search_path=stubs, cwd=os.path.join(other, "app"), sandbox="bwrap",
 ), 2)
+nested_repo = tempfile.mkdtemp()
+os.makedirs(os.path.join(nested_repo, "tests", "cases", "k"))
+os.makedirs(os.path.join(nested_repo, "plain"))
+open(os.path.join(nested_repo, "tests", "cases", "k", "key.md"), "w").write("SECRET-NESTED\n")
+os.link(
+    os.path.join(nested_repo, "tests", "cases", "k", "key.md"),
+    os.path.join(nested_repo, "plain", "h"),
+)
+expect("a nested cases hard link in a plain cwd is refused", run_all(
+    brief, tempfile.mkdtemp(), search_path=stubs, cwd=os.path.join(nested_repo, "plain"), sandbox="bwrap",
+), 2)
+expect("a missing cwd is refused", run_all(
+    brief, tempfile.mkdtemp(), search_path=stubs, cwd=os.path.join(tempfile.mkdtemp(), "missing"), sandbox="bwrap",
+), 2)
+once = tempfile.mkdtemp()
+once_case = os.path.join(once, "cases", "item")
+once_head = os.path.join(once_case, "head")
+os.makedirs(once_head)
+open(os.path.join(once_case, "key.md"), "w").write("Planted: yes\n")
+open(os.path.join(once_head, "cap.py"), "w").write("x\n")
+open(os.path.join(once_head, "a.txt"), "w").write("same\n")
+os.link(os.path.join(once_head, "a.txt"), os.path.join(once_head, "b.txt"))
+once_err = io.StringIO()
+with redirect_stderr(once_err):
+    agent_cwd(once_head)
+once_notes = [line for line in once_err.getvalue().splitlines() if "skipped hard link" in line]
+expect("a hard link is noted once", len(once_notes), 1)
 keep_dir = tempfile.mkdtemp()
 keep_target = os.path.join(keep_dir, "target")
 os.makedirs(keep_target)

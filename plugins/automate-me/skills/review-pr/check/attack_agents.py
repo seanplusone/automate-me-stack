@@ -165,68 +165,9 @@ class _Refuse(Exception):
     """A run that must stop before any agent starts."""
 
 
-def _key_inode(path):
-    try:
-        info = os.stat(path)
-    except OSError:
-        return None
-    if not stat.S_ISREG(info.st_mode):
-        return None
-    return (info.st_dev, info.st_ino)
-
-
-def _key_ids_under(start):
-    """Inodes of every key.md under start, including dot directories and links."""
-    ids = set()
-    seen = set()
-    if not os.path.isdir(start):
-        return ids
-    for dirpath, dirnames, filenames in os.walk(start, followlinks=True, onerror=lambda _err: None):
-        try:
-            real = os.path.realpath(dirpath)
-        except OSError:
-            dirnames[:] = []
-            continue
-        if real in seen:
-            dirnames[:] = []
-            continue
-        seen.add(real)
-        if "key.md" in filenames:
-            ident = _key_inode(os.path.join(dirpath, "key.md"))
-            if ident:
-                ids.add(ident)
-    return ids
-
-
-def _cases_key_ids(start):
-    """Inodes of every key.md under a cases tree on this directory or a parent."""
-    ids = set()
-    try:
-        current = os.path.realpath(start)
-    except OSError:
-        current = os.path.abspath(start)
-    while True:
-        ident = _key_inode(os.path.join(current, "key.md"))
-        if ident:
-            ids.add(ident)
-        bases = []
-        if os.path.basename(current) == "cases":
-            bases.append(current)
-        nested = os.path.join(current, "cases")
-        if os.path.isdir(nested) and not os.path.islink(nested):
-            bases.append(nested)
-        for base in bases:
-            ids |= _key_ids_under(base)
-        parent = os.path.dirname(current)
-        if parent == current:
-            break
-        current = parent
-    return ids
-
-
-def _hardlinked_key(cwd, ids):
-    """True when a regular file here is a second link to a known key.md."""
-    if not ids or not os.path.isdir(cwd):
+def _extra_link(cwd):
+    """True when a regular file here has more than one link."""
+    if not os.path.isdir(cwd):
         return False
     seen = set()
     for dirpath, dirnames, filenames in os.walk(cwd, followlinks=True, onerror=lambda _err: None):
@@ -247,7 +188,7 @@ def _hardlinked_key(cwd, ids):
                 info = os.stat(path)
             except OSError:
                 continue
-            if stat.S_ISREG(info.st_mode) and info.st_nlink > 1 and (info.st_dev, info.st_ino) in ids:
+            if stat.S_ISREG(info.st_mode) and info.st_nlink > 1:
                 return True
     return False
 
@@ -284,8 +225,10 @@ def _remove_tree(path):
         shutil.rmtree(path, ignore_errors=True)
 
 
-def _copy_tree(src, dst, root, skipped):
+def _copy_tree(src, dst, root, skipped, seen=None):
     """Copy a tree. A symlink that points outside the tree is skipped."""
+    if seen is None:
+        seen = set()
     os.makedirs(dst, exist_ok=True)
     try:
         names = os.listdir(src)
@@ -302,14 +245,17 @@ def _copy_tree(src, dst, root, skipped):
             os.symlink(os.readlink(source), target)
             continue
         if os.path.isdir(source):
-            _copy_tree(source, target, root, skipped)
+            _copy_tree(source, target, root, skipped, seen)
             continue
         try:
             info = os.lstat(source)
         except OSError:
             continue
         if stat.S_ISREG(info.st_mode) and info.st_nlink > 1:
-            skipped.append(source)
+            ident = (info.st_dev, info.st_ino)
+            if ident not in seen:
+                seen.add(ident)
+                skipped.append(source)
             continue
         shutil.copy2(source, target, follow_symlinks=False)
 
@@ -358,9 +304,8 @@ def agent_cwd(cwd):
         raise _Refuse("error: the cwd could not be resolved. Refusing to run.")
     cases = _copyable_cases(cwd)
     if not cases:
-        ids = _key_ids_under(cwd) | _cases_key_ids(cwd)
-        if _hardlinked_key(cwd, ids):
-            raise _Refuse("error: a hard link to a key.md is inside this directory. Refusing to run.")
+        if _extra_link(cwd):
+            raise _Refuse("error: a file with more than one link is inside this directory. Refusing to run.")
         return cwd, False
     temp = tempfile.mkdtemp(prefix="attack-cwd-%s-" % os.getpid())
     single = len(cases) == 1
@@ -1011,10 +956,17 @@ def run_all(brief_path, out_dir, search_path=None, runner=None, timeout=DEFAULT_
         print("brief: missing file", file=sys.stderr)
         return 2
     brief = contract_bytes() + b"\n" + brief_body
+    raw = cwd if cwd is not None else os.getcwd()
+    if not os.path.exists(raw):
+        print("error: the cwd does not exist. Refusing to run.", file=sys.stderr)
+        return 2
     try:
-        origin = os.path.realpath(cwd if cwd is not None else os.getcwd())
+        origin = os.path.realpath(raw)
     except OSError:
         print("error: the cwd could not be resolved. Refusing to run.", file=sys.stderr)
+        return 2
+    if not os.path.isdir(origin):
+        print("error: the cwd does not exist. Refusing to run.", file=sys.stderr)
         return 2
     chosen = resolve_sandbox(sandbox)
     if chosen == "bad":
