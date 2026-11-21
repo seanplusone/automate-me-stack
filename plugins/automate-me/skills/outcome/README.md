@@ -134,7 +134,7 @@ A term (in Slot, Any, Unknown and Parking lines) matches at the start of a word.
 | `Slot: <Label> \| <term> \| ...` | that slot's items, joined, hold every term. |
 | `Any: <id> \| <term> \| ...` | the brief holds every term, in any slot. Use it when the slot is a fair judgment call, such as where a tool is named. |
 | `Unknown: <id> \| <term> \| ...` | one unknown marker or one numbered question holds every term. The gap was asked, not guessed. |
-| `Forbidden: <id> \| <regex>` | the regex (Python, case-insensitive) matches nowhere in the brief once every sentence that ends in `?` is removed. A match means the brief invented a fact. |
+| `Forbidden: <id> \| <regex>` | the regex (Python, case-insensitive) matches nowhere in the brief once every sentence that ends in `?` is removed. A match means the brief invented a fact. A pattern that starts with `(?q)` is checked on the whole brief, questions included. |
 | `Parking: <id> \| <term> \| ...` | the Parking lot slot holds every term. |
 
 Write one `Fact:` line per fact, so a miss names the fact. When a blind run misses a key item, decide whether the key was too literal or the skill missed. Loosen only the first kind. Record each change and its reason in `runs/score.md` under "Key changes after blind run". Keep a forbidden regex narrow enough that a correct brief cannot trip it, and give it a case where the regex fires in `runs/run-2` or in `check/test_score_case.py`.
@@ -169,7 +169,8 @@ outcome/
       key.md                        the brief must flag that the template bans the order cue
       runs/run-1/brief.md           hand-written, passes
       runs/run-2/brief.md           passes the shape check, misses the risk and guesses a count
-      runs/score.md                 why run-2 fails, scorer outputs
+      runs/run-3/brief.md           passes the shape check; denies the ban, invents a count, and skips the blind check
+      runs/score.md                 why run-2 and run-3 fail, scorer outputs
 ```
 
 ## Run the checks

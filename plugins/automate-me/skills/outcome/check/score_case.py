@@ -18,6 +18,8 @@ A term of several words matches as a phrase.
                                   every term. The gap was asked, not guessed.
   Forbidden: <id> | <regex>       the regex matches nowhere in the brief once every sentence that ends
                                   in `?` is removed. A match means the brief invented a fact.
+                                  A pattern that starts with `(?q)` is checked on the whole brief,
+                                  including questions.
   Parking: <id> | <term> ...      the Parking lot slot holds every term.
 
 Prints one line per key item (`found`, `clear` for a forbidden guess not made, or `MISSED`), then `PASS n/m` or `FAIL n/m`. Exits 1 on any miss.
@@ -111,7 +113,11 @@ def score(key_path, brief_path):
             name = f"unknown {parts[0]}"
             result = ("MISSED no unknown or question names: " + ", ".join(best)) if best else "found"
         elif kind == "Forbidden":
-            m = re.search(parts[1], without_questions(text), re.I)
+            pattern = parts[1]
+            hay = without_questions(text)
+            if pattern.startswith("(?q)"):
+                pattern, hay = pattern[4:], text
+            m = re.search(pattern, hay, re.I)
             name = f"forbidden {parts[0]}"
             result = f"MISSED guessed a fact: {m.group(0)!r}" if m else "clear"
         else:
