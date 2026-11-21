@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Slot</title>
+</head>
+<body style="font:16px/24px Arial,sans-serif">
+
+<main style="padding:16px">
+  <h1 style="margin:0 0 12px">Notes</h1>
+  <my-note></my-note>
+</main>
+<script>
+customElements.define("my-note", class extends HTMLElement {
+  constructor() {
+    super()
+    const root = this.attachShadow({ mode: "open" })
+    root.innerHTML = '<article style="display:block;padding:16px;border:1px solid #ccc;box-sizing:border-box"><slot></slot></article>'
+  }
+  connectedCallback() {
+    this.innerHTML = '<h2 style="margin:0 0 8px">Lake</h2><p style="margin:0">The path around the lake is marked with posts and a small bridge.</p>'
+  }
+})
+</script>
+
+</body>
+</html>

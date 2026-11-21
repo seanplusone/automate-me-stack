@@ -1,0 +1,5 @@
+{
+  "fail": "inconclusive",
+  "timeout": 4000,
+  "maxSeconds": 12
+}

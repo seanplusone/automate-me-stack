@@ -3,4 +3,5 @@
 .runs/
 __pycache__/
 out/
+node_modules/
 plugins/automate-me/skills/write-edd/cases/order-sync/repo/.git/

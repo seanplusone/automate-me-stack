@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pricing</title>
+<link rel="stylesheet" href="../base.css">
+<style>
+  .plans { flex-direction: row; flex-wrap: wrap; align-items: flex-start; }
+  .plans .card { flex: 1 1 240px; max-width: 100%; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Pricing</h1>
+  <p>Three plans for a small shop.</p>
+  <div class="stack">
+    <section class="group plans" data-ui="group">
+      <article class="card" data-ui="card">
+        <h2>Free</h2>
+        <p>One list for one person.</p>
+      </article>
+      <article class="card" data-ui="card" id="tall-plan" style="min-height: 220px">
+        <h2>Plus</h2>
+        <p>Shared lists for a family.</p>
+      </article>
+      <article class="card" data-ui="card">
+        <h2>Team</h2>
+        <p>Lists for a whole office.</p>
+      </article>
+    </section>
+    <section class="group" data-ui="group">
+      <article class="card" data-ui="card">
+        <h2>Monthly</h2>
+        <p>Pay each month.</p>
+      </article>
+      <article class="card" data-ui="card">
+        <h2>Yearly</h2>
+        <p>Pay once a year.</p>
+      </article>
+    </section>
+  </div>
+  <button type="button">Choose a plan</button>
+</main>
+</body>
+</html>

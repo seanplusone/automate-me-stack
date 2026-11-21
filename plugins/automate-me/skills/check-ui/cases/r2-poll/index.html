@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Live</title>
+
+</head>
+<body style="font:16px/24px Arial,sans-serif">
+
+<main>
+  <h1>Live</h1>
+  <p id="count">0</p>
+  <button type="button">Save</button>
+</main>
+<script>
+setInterval(function () {
+  fetch("missing-bit.html").catch(function () {})
+  var node = document.getElementById("count")
+  if (node) node.textContent = String(Number(node.textContent) + 1)
+}, 300)
+</script>
+
+</body>
+</html>

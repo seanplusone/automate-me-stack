@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Slotted</title>
+</head>
+<body style="font:16px/24px Arial,sans-serif">
+
+<main style="padding:16px">
+  <h1 style="margin:0 0 12px">Notes</h1>
+  <p style="margin:0 0 12px">The note is slotted into the card and should fill it.</p>
+  <my-note></my-note>
+</main>
+<script>
+customElements.define("my-note", class extends HTMLElement {
+  constructor() {
+    super()
+    const root = this.attachShadow({ mode: "open" })
+    root.innerHTML = '<article style="display:block;padding:16px;border:1px solid #ccc;box-sizing:border-box"><slot></slot></article>'
+  }
+  connectedCallback() {
+    this.innerHTML = '<h2 data-ui="heading" style="margin:0 0 8px">Lake</h2><p style="margin:0">The path around the lake is marked with posts and a small bridge.</p>'
+  }
+})
+</script>
+
+</body>
+</html>

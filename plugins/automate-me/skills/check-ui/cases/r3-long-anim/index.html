@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Slide</title>
+</head>
+<body style="font:16px/24px Arial,sans-serif">
+
+<main style="padding:16px">
+  <h1 style="margin:0 0 12px">Slide</h1>
+  <p style="margin:0 0 12px">The button keeps moving.</p>
+  <button type="button">Buy</button>
+</main>
+<style>
+@keyframes slide { from { transform: translateX(0) } to { transform: translateX(80px) } }
+button { animation: slide 8s linear infinite }
+</style>
+
+</body>
+</html>
