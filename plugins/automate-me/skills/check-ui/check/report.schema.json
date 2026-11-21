@@ -8,6 +8,7 @@
     "verdict": { "enum": ["pass", "fail", "review", "inconclusive"] },
     "reason": { "type": "string" },
     "warnings": { "type": "array", "items": { "type": "string" } },
+    "shots": { "type": "string" },
     "review": {
       "type": "array",
       "items": {

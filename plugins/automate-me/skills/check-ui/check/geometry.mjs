@@ -206,7 +206,13 @@ function marginBox(el) {
   return { left: b.left, right: b.right, top: b.top - top, bottom: b.bottom + bottom, width: b.width, height: b.height + top + bottom }
 }
 
+let scoreDeadline = 0
+function beat() {
+  if (scoreDeadline && Date.now() > scoreDeadline) throw new Error("timed out while scoring the page")
+}
+
 function contentBoxes(card, elements, seen = new Set(), map = null) {
+  if ((seen.size & 63) === 0) beat()
   if (seen.has(card.i)) return []
   seen.add(card.i)
   const boxes = []
@@ -219,6 +225,7 @@ function contentBoxes(card, elements, seen = new Set(), map = null) {
       boxes.push(...(inner.length ? inner : [marginBox(child)]))
     } else boxes.push(marginBox(child))
   }
+  if (card.slotted && card.slotted.length) boxes.push(...card.slotted)
   if (card.text && (card.text.width > 0 || card.text.height > 0)) {
     boxes.push({
       left: card.text.x,
@@ -283,7 +290,7 @@ export function columnShare(column, viewportWidth, minRatio) {
     "G1",
     fail ? "fail" : "pass",
     column.selector,
-    { width, viewport, ratio: r2(ratio) },
+    { x: px(column.rect.x), y: px(column.rect.y), width, height: px(column.rect.height), viewport, ratio: r2(ratio) },
     { minWidthRatio: minRatio },
     fail
       ? `Main column is ${width}px, ${pct}% of the ${viewport}px viewport. Minimum is ${minPct}%.`
@@ -321,6 +328,7 @@ function pairGaps(els, axis) {
 }
 
 export function gapChecks(elements, config) {
+  beat()
   const groups = elements.filter((e) => isGroup(e, config) && inFlow(e))
   const byParent = new Map()
   for (const g of groups) {
@@ -360,6 +368,7 @@ export function gapChecks(elements, config) {
 }
 
 export function paddingChecks(elements, config) {
+  beat()
   const items = elements.filter((e) => isContainer(e, config) && inFlow(e) && kindKey(e))
   const byKind = new Map()
   for (const el of items) {
@@ -420,6 +429,7 @@ function overlaps(a, b) {
 }
 
 export function edgeChecks(elements, config) {
+  beat()
   const column = primaryColumn(elements, config) || elements.find((e) => e.tag === "body") || null
   if (!column) return [entry("G4", "skip", "", {}, {}, "No main column to align.")]
   const byIndex = Object.fromEntries(elements.map((e) => [e.i, e]))
@@ -428,7 +438,9 @@ export function edgeChecks(elements, config) {
     const row = elements.some((other) => other.parent === el.parent && other.control && overlaps(box(other), box(el)))
     if (row) el.controlRow = true
   }
+  let seen = 0
   const candidates = elements.filter((el) => {
+    if ((seen += 1) % 200 === 0) beat()
     if (el.i === column.i || !inFlow(el)) return false
     if (INDENT_TAG.has(el.tag)) return false
     if (!(isHeading(el, config) || isBody(el, config) || isCard(el, config) || isButton(el, config))) return false
@@ -472,7 +484,7 @@ export function edgeChecks(elements, config) {
     return [entry("G4", "pass", column.selector, { spread: 0, edges: candidates.length }, { alignPx: config.alignPx }, "Headings, text, cards, and buttons share a left edge.")]
   }
   if (out.every((row) => row.status === "pass")) return [out[0]]
-  return out.filter((row) => row.status === "fail")
+  return out.filter((row) => row.status === "fail" || row.status === "review")
 }
 
 function gapKind(el, host) {
@@ -493,14 +505,19 @@ function edgeGroup(candidates, column, config) {
     const b = box(el)
     let band = bands.find((item) => overlaps(item, b))
     if (!band) {
-      band = { top: b.top, bottom: b.bottom, left: b.left, selector: el.selector }
+      band = { top: b.top, bottom: b.bottom, left: b.left, x: b.left, y: b.top, width: b.width, height: b.height, selector: el.selector, moved: Boolean(el.moved) }
       bands.push(band)
     } else {
       band.top = Math.min(band.top, b.top)
       band.bottom = Math.max(band.bottom, b.bottom)
       if (b.left < band.left) {
         band.left = b.left
+        band.x = b.left
+        band.y = b.top
+        band.width = b.width
+        band.height = b.height
         band.selector = el.selector
+        band.moved = Boolean(el.moved)
       }
     }
   }
@@ -520,13 +537,14 @@ function edgeGroup(candidates, column, config) {
   return bands.flatMap((band, i) => {
     const delta = lefts[i] - shared
     if (delta <= config.alignPx) return []
+    const moved = Boolean(band.moved)
     return [entry(
       "G4",
-      "fail",
+      moved ? "review" : "fail",
       band.selector,
-      { left: lefts[i], sharedLeft: shared, delta, spread },
+      { left: lefts[i], sharedLeft: shared, delta, spread, x: r2(band.x), y: r2(band.y), width: r2(band.width), height: r2(band.height) },
       { alignPx: config.alignPx },
-      `Left edge is ${delta}px off the shared line. Limit is ${config.alignPx}px.`,
+      `Left edge is ${delta}px off the shared line. Limit is ${config.alignPx}px.${moved ? " Layout was still moving." : ""}`,
     )]
   })
 }
@@ -593,9 +611,25 @@ function columnExemption(column, elements, config) {
   const callout = (e) => ["aside", "pre", "figure", "blockquote"].includes(e.tag) || (e.classes || []).includes("callout")
   const cards = tree.filter((e) => isCard(e, config) && !callout(e))
   const byIndex = new Map(elements.map((e) => [e.i, e]))
+  const inForm = (el) => {
+    let cur = el
+    while (cur) {
+      if (cur.tag === "form") return true
+      cur = byIndex.get(cur.parent)
+    }
+    return false
+  }
   const bareLinks = tree.filter((e) => e.tag === "a" && (byIndex.get(e.parent) || {}).tag !== "p")
-  const searchList = bareLinks.length >= 4 && bareLinks.length + 1 >= paragraphs.length
-  const blocked = searchList || cards.length > 0 || tree.some((e) => e.tag === "table" || e.display === "grid" || e.display === "inline-grid")
+  const map = childMap(elements)
+  const resultBlocks = tree.filter((e) => {
+    if (e.tag !== "li" && e.tag !== "article") return false
+    const kids = descendantsOf(e.i, map)
+    return kids.some((d) => d.tag === "a") && kids.some((d) => d.tag === "p")
+  })
+  const searchList = (bareLinks.length >= 4 && bareLinks.length + 1 >= paragraphs.length) || resultBlocks.length >= 4
+  const blocking = cards.filter((e) => !callout(e))
+  const grids = tree.some((e) => !inForm(e) && (e.display === "grid" || e.display === "inline-grid" || e.tag === "table"))
+  const blocked = searchList || blocking.length > 1 || grids
   if (allowed.has("prose") && !blocked && ch >= 55 && ch <= 80 && paragraphs.length >= 1) return { kind: "prose", ch }
   const left = column.rect.x
   const right = (column.viewport || 0) - (column.rect.x + column.rect.width)
@@ -603,7 +637,8 @@ function columnExemption(column, elements, config) {
   const password = tree.some((e) => e.password)
   const form = tree.some((e) => e.tag === "form")
   const nav = tree.some((e) => e.tag === "nav" || e.tag === "header" || e.role === "navigation")
-  const data = tree.some((e) => e.display === "grid" || e.display === "inline-grid" || e.tag === "table") || cards.length > 1
+  const outside = cards.filter((e) => !inForm(e) && !callout(e))
+  const data = grids || outside.length > 1
   if (allowed.has("signin") && password && form && centered && !nav && !data) return { kind: "signin", ch }
   return { kind: "", ch }
 }
@@ -627,12 +662,14 @@ function rowAdjusted(card, elements, config, map) {
 export function evaluate(snapshot, config) {
   const elements = snapshot.elements || []
   const rules = []
-  if (snapshot.deadline && Date.now() > snapshot.deadline) throw new Error("timed out while scoring the page")
+  scoreDeadline = snapshot.deadline || 0
+  beat()
   const map = childMap(elements)
   const cards = elements.filter((e) => e.tag !== "iframe" && isCard(e, config) && e.rect.height > 0 && (inFlow(e) || e.position === "absolute" || e.position === "fixed"))
   for (const card of cards) {
-    if (snapshot.deadline && Date.now() > snapshot.deadline) throw new Error("timed out while scoring the page")
-    const row = cardSlack(card, rowAdjusted(card, elements, config, map), config.whitespacePx)
+    beat()
+    let row = cardSlack(card, rowAdjusted(card, elements, config, map), config.whitespacePx)
+    if (card.moved && row.status === "fail") row = { ...row, status: "review", message: `${row.message} Layout was still moving.` }
     const declared = flagged(card, "card") || Boolean(card.dataUi) || (card.classes || []).some((c) => CARD_RE.test(c))
     const slack = row.measured.slack || 0
     const near = row.status === "fail" || slack >= config.whitespacePx
@@ -656,7 +693,7 @@ export function evaluate(snapshot, config) {
           "G1",
           low ? "review" : "skip",
           column.selector,
-          { width: px(column.rect.width), viewport: px(snapshot.viewportWidth), ch, exemption: exempt.kind },
+          { x: px(column.rect.x), y: px(column.rect.y), width: px(column.rect.width), height: px(column.rect.height), viewport: px(snapshot.viewportWidth), ch, exemption: exempt.kind },
           { minWidthRatio: config.minWidthRatio },
           exempt.kind === "prose" ? `Exempt: prose, a reading column ${ch}ch wide.` : "Exempt: signin, a centered card or form.",
         ))
@@ -680,13 +717,6 @@ export function evaluate(snapshot, config) {
     rules.push(entry("G9", "skip", "html", {}, {}, "G9 runs at 390, which is not in this run."))
   }
   rules.push(scrollCheck(snapshot, config))
-  if (snapshot.moving) {
-    for (let i = 0; i < rules.length; i++) {
-      if (rules[i].status === "fail" && (rules[i].id === "G1" || rules[i].id === "G4")) {
-        rules[i] = { ...rules[i], status: "review", message: `${rules[i].message} Layout was still moving.` }
-      }
-    }
-  }
   for (const frame of snapshot.iframes || []) {
     rules.push(entry("G1", "skip", frame, {}, {}, "Iframes are not measured."))
   }
@@ -718,7 +748,7 @@ export function buildReport(page, widthReports, flags = {}) {
       delete rule.shot
     }
   }
-  const report = { page, verdict, review, warnings: flags.warnings || [], widths }
+  const report = { page, verdict, review, warnings: flags.warnings || [], shots: flags.shots || "", widths }
   if (reason) report.reason = reason
   return report
 }

@@ -247,6 +247,10 @@ else:
             check(f"{name} prints JSON", False, result.stdout[:500] + result.stderr[:500])
             continue
         assert_schema(name, report)
+        if result.returncode == 3:
+            crops = report.get("review") or []
+            crop_ok = bool(crops) and all(row.get("shot") and os.path.isfile(row["shot"]) and os.path.getsize(row["shot"]) > 32 for row in crops)
+            check(f"{name} crops every review row", crop_ok, " ".join((row.get("shot") or "(missing)") for row in crops))
         check(f"{name} widths are 390 and 1280", [w["width"] for w in report["widths"]] == [390, 1280], detail(result, report))
         got = fail_ids(report)
         want_ids = set() if expected is None else {expected}
@@ -476,6 +480,15 @@ button { display: block; width: fit-content; margin: 0; padding: 8px 12px; font:
             fh.write('{"error":"no"}')
         filed = run(["--url", json_file, "--widths", "1280"])
         check("a JSON file is inconclusive", filed.returncode == 2 and '"verdict": "pass"' not in filed.stdout, filed.stdout[-240:] + filed.stderr[-240:])
+        xml_file = os.path.join(tmp, "note.xml")
+        with open(xml_file, "w") as fh:
+            fh.write("<note><title>Hello</title></note>")
+        xml = run(["--url", xml_file, "--widths", "1280"])
+        try:
+            xml_report = json.loads(xml.stdout)
+        except json.JSONDecodeError:
+            xml_report = None
+        check("an XML file is not HTML", xml.returncode == 2 and xml_report and xml_report.get("verdict") == "inconclusive" and "not HTML" in (xml_report.get("reason") or ""), xml.stdout[-240:] + xml.stderr[-240:])
         huge = os.path.join(tmp, "huge.html")
         with open(huge, "w") as fh:
             fh.write("<!doctype html><main>" + "".join(f"<div>Row {i}</div>" for i in range(20000)) + "</main>")

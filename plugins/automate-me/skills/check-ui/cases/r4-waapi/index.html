@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Slide</title>
+</head>
+<body style="font:16px/24px Arial,sans-serif">
+
+<main style="padding:16px">
+  <h1 style="margin:0 0 12px">Slide</h1>
+  <p style="margin:0 0 12px">The button keeps sliding after the page has settled.</p>
+  <button id="go" type="button">Buy</button>
+</main>
+<script>
+document.getElementById("go").animate([{ transform: "translateX(0px)" }, { transform: "translateX(48px)" }], { duration: 4000, iterations: Infinity })
+</script>
+
+</body>
+</html>

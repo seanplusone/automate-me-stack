@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync, writeSync, existsSync, realpathSync, mkdirSync } from "node:fs"
+import { readFileSync, writeFileSync, writeSync, existsSync, realpathSync, mkdirSync, mkdtempSync } from "node:fs"
+import { tmpdir } from "node:os"
 import path from "node:path"
 import { pathToFileURL, fileURLToPath } from "node:url"
 import { buildReport, evaluate, mergeConfig, ConfigError } from "./geometry.mjs"
@@ -110,9 +111,35 @@ function resolveTarget(input) {
   return pathToFileURL(abs).href
 }
 
-function collect(opts) {
+async function collect(opts) {
   const selectors = opts.selectors || {}
   const deadline = opts.deadline || 0
+  const moved = new Set()
+  if (document.body) {
+    const sample = [...document.body.querySelectorAll("*")].slice(0, 120)
+    const before = sample.map((el) => {
+      const r = el.getBoundingClientRect()
+      return [el, r.x, r.y, r.width, r.height]
+    })
+    const pause = Math.min(300, Math.max(0, (deadline || Date.now() + 300) - Date.now()))
+    if (pause > 40) {
+      await new Promise((resolve) => {
+        const start = performance.now()
+        let done = false
+        const finish = () => { if (!done) { done = true; resolve() } }
+        const step = () => {
+          if (performance.now() - start >= pause) finish()
+          else requestAnimationFrame(step)
+        }
+        requestAnimationFrame(step)
+        setTimeout(finish, pause + 50)
+      })
+    }
+    for (const [el, x, y, w, h] of before) {
+      const r = el.getBoundingClientRect()
+      if (Math.abs(r.x - x) > 1 || Math.abs(r.y - y) > 1 || Math.abs(r.width - w) > 1 || Math.abs(r.height - h) > 1) moved.add(el)
+    }
+  }
   const errors = []
   const hits = { cards: 0, groups: 0, columns: 0, headings: 0, body: 0, buttons: 0, containers: 0 }
   const iframes = []
@@ -166,6 +193,17 @@ function collect(opts) {
   const skipTags = new Set(["SCRIPT", "STYLE", "LINK", "META", "NOSCRIPT", "TEMPLATE", "HEAD"])
   const chrome = new Set(["button", "input", "textarea", "select", "a", "body", "html", "label"])
   const elements = []
+  let firstBand = true
+  function slotBoxes(el) {
+    const nodes = []
+    if (el.tagName === "SLOT" && el.assignedElements) nodes.push(...el.assignedElements())
+    if (el.shadowRoot) el.shadowRoot.querySelectorAll("slot").forEach((slot) => nodes.push(...slot.assignedElements()))
+    if (!nodes.length) return null
+    return nodes.map((node) => {
+      const r = node.getBoundingClientRect()
+      return { left: r.x, top: r.y, right: r.x + r.width, bottom: r.y + r.height, width: r.width, height: r.height }
+    }).filter((r) => r.width > 0 || r.height > 0)
+  }
   function walk(el, parent, parentSel, parentStyle, childIndex) {
     const style = getComputedStyle(el)
     if (skipTags.has(el.tagName) || el.hasAttribute("hidden") || style.display === "none" || style.visibility === "hidden") return
@@ -201,19 +239,23 @@ function collect(opts) {
       const cs = getComputedStyle(child)
       return (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0) > 0
     })
-    const blocked = new Set(["header", "nav", "aside", "footer", "pre", "code", "td", "th", "tr", "table", "button", "input", "textarea", "select", "option", "label", "iframe", "a", "span"])
+    const blocked = new Set(["html", "body", "header", "nav", "aside", "footer", "pre", "code", "td", "th", "tr", "table", "button", "input", "textarea", "select", "option", "label", "iframe"])
     const inline = /^inline/.test(style.display)
     const textLen = (el.innerText || "").trim().length
     const parentLayout = parentStyle && (parentStyle.display.includes("flex") || parentStyle.display.includes("grid"))
     const fills = Boolean(parentLayout && parentStyle.boxHeight > 80 && Math.abs(rect.height - parentStyle.boxHeight) <= 4)
     let cardLike = false
     let guess = ""
-    const weak = hasPad && (outline > 0 || beforeOn || childBorder || (image !== "none" && !hasBg))
-    const signal = (hasPad && (hasBorder || hasBg || hasShadow)) || weak
-    if (!blocked.has(tag) && !fills && !inline && textLen > 0 && signal) {
+    const strong = hasBorder || hasShadow || (hasBg && (hasPad || rect.height >= 48))
+    const weak = outline > 0 || beforeOn || (image !== "none" && !hasBg) || (hasPad && childBorder)
+    if (!blocked.has(tag) && !fills && !inline && textLen > 0 && (strong || weak)) {
       cardLike = true
-      guess = hasBorder || hasBg ? "high" : "low"
+      guess = strong ? "high" : "low"
     }
+    const band = tag === "section" || tag === "header" || el.classList.contains("hero")
+    const first = band && firstBand
+    if (tag === "section" || tag === "header") firstBand = false
+    const fullBleed = hasBg && !hasBorder && rect.width >= window.innerWidth - 24
     const stretched = Boolean(parentStyle && (parentStyle.display.includes("flex") || parentStyle.display.includes("grid")) && ((style.alignSelf === "auto" || style.alignSelf === "normal") ? (parentStyle.alignItems === "stretch" || parentStyle.alignItems === "normal") : (style.alignSelf === "stretch" || style.alignSelf === "normal")))
     const i = elements.length
     elements.push({
@@ -231,14 +273,12 @@ function collect(opts) {
       stretched,
       cardLike,
       guess,
+      moved: moved.has(el),
       strict: Boolean(el.id && false),
       minHeight: parseFloat(style.minHeight) || 0,
-      hero: tag === "section" || tag === "header" || el.classList.contains("hero"),
+      hero: band && ((first && !hasBorder) || fullBleed),
       password: tag === "input" && (el.getAttribute("type") || "") === "password",
-      slotted: tag === "slot" && el.assignedElements ? [...el.assignedElements()].map((node) => {
-        const r = node.getBoundingClientRect()
-        return { left: r.x, top: r.y, right: r.x + r.width, bottom: r.y + r.height, width: r.width, height: r.height }
-      }) : null,
+      slotted: slotBoxes(el),
       control: tag === "input" || tag === "textarea" || tag === "select",
       rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
       padding: pad,
@@ -281,6 +321,39 @@ function collect(opts) {
   const shown = [...(document.body ? document.body.children : [])].filter((el) => !/^(SCRIPT|STYLE)$/.test(el.tagName))
   const onlyPre = shown.length === 1 && shown[0].tagName === "PRE"
   const preText = onlyPre ? shown[0].innerText.trim() : ""
+  const statusHeading = [...document.querySelectorAll("h1")].some((h) => /^\d{3}\b/.test((h.innerText || "").trim()) && (parseFloat(getComputedStyle(h).fontSize) || 0) >= 24)
+  const busy = Boolean(document.querySelector("[aria-busy='true'], [role='status'], [role='progressbar']")) && raw.length < 80 && !document.querySelector("form")
+  const bars = [...document.querySelectorAll("div, span")].filter((el) => {
+    if (el.children.length || [...el.childNodes].some((node) => node.nodeType === 3 && node.textContent.trim())) return false
+    const s = getComputedStyle(el)
+    const r = el.getBoundingClientRect()
+    const bg = s.backgroundColor && s.backgroundColor !== "transparent" && s.backgroundColor !== "rgba(0, 0, 0, 0)"
+    return bg && r.height >= 8 && r.height <= 48 && r.width >= 40
+  })
+  const skeleton = bars.length >= 3 && raw.length < 40
+  const emptyRoot = shown.length === 1 && !raw && shown[0].children.length === 0
+  function hasControl(node) {
+    if (!node) return false
+    if (node.nodeType === 1) {
+      const name = node.tagName
+      if (name === "BUTTON" || name === "INPUT" || name === "TEXTAREA" || name === "SELECT" || name === "FORM") return true
+      if (name === "A" && node.hasAttribute("href")) return true
+    }
+    if (node.shadowRoot && hasControl(node.shadowRoot)) return true
+    for (const child of node.children || []) if (hasControl(child)) return true
+    return false
+  }
+  const controls = hasControl(document.body)
+  const heroEl = document.querySelector("section, header, .hero")
+  let hero = false
+  if (heroEl) {
+    const s = getComputedStyle(heroEl)
+    const r = heroEl.getBoundingClientRect()
+    const bg = s.backgroundColor && s.backgroundColor !== "transparent" && s.backgroundColor !== "rgba(0, 0, 0, 0)"
+    const border = (parseFloat(s.borderTopWidth) || 0) + (parseFloat(s.borderBottomWidth) || 0) > 0
+    hero = (!border && (heroEl.matches("section, header") || heroEl.classList.contains("hero"))) || (bg && !border && r.width >= window.innerWidth - 24)
+  }
+  const thin = raw.length < 40 && !controls && !hero
   return {
     viewportWidth: window.innerWidth,
     scrollWidth: Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0),
@@ -290,7 +363,12 @@ function collect(opts) {
     iframes,
     bodyBox: document.body ? (() => { const r = document.body.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: Math.min(r.height, 800) } })() : { x: 0, y: 0, width: 320, height: 180 },
     text: raw.slice(0, 240),
-    empty: !raw && elements.length <= 1,
+    thin,
+    busy,
+    skeleton,
+    emptyRoot,
+    statusHeading,
+    empty: !raw && elements.length <= 1 && !emptyRoot,
     jsonError: Boolean((document.body && document.body.children.length === 0 && /^[\[{]/.test(raw)) || (onlyPre && preText)),
     reason: onlyPre ? (/^[\[{]/.test(preText) ? "The page is a JSON error." : "The page is a plain text body.") : "",
   }
@@ -377,13 +455,17 @@ async function shoot(page, rules, width, dir) {
     if (!(box.width > 1) || !(box.height > 1)) continue
     const file = path.join(dir, `${width}-${n}.png`)
     n += 1
-    const clip = {
-      x: Math.max(0, box.x || 0),
-      y: Math.max(0, box.y || 0),
-      width: Math.min(box.width, 1200),
-      height: Math.min(box.height, 800),
-    }
     try {
+      const top = Math.max(0, (box.y || 0) - 8)
+      await page.evaluate((y) => window.scrollTo(0, y), top)
+      const scrollY = await page.evaluate(() => window.scrollY || 0)
+      const clip = {
+        x: Math.max(0, box.x || 0),
+        y: Math.max(0, (box.y || 0) - scrollY),
+        width: Math.min(box.width, 1200),
+        height: Math.min(box.height, 800, VIEWPORT_HEIGHT - 2),
+      }
+      if (clip.y + clip.height > VIEWPORT_HEIGHT) clip.height = Math.max(2, VIEWPORT_HEIGHT - clip.y - 1)
       await page.screenshot({ path: file, clip })
       rule.shot = file
     } catch (e) {
@@ -417,6 +499,17 @@ async function measureWidth(browser, target, width, widths, config, remaining, w
     else warnings.push(`request failed: ${req.url()}`)
   })
   try {
+    if (/\.(xml|json)$/i.test(target)) {
+      return {
+        width,
+        rules: [{ id: "G1", status: "skip", element: "", measured: {}, limit: {}, message: "The document is not HTML." }],
+        warnings,
+        fatal: true,
+        reason: "The document is not HTML.",
+        page,
+        context,
+      }
+    }
     let response
     try {
       response = await until(page.goto(target, { waitUntil: "load", timeout: remaining() }), remaining())
@@ -438,12 +531,35 @@ async function measureWidth(browser, target, width, widths, config, remaining, w
     snapshot.requestedWidth = width
     snapshot.widths = widths
     snapshot.deadline = Date.now() + remaining()
-    const rules = evaluate(snapshot, config)
+    let rules
+    try {
+      rules = evaluate(snapshot, config)
+    } catch (e) {
+      if (/scoring/.test(String(e.message || e))) {
+        return {
+          width: Math.round(snapshot.viewportWidth || width),
+          rules: [{ id: "G1", status: "skip", element: "", measured: {}, limit: {}, message: "Scoring stopped at the deadline." }],
+          warnings,
+          fatal: true,
+          reason: "timed out while scoring the page",
+          page,
+          context,
+        }
+      }
+      throw e
+    }
     const box = snapshot.bodyBox || { x: 0, y: 0, width: 320, height: 180 }
-    const screen = /something went wrong|try again later|error boundary|500 internal server error|502 bad gateway|nginx/i.test(snapshot.text || "")
-    const spinner = /^(loading|please wait)\.?$/i.test((snapshot.text || "").trim())
-    if ((screen || spinner) && (snapshot.text || "").length < 240) {
-      rules.push(pageReview(box, spinner ? "This page is only a spinner. It needs a look." : "This looks like an error screen. It needs a look."))
+    if (snapshot.statusHeading || snapshot.skeleton || snapshot.busy || snapshot.emptyRoot || snapshot.thin) {
+      const message = snapshot.statusHeading
+        ? "The main heading is a status code. It needs a look."
+        : snapshot.skeleton
+          ? "This page is a skeleton. It needs a look."
+          : snapshot.busy
+            ? "This page is still busy. It needs a look."
+            : snapshot.emptyRoot
+              ? "This page is an empty app shell. It needs a look."
+              : "This page has almost no text. It needs a look."
+      rules.push(pageReview(box, message))
     }
     let reason = snapshot.reason || ""
     let fatal = Boolean(snapshot.jsonError)
@@ -451,9 +567,9 @@ async function measureWidth(browser, target, width, widths, config, remaining, w
       fatal = true
       reason = `HTTP ${status}.`
     }
-    if ((type && !/html|xml/i.test(type)) || /\.json$/i.test(target)) {
+    if (/\.xml$/i.test(target) || (type && !/html/i.test(type)) || /\.json$/i.test(target)) {
       fatal = true
-      reason = reason || `The document is not HTML${type ? ` (${type})` : ""}.`
+      reason = reason || "The document is not HTML."
     }
     if (snapshot.empty) {
       fatal = true
@@ -523,7 +639,7 @@ async function main() {
     browser = await launch(chromium)
     const deadline = Date.now() + timeout
     const remaining = () => Math.max(1, deadline - Date.now())
-    const shots = args.shots || (args.out ? path.join(path.dirname(path.resolve(args.out)), "shots") : "")
+    const shots = args.shots || (args.out ? path.join(path.dirname(path.resolve(args.out)), "shots") : mkdtempSync(path.join(tmpdir(), "check-ui-")))
     const open = []
     const reports = []
     for (const width of widths) {
@@ -539,6 +655,7 @@ async function main() {
       fatal,
       reason: (reports.find((item) => item.reason) || {}).reason || "",
       warnings,
+      shots,
     })
     const text = `${JSON.stringify(report, null, 2)}\n`
     if (args.out) writeFileSync(args.out, text)
