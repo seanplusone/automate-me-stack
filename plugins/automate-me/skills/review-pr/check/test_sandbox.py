@@ -15,7 +15,7 @@ import tomllib
 from contextlib import redirect_stderr
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from attack_agents import _minimal_codex_config, agent_cwd, bwrap_command, cleanup_stale, command, key_reachable, practice_roots, resolve_sandbox, run_all  # noqa: E402
+from attack_agents import _minimal_codex_config, _remove_tree, agent_cwd, bwrap_command, cleanup_stale, command, key_reachable, practice_roots, resolve_sandbox, run_all  # noqa: E402
 
 FAILS = []
 CHECKS = []
@@ -315,6 +315,74 @@ expect("a hard link outside the cwd is still a known case key", key_reachable(pl
 expect("a hard link to a case key is refused", run_all(
     brief, tempfile.mkdtemp(), search_path=stubs, cwd=plain, sandbox="bwrap",
 ), 2)
+linked_root = tempfile.mkdtemp()
+os.makedirs(os.path.join(linked_root, "cases", "a"))
+os.makedirs(os.path.join(linked_root, "cases", "b", "head"))
+open(os.path.join(linked_root, "cases", "a", "key.md"), "w").write("SECRET-LINK\n")
+open(os.path.join(linked_root, "cases", "b", "key.md"), "w").write("Planted: yes\n")
+open(os.path.join(linked_root, "cases", "b", "head", "cap.py"), "w").write("x\n")
+os.link(
+    os.path.join(linked_root, "cases", "a", "key.md"),
+    os.path.join(linked_root, "cases", "b", "head", "notes.md"),
+)
+elink = os.path.join(tempfile.mkdtemp(), "Elink")
+os.symlink(os.path.join(linked_root, "cases", "b"), elink)
+link_err = io.StringIO()
+with redirect_stderr(link_err):
+    elink_work, elink_made = agent_cwd(elink)
+elink_names = []
+if elink_work:
+    for dirpath, dirnames, filenames in os.walk(elink_work):
+        elink_names.extend(filenames)
+expect("a symlinked cwd drops the hard link", elink_work is not None and "notes.md" not in elink_names, True)
+expect("a symlinked cwd records the skipped path", "notes.md" in link_err.getvalue(), True)
+if elink_made and elink_work:
+    shutil.rmtree(elink_work, ignore_errors=True)
+group = tempfile.mkdtemp()
+os.makedirs(os.path.join(group, "cases", "g", "a"))
+os.makedirs(os.path.join(group, "cases", "g", "b", "head"))
+open(os.path.join(group, "cases", "g", "a", "key.md"), "w").write("SECRET-NEST\n")
+open(os.path.join(group, "cases", "g", "b", "key.md"), "w").write("Planted: yes\n")
+open(os.path.join(group, "cases", "g", "b", "head", "cap.py"), "w").write("x\n")
+os.link(
+    os.path.join(group, "cases", "g", "a", "key.md"),
+    os.path.join(group, "cases", "g", "b", "head", "notes.md"),
+)
+group_work, group_made = agent_cwd(os.path.join(group, "cases"))
+group_names, group_text = [], []
+if group_work:
+    for dirpath, dirnames, filenames in os.walk(group_work):
+        group_names.extend(filenames)
+        for name in filenames:
+            group_text.append(open(os.path.join(dirpath, name), errors="replace").read())
+expect(
+    "a nested case group does not copy the other key",
+    group_text and "notes.md" not in group_names and all("SECRET-NEST" not in item for item in group_text),
+    True,
+)
+if group_made and group_work:
+    shutil.rmtree(group_work, ignore_errors=True)
+other = tempfile.mkdtemp()
+os.makedirs(os.path.join(other, "cases", "other-repo", "src"))
+os.makedirs(os.path.join(other, "app"))
+open(os.path.join(other, "cases", "other-repo", "src", "key.md"), "w").write("SECRET-OTHER\n")
+os.link(
+    os.path.join(other, "cases", "other-repo", "src", "key.md"),
+    os.path.join(other, "app", "hard"),
+)
+expect("a hard link from another repo is refused", run_all(
+    brief, tempfile.mkdtemp(), search_path=stubs, cwd=os.path.join(other, "app"), sandbox="bwrap",
+), 2)
+keep_dir = tempfile.mkdtemp()
+keep_target = os.path.join(keep_dir, "target")
+os.makedirs(keep_target)
+open(os.path.join(keep_target, "file.txt"), "w").write("keep\n")
+holder = os.path.join(keep_dir, "holder")
+os.makedirs(holder)
+os.symlink(keep_target, os.path.join(holder, "dirlink"))
+_remove_tree(holder)
+expect("a directory symlink is unlinked", os.path.exists(holder), False)
+expect("the symlink target stays", os.path.isfile(os.path.join(keep_target, "file.txt")), True)
 deep_root = tempfile.mkdtemp()
 deep_case = os.path.join(deep_root, "cases", "item")
 deep_head = os.path.join(deep_case, "head")
