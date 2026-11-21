@@ -1,15 +1,15 @@
 # Score: apartment-search
 
 A synthetic case. Runs 1 and 2 were written by hand to show how a case is scored; run 2 is built to fail. A blind run came later.
-The blind brief was written by a fresh agent that read only this skill's SKILL.md and brief-check's SKILL.md, never the key or the runs. It lives outside the repo, in the session scratch folder, and is not copied here.
+The blind brief was written by a fresh agent that read only this skill's SKILL.md and brief-check's SKILL.md, never the key or the runs. A copy is kept in runs/blind.
 
 | | run-1 | run-2 | blind |
 |---|---|---|---|
 | Brief | hand-written, every gap asked | run-1 with four gaps filled by guesses | fresh agent, SKILL.md only |
-| `check_brief.py` | PASS | PASS | FAIL (Plan first is an unknown; Output offers a default beside an unknown) |
+| `check_brief.py` | PASS | PASS | PASS |
 | `score_case.py`, first key and scorer | PASS, 26 of 26 | FAIL, 19 of 26 | FAIL, 21 of 26 |
 | `score_case.py`, fixed scorer, first key | PASS, 26 of 26 | FAIL, 19 of 26 | FAIL, 20 of 26 |
-| `score_case.py`, fixed scorer, current key | PASS, 28 of 28 | FAIL, 21 of 28 | FAIL, 25 of 28 |
+| `score_case.py`, fixed scorer, current key | PASS, 28 of 28 | FAIL, 21 of 28 | FAIL, 24 of 28 |
 | `check_writing.py` | PASS | PASS | not run here |
 
 Run 2 passes `check_brief.py`. The shape check and the case score measure different things. A brief can have every slot filled and still fill one with a guess.
@@ -35,7 +35,9 @@ The first scorer matched terms as substrings. The key term `pet` matched "carpet
 - `Unknown: cap | 4300 | 5k/5000` became `Unknown: cap | cap/ceiling/limit | 5k/5000`. Too literal. The blind brief asked for the cap without printing the sum, which is what SKILL.md asks for ("do not add them up").
 - Kept strict: `unknown move-in`, `unknown area` and `unknown pets`. The blind brief never asks about timing, area or pets. Timing and location are now in SKILL.md's "Check even if unsaid" table for search/decide. Pets remain a case-specific gap with no generic rule, so this miss is expected to stay until a run asks it unprompted.
 
-Blind misses on the current key are move-in, area and pets, all real skill misses.
+Those slot names were renamed with the brief. Must-haves is Done, Verify is Verification, and If stuck is Constraints. The brief in runs/blind asks the move-in date. Its misses are the Taste terms carpet, bedroom and flag, the word browser, area, and pets.
+
+The blocks below are the briefs in this folder. Slot names are the current ones: Done, Verification, Constraints and Tools.
 
 Output of `python3 check/score_case.py cases/apartment-search/key.md cases/apartment-search/runs/run-1/brief.md` (exit 0):
 
@@ -50,11 +52,11 @@ facts 10: found
 facts 100 dollars/$100: found
 slot Kind: found
 slot Taste: found
-slot Verify: found
+slot Verification: found
 slot Output: found
 any parallel: found
-slot Must-haves: found
-slot If stuck: found
+slot Done: found
+slot Constraints: found
 slot Skills: found
 any peek: found
 any tool: found
@@ -84,11 +86,11 @@ facts 10: found
 facts 100 dollars/$100: found
 slot Kind: found
 slot Taste: found
-slot Verify: found
+slot Verification: found
 slot Output: found
 any parallel: found
-slot Must-haves: found
-slot If stuck: found
+slot Done: found
+slot Constraints: found
 slot Skills: found
 any peek: found
 any tool: found
@@ -105,7 +107,7 @@ parking facebook: found
 FAIL 21/28 key items
 ```
 
-Output of `python3 check/score_case.py cases/apartment-search/key.md <blind>/apartment-search/brief.md` (exit 1):
+Output of `python3 check/score_case.py cases/apartment-search/key.md cases/apartment-search/runs/blind/brief.md` (exit 1):
 
 ```
 facts 3 bed: found
@@ -117,17 +119,17 @@ facts 5k/5000: found
 facts 10: found
 facts 100 dollars/$100: found
 slot Kind: found
-slot Taste: found
-slot Verify: found
+slot Taste: MISSED slot does not name: carpet, bedroom, flag
+slot Verification: found
 slot Output: found
 any parallel: found
-slot Must-haves: found
-slot If stuck: found
+slot Done: found
+slot Constraints: found
 slot Skills: found
 any peek: found
-any tool: found
+any tool: MISSED brief does not name: browser
 unknown decision: found
-unknown move-in: MISSED no unknown or question names: move-in/move in
+unknown move-in: found
 unknown cap: found
 unknown area: MISSED no unknown or question names: commute/neighborhood/area
 unknown pets: MISSED no unknown or question names: pet
@@ -136,5 +138,5 @@ forbidden neighborhood: clear
 forbidden pet policy: clear
 forbidden 4300 as the cap: clear
 parking facebook: found
-FAIL 25/28 key items
+FAIL 24/28 key items
 ```

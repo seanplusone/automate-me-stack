@@ -2,22 +2,32 @@
 
 - Kind: search/decide
 - Plan first: yes: the search split, the fields per listing, and how photos get checked, before many agents start
-- Goal: find about 10 listings of a 3 bed 2 bath apartment in Irvine
-- Decision: unknown: which listing will you tour or apply for, and by when?
-- Context: you, your partner and one other tenant; the split is 2600 for the couple and 1700 for the other tenant; no listings or sites named yet
-- Must-haves:
+- Goal:
+  - find about 10 listings of a 3 bed 2 bath apartment in Irvine
+  - unknown: which listing will you tour or apply for, and by when?
+- Done:
   - 3 bed, 2 bath, in Irvine (proof: the listing page)
   - little to no carpet; carpet only in the bedrooms is fine, none in the living room (proof: a photo of the living room, not the description)
   - budget up to 5k if it's really good (hedged, confirm)
   - if a result is under the max, also peek the next 100 dollars up to see what else is there
   - investigate: does each listing's "updated" claim hold up in its photos?
 - Taste (flag, don't filter): modern, not a nineties place; shown by photos of the kitchen and bathrooms, with no dated fixtures or finishes
-- Output: a ranked list of about 10 listings; fields unknown
-- Verify: every claim names its listing link or photo, or says guess; descriptions are never proof. A second agent that did not do the search checks the first one's work, like a senior reviewing a junior. The check needs a way to open listing photos
-- If stuck: report only, take no action on any listing; never loosen a must-have without asking
+- Output: a ranked list of about 10 listings, read in the reply; fields unknown
+- Constraints:
+  - you, your partner and one other tenant; the split is 2600 for the couple and 1700 for the other tenant; no listings or sites named yet
+  - report only, take no action on any listing; never loosen a done line without asking
+- Tools:
+  - A way to open listing photos. Check it works first.
+  - write first: the search split and the fields per listing.
+- Agents and roles:
+  - how: one agent per source, run in parallel
+  - A second agent that did not do the search checks the first one's work.
+- Evals:
+  - Pass: one listing matches the done lines and has a photo.
+  - Fail: one listing has no photo, so it is dropped.
+- Verification: every claim names its listing link or photo, or says guess; descriptions are never proof. A second agent that did not do the search checks the first one's work, like a senior reviewing a junior. The check needs a way to open listing photos
 - Skills:
   - none run yet
-  - how: one agent per source, run in parallel
   - save what worked for next time, with your approval for each rule
 - Parking lot: a cousin found a place through a Facebook group, worth a look? (not acted on)
 - Unknowns:

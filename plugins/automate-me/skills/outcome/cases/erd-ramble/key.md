@@ -16,10 +16,10 @@ Fact: Thursday
 
 Slot: Kind | build
 Slot: Goal | ERD
-Slot: Must-haves | walker | owner | dog | booking | payment
+Slot: Done | walker | owner | dog | booking | payment
 Slot: Output | diagram/mermaid | field
-Slot: Verify | guess
-Slot: Context | Postgres
+Slot: Verification | guess
+Slot: Tools | Postgres
 
 ## Gaps that must be asked, not guessed
 

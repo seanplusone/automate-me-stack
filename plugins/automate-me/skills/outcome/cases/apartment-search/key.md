@@ -19,11 +19,11 @@ Fact: 100 dollars/$100
 
 Slot: Kind | search
 Slot: Taste | modern | carpet | bedroom | flag | photo
-Slot: Verify | photo/picture | description | senior/second reviewer/reviewer
+Slot: Verification | photo/picture | description | senior/second reviewer/reviewer
 Slot: Output | 10
 Any: parallel | parallel
-Slot: Must-haves | 3 bed | 2 bath | Irvine
-Slot: If stuck | never loosen
+Slot: Done | 3 bed | 2 bath | Irvine
+Slot: Constraints | never loosen
 Slot: Skills | save what worked
 Any: peek | next 100
 Any: tool | browser

@@ -1,23 +1,47 @@
 # outcome
 
-Part of `automate-me`. Shared writing rules live in `../shared/writing-rules.md`. The brief's slots and traps come from `../brief-check/SKILL.md`.
+Part of `automate-me`. Shared writing rules live in `../shared/writing-rules.md`. The trap list comes from `../brief-check/SKILL.md`. The slot names below are this skill's.
 
 Turns a rough idea, often a spoken ramble, into a brief an agent can run. It sorts what was said, fills the slots, marks every gap as an unknown with its question, and reads the brief back with at most 3 questions. Nothing runs until the user says yes.
 
-Status: new. Four synthetic scored cases. The `run-*` briefs were written by hand to show the scorer working. One blind run has been scored. A fresh agent read only `SKILL.md` and brief-check's, never a key. Its scores and the key changes it led to are in each case's `runs/score.md`. Its briefs live outside the repo.
+Status: new. Four synthetic scored cases, plus `missing-evals`, which fails the shape check. The `run-*` briefs were written by hand to show the scorer working. One blind run has been scored. A fresh agent read only `SKILL.md` and brief-check's, never a key. Its scores and the key changes it led to are in each case's `runs/score.md`. Blind briefs are kept in `runs/blind/`.
 
 ## What the checks cover, and what they don't
 
 `check/check_brief.py` checks a brief's shape:
 
-- every required slot is present once and filled (Plan first, Goal, Decision, Context, Must-haves, Taste, Output, Verify, If stuck, Skills, Parking lot, Unknowns; Kind is optional). A note in brackets after a label, as in `- Taste (flag, don't filter):`, is allowed;
-- Plan first starts with `yes` or `none needed`;
-- an `investigate:` or `out of scope:` item sits in Must-haves, and a `how:` item in Skills;
+- every required slot is present once and filled (Goal, Done, Output, Constraints, Tools, Agents and roles, Evals, Verification). Kind, Plan first, Taste, Skills, Parking lot and Unknowns are optional. A note in brackets after a label, as in `- Taste (flag, don't filter):`, is allowed;
+- any item in any slot, and any Evals case, that is a placeholder fails. A slot whose items all fail is named. The value is normalized first. NFKC applies, and emphasis, code marks, one leading tag label and surrounding punctuation are stripped. Dots drop from `T.B.D.`, and `-`, `_` or `.` between letters reads as a space. A placeholder is then empty, or holds only words from a fixed list, with or without hedge words other than `not`. The words are tbd, tbc, tba, todo, fixme, xxx, n/a, na, none, pending, placeholder and later. The phrases are to be determined, to be decided, to be confirmed, fill in, fill in later, see below, see above and same as above. Words are Unicode, so non-English values are real. So are `make`, `$500`, `#123` and `24`. `none` alone is allowed on Skills, Parking lot and Unknowns, and beside other items. Tools and Constraints may use `none: <why>` when the reason is real. `write first: none` alone does not name a tool;
+- a template hole fails only when it is unambiguous. The value is nothing but holes (`<goal>`, `< goal >`, `{{x}}`, `{x}`, `${x}`). Or it holds `[insert x]`, or is a line of the SKILL.md template. A hole inside a longer value, as in `Vec<String>` or `JSON {id, name}`, asks instead. Code spans and autolinks such as `<https://…>` and `<tel:…>` are never holes. `a < b` with a space is a comparison;
+- Kind, when present, is one of build, review, design, learn, search/decide;
+- Evals is present and its cases are not placeholders. A label is the word pass or fail followed by a colon, or should or must pass or fail, anywhere in an item outside code spans. A colon label's case runs to the next label. In an item that starts with a colon label, a phrase counts only when it ends the item. Text before the first colon label is judged too. When Evals has content but no pass case or no fail case can be found, the checker asks rather than fails. An `unknown: <question>?` Evals item stands in for the cases when the Questions block has a question;
+- Plan first, when present, starts with `yes` or `none needed`;
+- an `investigate:` item sits in Done, an `out of scope:` item in Constraints, and a `how:` item in Agents and roles;
 - a slot that holds `unknown:` offers no default beside it;
-- every item that starts with `unknown` reads `unknown: <question>?`;
-- the Unknowns list holds only unknown markers, and does not say `none` while a slot is unknown;
+- every unknown marker reads `unknown: <question>?`. A marker is `unknown` alone or an item that starts with `unknown:`, so `Unknown column names` is plain text;
+- when Unknowns is present, it holds only unknown markers, and does not say `none` while a slot is unknown;
 - a brief with unknowns has a Questions block, with at most 3 numbered questions, each with a question mark;
-- no item is only trap adjectives (modern, clean, good, better, correct, valid, nice).
+- no item is only trap adjectives (modern, clean, good, better, correct, valid, nice). A digit counts as a visible signal.
+
+It exits 0 (PASS), 1 (FAIL), 2 (ASK) or 3 (usage). A usage error is bad arguments, or a file that is missing or not UTF-8 text. Any FAIL wins. Otherwise it asks about each value in a required slot, or Evals case, that it is in doubt about. It prints `ASK: <slot>: Is '<value>' a real answer for <slot>?` and exits 2. A value in doubt is only symbols that are not stripped punctuation (`→`, an emoji), or one word of one or two letters. So is a value of only hedge words. The hedge words are maybe, perhaps, possibly, probably, not, sure, unsure, unclear, depends, depending, it, idk, dunno, we, ll, will, well, see, yet, tbh, hmm, let and s. A hole inside a longer value, in any slot, asks `Is '<value>' a real answer for <slot>, or a hole to fill?`. Evals with content but no pass or fail case asks `Is there a pass case and a fail case here?`. The skill stops the hand-off there and asks the person. A yes goes in a block headed exactly `## Confirmed` at the end of the brief. It holds one `- <Slot>: <value>` line for each item or Evals case, and that value then passes. A no replaces the value.
+
+The rule is deliberately narrow. check_brief FAILs only what is unambiguous. When in doubt it ASKs (exit 2, one ASK line each), and the agent stops and asks the person. Asking is cheap, and a wrong FAIL blocks a real brief. The read-back catches the rest. A placeholder outside the list, such as `Por determinar.`, passes.
+
+### Limits
+
+The check is a review aid, not a gate on meaning. It reads wording, so it misses some cases:
+- Evals labels in other words, such as `Should pass:` or `Must pass:`, can fail.
+- Outline-style Evals, with the case on a nested line under `Pass:`, can fail.
+- A short verification command that holds a vague word, such as `make clean`, can be flagged as vague.
+- A checklist item such as `[x] TBD` can pass.
+- A placeholder with text after it, such as `TBD by Friday`, can pass.
+
+The read-back and the ASK outcome are the backstop.
+There are too few real examples to judge wording reliably, so when the check is unsure it asks the person (ASK) rather than deciding.
+Save each confirmed answer as a new test case.
+As cases build up, more calls can move from asking to automatic, but only after they hold on fresh briefs.
+
+Other skills import `classify(value)` (`"pass"`, `"fail"` or `"ask"`), `judge(value)` (the outcome and why), `is_placeholder`, `eval_cases`, `case_is_real`, `check`, `asks` and `ask_lines` from `check/check_brief.py`. `breakdown/check_plan.py` judges every plan field that lands in a prompt, then runs `check` on each rendered prompt.
 
 `check/score_case.py` scores a brief against a case key: facts in the speaker's words, slot terms, gaps asked rather than guessed, guesses that must not appear, and Parking lot items.
 
@@ -27,7 +51,7 @@ Neither script checks the flow in `SKILL.md`. These parts are instructions only,
 - the "Check even if unsaid" limits for each kind (a key checks them only where the case names them);
 - that the read-back comes before anything runs, and that nothing runs without a yes;
 - that the 3 questions are the right ones, ranked decision, then limits and scope, then intent;
-- the brief-check scoring and run at hand-off;
+- the checker and the trap list at hand-off;
 - the iterate step (only changed lines shown) and the learn step (offered once).
 
 ## Blind runs
@@ -45,24 +69,48 @@ Known gaps after blind 2, left as they are because a fix would need another blin
 
 - In a search, it can still miss limits the speaker never mentioned, like area or pets.
 - It sometimes picks a visible signal for an adjective ("looks clean") instead of asking for one.
-- It puts a few items in a fair slot that the key does not expect, such as the floor rule under Must-haves and not Taste.
+- It puts a few items in a fair slot that the key does not expect, such as the floor rule under Done and not Taste.
 
 ## Brief format
+
+Required: Goal, Done, Output, Constraints, Tools, Agents and roles, Evals, Verification.
+Optional, omitted when empty: Kind, Plan first, Taste, Skills, Parking lot, Unknowns.
+
+Where the old names went:
+
+| Old slot | Now |
+|---|---|
+| Goal, and Decision (it was split out of Goal) | Goal |
+| Must-haves, including `investigate:` | Done |
+| Output | Output, including how the person wants to see it |
+| If stuck, and `out of scope:` | Constraints |
+| Context, when it named a file, a system or a tool | Tools, with `write first:` |
+| the `how:` line that was under Skills | Agents and roles |
+| Verify | Verification |
+| Kind, Plan first, Taste, Skills, Parking lot, Unknowns | still those slots, now optional |
+
+Evals is new. It is one pass case and one fail case. It is not Done and it is not Verification.
 
 ```
 # Brief: <title>
 
-- Kind: build | review | design | learn | search/decide
-- Plan first: yes: <plan> | none needed
-- Goal: <value>
-- Decision: <value, or unknown: <question>?>
-- Must-haves:
-  - <item>
+- Goal: <what to do>
+- Done:
+  - <observable criterion>
   - investigate: <question the agent answers by looking>
+- Output: <what comes back, and how the person sees it>
+- Constraints:
+  - <guardrail>
   - out of scope: <exclusion>
-...
-- Unknowns:
-  - unknown: <question>?
+- Tools:
+  - <tool>
+  - write first: <what must be written first, or none>
+- Agents and roles:
+  - how: <how the work is split>
+- Evals:
+  - Pass: <one case>
+  - Fail: <one case>
+- Verification: <how each claim is proved>
 
 ## Questions
 
@@ -112,6 +160,8 @@ outcome/
     prd-review-ramble/              review: a PRD path said with "I think", questions to look up, a tangent
     learn-ramble/                   learn: indexes for a slow query; output is an explanation and a check
                                     each of the last three: input.md, key.md, runs/run-1/brief.md, runs/score.md
+    missing-evals/                  shape only: a brief with every required slot except Evals
+      runs/run-1/brief.md           check_brief.py fails, and the only failure is "missing slot: Evals"
 ```
 
 ## Run the checks
@@ -122,6 +172,7 @@ From `outcome/`:
 python3 check/test_check_brief.py
 python3 check/test_score_case.py
 for c in cases/*/; do
+  [ "$(basename "$c")" = missing-evals ] && continue
   for b in "$c"runs/*/brief.md; do
     python3 check/check_brief.py "$b" | tail -1
     python3 check/score_case.py "$c"key.md "$b" | tail -1
@@ -129,4 +180,8 @@ for c in cases/*/; do
 done
 ```
 
-Every `run-1` passes both. `apartment-search/runs/run-2` passes the shape check and fails the score, which is the point of it.
+Every scored `run-1` passes both. `apartment-search/runs/run-2` passes the shape check and fails the score, which is the point of it. `missing-evals` has no key. Its brief fails `check_brief.py` on the missing Evals slot, and that is the point of it. Skip it in the loop above. Check it on its own:
+
+```
+python3 check/check_brief.py cases/missing-evals/runs/run-1/brief.md
+```

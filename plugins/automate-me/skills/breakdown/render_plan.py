@@ -3,6 +3,8 @@
 Usage: python3 render_plan.py <plan.json> > page.html          (the artifact page)
        python3 render_plan.py --text <plan.json> > page.txt    (plain text, for the cold read)
        python3 render_plan.py --prompt B <plan.json>           (item B as an agent prompt)
+
+Exit 3 with one line on a usage error: missing arguments, an unreadable or malformed plan, or an unknown item id.
 """
 import html
 import json
@@ -11,6 +13,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "explain-doc", "check"))
 from render_page import CSS, FONTS, Rich  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "outcome", "check"))
+from check_brief import core, parse  # noqa: E402
 
 EXTRA = """
 .outcome{max-width:70ch;margin-top:14px;background:var(--accent-soft);border-radius:6px;padding:12px 14px;display:grid;gap:4px}
@@ -159,42 +163,101 @@ def render_text(p):
     return "\n".join(o) + "\n"
 
 
-def lc(t):
-    first = t.split(" ", 1)[0]
-    return t if len(first) > 1 and first.isupper() else t[:1].lower() + t[1:]
-
-
 def render_prompt(p, iid):
     by = {it["id"]: it for it in p["items"]}
     it = by[iid]
     s, lp = it["spec"], it["spec"].get("loop", {})
     before = [f'- {a}. {by[a]["name"]}: {by[a]["spec"]["output"]}' for a in it.get("after", [])]
-    return "\n".join([
+    changes_code = s.get("harness") != "findings file"
+    waits = ", ".join(it.get("after", [])) or "none"
+    guard = "Report only." if not changes_code else "Push, post or message nothing unless the limits allow it."
+    body = "\n".join([
         *([f'Run this only if {it["only_if"]} Otherwise report "not needed" and stop.'] if it.get("only_if") else []),
-        f'Goal: {s["outcome"]} This is item {iid} of "{p["title"]}". The project outcome is: {p["outcome"]["outcome"]}',
+        f'- Goal: {s["outcome"]} This is item {iid} of "{p["title"]}". The project outcome is: {p["outcome"]["outcome"]}',
         *(["Uses the output of:"] + before if before else []),
-        f'Context: read only {", ".join(s.get("context", []))}. Ask before reading anything else.',
-        f'Check: done when {lc(s["done_when"])}',
-        f'Limits: {s["limits"]}',
-        f'Output: {s["output"]}',
-        f'Verify: run the {s["harness"]} until it passes. Then {lc(s["verifier"])} {NOT_PROOF} {EVIDENCE}',
-        *([REVIEW] if s.get("harness") != "findings file" else []),
-        f'Run on: {s.get("model")} at {s.get("effort")} effort.',
-        f'If stuck: at most {lp.get("max")} tries. {lp.get("exit_when", "")}',
-        'At the end: update RESUME.md with the goal, what is done and verified, the next step, key files and gotchas.',
-        'Never say done or correct. Report what you ran and its output, and the verifier decides.',
-        f'Tools: {", ".join(s.get("tools", [])) or "none named"}. Report only; push, post or message nothing unless the limits allow it.',
-    ]) + "\n"
+        f'- Done: {s["done_when"]}',
+        f'- Output: {s["output"]}',
+        f'- Constraints: {s["limits"]} At most {lp.get("max")} tries. {lp.get("exit_when", "")} {guard}',
+        f'- Tools: {", ".join(s.get("tools", [])) or "none named"}. Waits for: {waits}. Read only {", ".join(s.get("context", [])) or "nothing else"}. Ask before reading anything else.',
+        f'- Agents and roles: worker {s.get("model")} at {s.get("effort")} effort. The verifier is a fresh agent that did not do the work.',
+        *([REVIEW] if changes_code else []),
+        "- Evals:",
+        "  - unknown: What is one case that should pass, and one that should fail?",
+        NOT_PROOF,
+        f'- Verification: {s["verifier"]} {EVIDENCE}',
+        "At the end: update RESUME.md with the goal, what is done and verified, the next step, key files and gotchas.",
+        "Never say done or correct. Report what you ran and its output, and the verifier decides.",
+        "",
+        "## Questions",
+        "",
+        "1. What is one case that should pass, and one that should fail?",
+    ])
+    return "\n".join([body, *confirmed_lines(p, it, body)]) + "\n"
+
+
+def prompt_fields(p, it):
+    """(field, value, slot) for every plan string that lands in item it's prompt. slot is the prompt slot
+    that carries the value, or None. field is the name check_plan prints and `confirmed` keys on."""
+    s, w = it.get("spec", {}), f"item {it.get('id', '?')}"
+    out = [("title", p.get("title"), "Goal"), ("outcome.outcome", p.get("outcome", {}).get("outcome"), "Goal"),
+           (f"{w} name", it.get("name"), None)]
+    out += [(f"{w} only_if", it["only_if"], None)] if "only_if" in it else []
+    out += [(f"{w} spec.{f}", s.get(f), slot) for f, slot in (("outcome", "Goal"), ("done_when", "Done"), ("output", "Output"),
+            ("limits", "Constraints"), ("verifier", "Verification"), ("model", "Agents and roles"))]
+    out.append((f"{w} spec.loop.exit_when", s.get("loop", {}).get("exit_when"), "Constraints"))
+    for f in ("tools", "context"):
+        values = s.get(f, [])
+        out += [(f"{w} spec.{f}[{k}]", v, "Tools") for k, v in enumerate(values)] if isinstance(values, list) else [(f"{w} spec.{f}", values, "Tools")]
+    return out
+
+
+def is_confirmed(p, field, value):
+    """The plan's `confirmed` map holds this field with this value."""
+    confirmed = p.get("confirmed", {})
+    return isinstance(confirmed, dict) and isinstance(confirmed.get(field), str) and core(confirmed[field]) == core(str(value))
+
+
+def confirmed_lines(p, it, body):
+    """A prompt slot that carries a confirmed plan field is confirmed in the prompt too, as its whole rendered value."""
+    slots = parse(body)[0]
+    hit = {slot for field, value, slot in prompt_fields(p, it) if slot and is_confirmed(p, field, value)}
+    lines = [f"- {slot}: {v}" for slot in slots if slot in hit for v in slots[slot]]
+    return ["", "## Confirmed", "", *lines] if lines else []
+
+
+def usage(message):
+    print(f"usage: {message}. See: python3 render_plan.py --help", file=sys.stderr)
+    return 3
 
 
 def main(argv):
-    if argv[0] == "--prompt":
-        print(render_prompt(json.load(open(argv[2], encoding="utf-8")), argv[1]), end="")
-    elif argv[0] == "--text":
-        print(render_text(json.load(open(argv[1], encoding="utf-8"))), end="")
-    else:
-        print(render(json.load(open(argv[0], encoding="utf-8"))))
+    if argv in (["-h"], ["--help"]):
+        print(__doc__.strip())
+        return 0
+    if not argv:
+        return usage("no plan given")
+    mode, args = (argv[0], argv[1:]) if argv[0] in ("--prompt", "--text") else (None, argv)
+    if len(args) != (2 if mode == "--prompt" else 1):
+        return usage("wrong number of arguments")
+    try:
+        with open(args[-1], encoding="utf-8") as handle:
+            p = json.load(handle)
+    except (OSError, ValueError) as err:
+        return usage(f"cannot read {args[-1]}: {err}")
+    if not isinstance(p, dict):
+        return usage(f"{args[-1]} is not a JSON object")
+    try:
+        if mode == "--prompt":
+            if args[0] not in {it.get("id") for it in p.get("items", [])}:
+                return usage(f"no item {args[0]} in {args[-1]}")
+            out = render_prompt(p, args[0])
+        else:
+            out = render_text(p) if mode == "--text" else render(p) + "\n"
+    except (AttributeError, KeyError, TypeError, ValueError) as err:
+        return usage(f"malformed plan {args[-1]}: {type(err).__name__} {err}. Run check_plan.py on it")
+    print(out, end="")
+    return 0
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    sys.exit(main(sys.argv[1:]))
