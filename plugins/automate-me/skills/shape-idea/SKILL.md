@@ -92,7 +92,7 @@ The file uses these sections, in this order. Copy the labels as they stand.
 - stop: done
 - turns: 1
 - writing: pass
-- map: goal goes to Goal. output goes to Output. verify goes to Verify. constraints, done, and every other Decided line go to Must-haves. Open goes to Unknowns. Parked goes to the Parking lot.
+- map: goal goes to Goal. done goes to Done. output goes to Output. constraints goes to Constraints. verify goes to Verification. Tools, Agents and roles, and Evals stay unknown.
 ```
 
 A slot lives in Decided or in Open, not in both. Handoff is written only on the stop turn. Until then the file has the first three sections.
@@ -136,11 +136,14 @@ Outcome reads the sections like this.
 | Section | Lands in the brief as |
 |---|---|
 | The `goal:` line | Goal |
+| The `done:` line | Done |
 | The `output:` line | Output |
-| The `verify:` line | Verify |
-| `constraints:`, `done:`, and every other Decided line | Must-haves |
+| The `constraints:` line | Constraints |
+| The `verify:` line | Verification |
 | Open | Unknowns |
 | Parked | Parking lot |
+
+Tools, Agents and roles, and Evals are not slots here. Outcome writes each as an unknown and asks. It does not invent them.
 
 Run `python3 "$SKILL_DIR"/check/check_decisions.py <decisions.md>` after you write Handoff. Fix what it flags before you show the file. It checks the shape, and it runs the shared writing check on the file. A `writing: pass` line does not override a writing failure. The four sections are present once, in order. Every Open item ends with one question mark. Each slot is one Decided line or one Open line, with a value. `stop` matches the file. `turns` is a whole number from 1 through 10. No item runs past one line. Handoff names outcome.
 
