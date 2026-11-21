@@ -319,6 +319,19 @@ check(
   signinRules.some((r) => r.status === "skip" && r.measured.exemption === "signin") && badIds(signinRules).length === 0,
   JSON.stringify(signinRules.filter((r) => r.status !== "pass"), null, 2),
 )
+const gridSign = readingPage(360, { form: true, password: true, cards: 1 })
+gridSign.elements.find((el) => el.tag === "form").display = "grid"
+check(
+  "a grid form with one help card is still a sign-in",
+  evaluate(gridSign, cfg).some((r) => r.status === "skip" && r.measured.exemption === "signin"),
+)
+check(
+  "one callout card keeps the prose exemption",
+  evaluate(readingPage(680, { cards: 1 }), cfg).some((r) => r.status === "skip" && r.measured.exemption === "prose"),
+)
+check("min-height on a card still counts", cardSlack({ ...fitted, rect: { ...fitted.rect, height: 220 }, minHeight: 220, hero: false }, [child], 4).status === "fail")
+check("min-height on a hero does not count", cardSlack({ ...fitted, rect: { ...fitted.rect, height: 220 }, minHeight: 220, hero: true }, [child], 4).status === "pass")
+check("a past deadline stops scoring", (() => { try { evaluate({ elements: [], deadline: 1, viewportWidth: 1280, scrollWidth: 1280, requestedWidth: 1280, widths: [1280] }, cfg); return false } catch (e) { return /scoring/.test(e.message) } })())
 checkOnly("a half-width dashboard still fails G1", evaluate(readingPage(640, { cards: 3 }), cfg), "G1")
 check(
   "clearing exemptions judges the reading column",

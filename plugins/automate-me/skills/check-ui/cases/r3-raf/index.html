@@ -13,12 +13,11 @@
 </main>
 <script>
 const go = document.getElementById("go")
-let x = 24
-let dir = 1
+let n = 0
 function tick() {
-  x += dir
-  if (x > 36 || x < 24) dir = -dir
-  go.style.transform = "translateX(" + x + "px)"
+  n += 1
+  go.dataset.ticks = String(n)
+  go.style.transform = "translateX(" + (20 + (n % 40)) + "px)"
   requestAnimationFrame(tick)
 }
 tick()
