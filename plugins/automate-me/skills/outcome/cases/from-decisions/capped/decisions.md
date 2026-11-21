@@ -19,7 +19,7 @@
 
 ## Parked
 
-- a native app later
+- a native app, later
 
 ## Handoff
 

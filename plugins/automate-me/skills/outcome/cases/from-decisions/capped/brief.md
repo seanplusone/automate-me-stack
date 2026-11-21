@@ -8,7 +8,7 @@
 - Constraints:
   - no accounts, it's only me
   - Report only. Do not run or post until the user says to.
-  - out of scope: a native app later
+  - out of scope: a native app, later
 - Tools:
   - unknown: Which tool must the run use, and what, if anything, must be written first?
 - Agents and roles:
@@ -19,7 +19,7 @@
   - I save one link and open the box
   - Every claim names its run, file:line or photo, or says guess.
 - Parking lot:
-  - a native app later
+  - a native app, later
 - Unknowns:
   - unknown: What will you decide with the result?
   - unknown: Which tool must the run use, and what, if anything, must be written first?

@@ -66,7 +66,11 @@ def failed(text):
     return {name for name, fails in check(text) if fails}
 
 
+TEXTS = []
+
+
 def expect(name, text, want):
+    TEXTS.append(text)
     RAN.append(name)
     got = failed(text)
     if got != want:
@@ -170,13 +174,14 @@ NESTED = """- the one habit is drinking water
 - Use blue paper.
 ~~~
 ````"""
+FENCE = "no code fence under Decided, Open or Parked"
 expect("a fence under Decided fails, so its text is not lost",
-       swap("- the one habit is drinking water", NESTED), {"no code fence under Decided"})
+       swap("- the one habit is drinking water", NESTED), {FENCE})
 expect("a fence under an output slot fails",
        swap("- output: the current streak on the phone",
-            "- output: a CSV with these columns:\n```\nday,done,streak\n```"), {"no code fence under Decided"})
-expect("nested fence elsewhere stays hidden",
-       swap("- share streaks with friends", "- share streaks with friends\n" + NESTED.split("\n", 1)[1]), set())
+            "- output: a CSV with these columns:\n```\nday,done,streak\n```"), {FENCE})
+expect("a nested fence under Parked fails too",
+       swap("- share streaks with friends", "- share streaks with friends\n" + NESTED.split("\n", 1)[1]), {FENCE})
 
 EXTRA = "tools, agents, evals, and decide lines are usable"
 HABIT = "- the one habit is drinking water"
@@ -298,6 +303,119 @@ def expect_code(name, args, code):
 
 expect_code("usage exits 3", [], 3)
 expect_code("help exits 0", ["--help"], 0)
+
+# Round 3, fix 3. Every Decided line is judged by the same rules, whatever its label or prefix.
+READY = "other Decided and Parked lines are ready"
+OUT_LINE = "- output: the current streak on the phone"
+
+
+def out(value):
+    return swap(OUT_LINE, f"- output: {value}")
+
+
+def open_q(line):
+    return swap("- Do you want a reminder?", line)
+
+
+def parked(line):
+    return swap("- share streaks with friends", line)
+
+
+for label, text, check_name, words in (
+        ("stated italic unknown output", out("stated: *unknown*"), PLACE, "move it to Open as a question"),
+        ("stated TBD output", out("stated: TBD"), PLACE, "placeholder"),
+        ("italic unknown output", out("_unknown_"), PLACE, "move it to Open as a question"),
+        ("quoted unknown output", out('"unknown"'), PLACE, "move it to Open as a question"),
+        ("paren unknown yet agents", added("- agents: (unknown yet)"), EXTRA, "move it to Open as a question"),
+        ("italic unknown tools", added("- tools: *unknown*: Slack or Teams"), EXTRA, "move it to Open as a question"),
+        ("italic unknown eval case", added("- evals: pass: *unknown*; fail: a missed day keeps the streak"), EXTRA,
+         "move it to Open as a question"),
+        ("extra TBD eval case", added("- evals: pass: mark today and the streak goes up; fail: miss a day and it"
+                                      " still grows; pass: TBD"), EXTRA, "placeholder"),
+        ("other line trap", added("- it should look clean and modern"), READY, "no visible signal"),
+        ("other line unknown", added("- unknown: which browser"), READY, "move it to Open as a question"),
+        ("other line stated unknown", added("- stated: unknown"), READY, "move it to Open as a question"),
+        ("other line stated TBD", added("- stated: TBD"), "no placeholder line", "placeholder"),
+        ("other line question", added("- should a link expire?"), READY, "move it to Open"),
+        ("parked unknown", parked("- unknown"), READY, "move it to Open as a question"),
+        ("parked trap", parked("- clean"), READY, "no visible signal"),
+        ("fence under Open", open_q("- Do you want a reminder?\n```\n- sync between phones?\n```"), FENCE, "under Open"),
+        ("fence under Parked", parked("- share streaks with friends\n~~~\n- sync between phones, not now\n~~~"), FENCE,
+         "under Parked")):
+    expect(f"fix3 fails: {label}", text, {check_name})
+    RAN.append(f"fix3 message: {label}")
+    if words not in reason(text, check_name):
+        FAILS.append(f"fix3 message: {label}: {reason(text, check_name)}")
+
+expect("fix3 fails: an Open unknown with no question", open_q("- unknown: ?"), {QUESTION})
+expect("fix3 fails: an Open slot unknown with no question", swap(OUT_LINE, "", open_q("- output: unknown: ?")).replace(
+    "- stop: done", "- stop: turn-cap").replace("- turns: 1", "- turns: 10"), {PLACE})
+
+GOAL_LINE = "- goal: a tiny habit tracker on my phone"
+for label, text in (
+        ("unknown prose in done", swap("- done: mark today done in under 10 seconds",
+                                       "- done: unknown file types go to an Other folder")),
+        ("Unknown prose in output", out("Unknown senders listed with a count")),
+        ("unknown-file prose in tools", added("- tools: Unknown-file detector script in tools/")),
+        ("default goal with a decide line", added("- decide: which habit to keep").replace(
+            GOAL_LINE, "- goal: Default to water when I forget which habit")),
+        ("single quoted label in an Open question", open_q("- Should the button say 'Vote?' or 'Pick'?")),
+        ("parens in an Open question", open_q("- should it be a list (or a page?) or both?")),
+        ("unknown prose in Parked", parked("- unknown senders get their own folder")),
+        ("agents and roles label", added("- agents and roles: me, and a friend checks it")),
+        ("write first label", added("- write first: a streak.json file")),
+        ("bold out of scope label", added("- **out of scope:** syncing to a watch"))):
+    expect(f"fix3 passes: {label}", text, set())
+
+expect("fix3 a curly quoted label is not a second question, though the writing check bans curly quotes",
+       open_q("- Should the button say \u2018Vote?\u2019 or \u2018Pick\u2019?"), {"prose passes the writing check"})
+expect("fix3 fails: default goal without a decide line",
+       swap(GOAL_LINE, "- goal: Default to water when I forget which habit"), {PLACE})
+for value in ("maybe", "not sure yet", "ok"):
+    RAN.append(f"fix3 decide asks: {value}")
+    text = added(f"- decide: {value}")
+    if asks(text) != [("Goal", value)] or failed(text):
+        FAILS.append(f"fix3 decide asks: {value}: {asks(text)} {failed(text)}")
+for line, want in (("- how: ok", [("Done", "how: ok")]), ("- stated: ok", [("Done", "ok")])):
+    RAN.append(f"fix3 a prefix does not hide an ask: {line}")
+    if asks(added(line)) != want:
+        FAILS.append(f"fix3 a prefix does not hide an ask: {line}: {asks(added(line))}")
+expect_exit("fix3 exit 2 on decide: maybe", added("- decide: maybe"), 2)
+
+
+def expect_unreadable(name, path):
+    RAN.append(name)
+    got = subprocess.run([sys.executable, SCRIPT, path], capture_output=True, text=True)
+    said = (got.stdout + got.stderr).strip().splitlines()
+    if got.returncode != 3 or len(said) != 1 or "Traceback" in got.stderr:
+        FAILS.append(f"{name}: exit {got.returncode}, said {said}")
+
+
+expect_unreadable("fix3 a missing path exits 3", os.path.join(tempfile.mkdtemp(), "missing.md"))
+expect_unreadable("fix3 a directory exits 3", tempfile.mkdtemp())
+BINARY = os.path.join(tempfile.mkdtemp(), "binary.md")
+open(BINARY, "wb").write(b"# Decisions\n\xff\xfe\n")
+expect_unreadable("fix3 a non-UTF-8 file exits 3", BINARY)
+
+# Invariant: on every text above, the mapper exits as check_decisions does, and a brief it prints passes check_brief.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "outcome", "check")))
+import map_decisions  # noqa: E402
+from check_brief import ask_lines, check as check_brief  # noqa: E402
+
+for number, text in enumerate(TEXTS):
+    path = write(text)
+    with contextlib.redirect_stdout(io.StringIO()):
+        dec = main(path)
+    printed = io.StringIO()
+    with contextlib.redirect_stdout(printed):
+        mapped = map_decisions.main(path)
+    brief = printed.getvalue()
+    bad = [] if mapped == dec else [f"mapper exit {mapped}, check_decisions exit {dec}"]
+    if mapped == 0:
+        bad += [f for _, fails in check_brief(brief) for f in fails] + ask_lines(brief)
+    RAN.append(f"invariant {number}")
+    if bad:
+        FAILS.append(f"invariant {number}: {bad}\n{text}")
 
 if __name__ == "__main__":
     for f in FAILS:

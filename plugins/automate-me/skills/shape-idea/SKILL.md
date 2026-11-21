@@ -60,7 +60,7 @@ Five slots are required: goal, done, output, verify, and constraints. Each one i
 
 A hedge is "maybe", "I think", or "not sure". It is not a decision. If a wrong guess would change the shape, it goes to Open. "Later" goes to Parked, even when it is hedged.
 
-"Unknown" is not a decision either. A slot, or a `tools:`, `agents:` or `evals:` line, that the user calls unknown goes to Open as a question. The check rejects a Decided value that starts with `unknown`.
+"Unknown" is not a decision either. A slot, or a `tools:`, `agents:` or `evals:` line, that the user calls unknown goes to Open as a question. The check rejects a Decided value that is `unknown`, `unknown: ...`, or `unknown yet`. Prose that starts with the word, such as "unknown senders get a folder", is fine.
 
 A Decided `evals:` line names one case that should pass and one that should fail, as `evals: pass: <case>; fail: <case>` or `evals: <case> should pass, <case> should fail`. A Decided `decide:` line says what the user will decide with the result. It goes to Goal in place of outcome's decide question. A Decided `out of scope:` line is a firm exclusion.
 
@@ -145,7 +145,7 @@ Outcome reads the sections like this. This skill does not ask Tools, Agents and 
 | A decided `output:` line | Output |
 | An open slot | That slot as `unknown:`, and again under Unknowns |
 | The `constraints:` line | Constraints |
-| A Parked line that says not now, or a standalone later | Constraints as `out of scope:`, and the Parking lot |
+| A Parked `out of scope:` line, or one that ends in not now, `, later` or `for later` | Constraints as `out of scope:`, and the Parking lot |
 | A Parked question | Unknowns as `unknown: <question>?`, and the Parking lot |
 | Other Parked lines | Parking lot |
 | The `verify:` line | Verification |
@@ -155,7 +155,7 @@ Outcome reads the sections like this. This skill does not ask Tools, Agents and 
 
 The read-back asks at most 3 questions, in this order: an open goal or done question, then the decide question, then Tools, then Agents and roles, then Evals. Unasked ones stay in Unknowns.
 
-Run `python3 "$SKILL_DIR"/check/check_decisions.py <decisions.md>` after you write Handoff. Exit 1 means fix what it flags before you show the file. The checks are listed in `README.md`. A code fence does not hide a slot, and a fence under Decided fails, because its text would not reach the brief. `writing: pass` does not override a writing failure.
+Run `python3 "$SKILL_DIR"/check/check_decisions.py <decisions.md>` after you write Handoff. Exit 1 means fix what it flags before you show the file. The checks are listed in `README.md`. A code fence does not hide a slot, and a fence under Decided, Open or Parked fails, because its text would not reach the brief. `writing: pass` does not override a writing failure.
 
 Exit 2 is a break point. Each `ASK: <slot>: Is '<value>' a real answer for <slot>?` line is a value outcome's brief check cannot judge, such as `ok` or `maybe`. Stop and ask the user that yes/no question, one line each. Do not guess the answer. On a yes, add the line under a `## Confirmed` section at the end of the file, as `- <Slot>: <value>`, and run the check again. On a no, replace the value with the user's answer, or move the slot to Open as a question. The handoff is ready only on exit 0.
 

@@ -30,24 +30,29 @@ override a writing failure.
 
 Values are judged by outcome's check_brief: classify() says pass, fail or ask. Its fixed list is
 deliberately narrow. A phrase off that list passes here and is left to the ask or the read-back.
+Every Decided line is judged by the same rules, whatever its label. A leading `stated:`, bold or
+not, is dropped first, so it hides nothing.
 
 Fails (exit 1) when:
 - the file has no `# Decisions` title;
 - a section is missing or repeated, or the sections are out of order;
-- a code fence sits under Decided, because its text would not reach the brief;
-- an Open item does not end with one `?`, or is only a placeholder such as `?` or `TBD?`.
-  A `?` inside inline code, a URL, or double quotes does not count;
+- a code fence sits under Decided, Open or Parked, because its text would not reach the brief;
+- an Open item does not end with one `?`, or is only a placeholder such as `?`, `TBD?` or `unknown: ?`.
+  A `?` inside inline code, a URL, quotes (single, double or curly) or parens does not count;
 - any item holds a template hole such as `<channel>`, outside inline code;
 - a Decided line that is not a slot, or a Parked line, is only a placeholder such as `TBD` or `later, perhaps`;
-- a slot value classifies as fail (a placeholder or a template hole), or a Decided value ends in `?`;
-- a Decided value is not ready for its brief slot. Bold, code marks and `stated:` are ignored here.
-  It starts with `unknown` (move it to Open as a question), is only a trap word, starts with a brief
-  tag outside its home (`investigate:` Done, `out of scope:` Constraints, `how:` Agents and roles),
-  or is a goal that starts with `default`;
-- a Decided `tools:`, `agents:`, `evals:`, or `decide:` line is empty, fails, is a question, is not
-  ready as above, or is repeated. An `evals:` line needs a pass case and a fail case whose bodies
-  are ready and do not fail (check_brief's eval_cases: `pass: <case>; fail: <case>` or
-  `<case> should pass, <case> should fail`);
+- a slot value classifies as fail (a placeholder or a template hole), or any Decided value ends in `?`;
+- a Decided value, or a Parked line, is not ready for the brief. It is an unknown: once check_brief's
+  core() strips markup (bold, italics, quotes, parens, one tag label), it is `unknown` alone,
+  `unknown: ...`, or `unknown` and a tail classify() does not pass, such as `yet`. Prose such as
+  `unknown file types go to Other` is not. Or it is only a trap word. A slot value also fails when it
+  starts with a brief tag outside its home (`investigate:` Done, `out of scope:` Constraints, `how:`
+  Agents and roles), or when a Goal value starts with `default` while Goal holds an unknown, that is
+  when no `decide:` line or no goal is Decided;
+- a Decided `tools:`, `agents:` (or `agents and roles:`), `evals:`, `decide:`, or `write first:` line
+  is empty, fails, is a question, is not ready as above, or is repeated. An `evals:` line fails as
+  check_brief would fail it, so every case body must pass, and it needs a pass case and a fail case
+  (check_brief's eval_cases: `pass: <case>; fail: <case>` or `<case> should pass, <case> should fail`);
 - a slot is missing from both Decided and Open, is repeated, is in both, or has an empty value.
   A slot written as `**goal:**` or `1. goal:` gets its own message;
 - stop is missing, repeated, or not one of done, turn-cap, open-cap;
@@ -66,7 +71,8 @@ the file as `- <Slot>: <value>`, and the mapper copies it into the brief. A no r
 or moves the slot to Open as a question. A confirmation never lifts a fail.
 
 Prints a PASS or FAIL line per check, then the ASK lines, then `PASS|FAIL|ASK decisions: <path>`.
-Exit 0 pass, 1 fail, 2 ask, 3 usage. A UTF-8 BOM is ignored.
+Exit 0 pass, 1 fail, 2 ask, 3 usage: bad arguments, or a path that is missing, a directory, or not
+UTF-8 text, with one line on stderr. A UTF-8 BOM is ignored.
 """
 import contextlib
 import io
@@ -79,7 +85,7 @@ sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath
 from check_writing import check_writing  # noqa: E402
 
 sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "outcome", "check")))
-from check_brief import asks as brief_asks, check as check_brief, classify, eval_cases, judge  # noqa: E402
+from check_brief import asks as brief_asks, check as check_brief, classify, core, eval_cases, judge  # noqa: E402
 from check_brief import parse as parse_brief  # noqa: E402
 
 SECTIONS = ["Decided", "Open", "Parked", "Handoff"]
@@ -94,25 +100,28 @@ SLOTS = ["goal", "done", "output", "verify", "constraints"]
 # A slot label may have spaces before the colon, and the colon may be full-width.
 # `Output : value` and `output： value` are the output slot. `goalpost:` is not goal.
 SLOT_HEAD = re.compile(r"^(goal|done|output|verify|constraints)\s*[:\uff1a]\s*(.*)$", re.I)
-OUT_OF_SCOPE = re.compile(r"^out of scope\s*:", re.I)
+OUT_OF_SCOPE = re.compile(r"^[*_]*out of scope[*_]*\s*:[*_]*\s*", re.I)
 ASCII_DIGITS = re.compile(r"^[0-9]+$")
 # A fence is ``` or ~~~, three or more, with optional info. A closer matches the
 # innermost fence's character and length and has no info. A different length or
 # the other character opens a nested fence. Text inside any of them is hidden.
 FENCE_LINE = re.compile(r"^(\s*)(`{3,}|~{3,})(.*)$")
 HANDOFF_FIELD = re.compile(r"^(next|stop|turns|writing|map)\s*[:\uff1a]\s*(.*)$", re.I)
-EXTRA_HEAD = re.compile(r"^(tools|agents|evals|decide)\s*[:\uff1a]\s*(.*)$", re.I)
-URL_OR_CODE = re.compile(r"`[^`]*`|https?://\S+|\"[^\"\n]*\"|\u201c[^\u201d\n]*\u201d")
+EXTRA_HEAD = re.compile(r"^(tools|agents and roles|agents|evals|decide|write first)\s*[:\uff1a]\s*(.*)$", re.I)
+# Spans whose `?` is not the question's end: code, a URL, and text in quotes or parens.
+URL_OR_CODE = re.compile(r"`[^`]*`|https?://\S+|\"[^\"\n]*\"|\u201c[^\u201d\n]*\u201d|(?<!\w)'[^'\n]*'(?!\w)"
+                         r"|\u2018[^\u2019\n]*\u2019|\([^()\n]*\)")
 LOOSE_SLOT = re.compile(r"^(?:\d+[.)]\s*)?[*_]+\s*(goal|done|output|verify|constraints)\s*[*_]*\s*[:\uff1a]"
                         r"|^\d+[.)]\s*(goal|done|output|verify|constraints)\s*[:\uff1a]", re.I)
 BRIEF_SLOT = {"goal": "Goal", "done": "Done", "output": "Output", "verify": "Verification",
               "constraints": "Constraints", "tools": "Tools", "agents": "Agents and roles", "evals": "Evals",
-              "decide": "Goal"}
+              "decide": "Goal", "write first": "Tools"}
 # A brief tag and the one brief slot where it may lead an item.
 TAG_LEAD = re.compile(r"^(investigate|out of scope|how)\s*:", re.I)
 TAG_HOME = {"investigate": "Done", "out of scope": "Constraints", "how": "Agents and roles"}
 DEFAULT_LEAD = re.compile(r"^default\b", re.I)
-UNKNOWN_LEAD = re.compile(r"^unknown\b", re.I)
+STATED = re.compile(r"^\s*[*_`]*\s*stated\s*[*_`]*\s*:\s*[*_`]*\s*", re.I)
+UNKNOWN_WORD = re.compile(r"^unknown\b\s*(:?)(.*)$")
 
 
 def canon(name):
@@ -162,36 +171,72 @@ def split_fences(text):
     return "\n".join(visible), "\n".join(hidden), bool(stack), fenced
 
 
-def unready(value, slot):
-    """Why a Decided value is not ready for brief slot `slot`, or None.
+def unstated(value):
+    """The value with every leading `stated:` label gone, bold or not. The rules judge what is left."""
+    text = (value or "").strip()
+    while STATED.match(text):
+        text = STATED.sub("", text, count=1).strip()
+    return text
 
-    Bold, code marks and a leading `stated:` do not hide anything. An unknown stays a question,
-    so it belongs in Open. A bare trap word names no signal. A leading brief tag outside its
-    home slot, or a leading `default` in Goal beside the decide question, would fail the brief.
+
+def is_unknown(value):
+    """`unknown` alone, `unknown: ...`, or `unknown` and a hedge such as `yet`, once markup is gone.
+
+    Markup is check_brief's core(): italics, bold, quotes, parens and one tag label. Prose such as
+    `unknown file types go to Other` is not an unknown.
     """
-    text = re.sub(r"^stated\s*:\s*", "", re.sub(r"\*\*|__|`", "", value or "").strip(), flags=re.I)
-    tag = TAG_LEAD.match(text)
-    if UNKNOWN_LEAD.match(text):
+    match = UNKNOWN_WORD.match(core(unstated(value)))
+    return bool(match) and (bool(match.group(1)) or classify(match.group(2)) != "pass")
+
+
+def unready(value, decided=True):
+    """Why a Decided or Parked value is not ready for the brief, or None. A `stated:` prefix hides nothing.
+
+    A placeholder or a template hole fails. A Decided value that ends in `?` is a question. An unknown
+    stays a question, so it belongs in Open. A bare trap word names no signal.
+    """
+    plain = unstated(value)
+    outcome, why = judge(plain)
+    if outcome == "fail":
+        return "holds a template hole; fill it" if why == "hole" else "is a placeholder"
+    if decided and plain.endswith("?"):
+        return "is a question, not a decision; move it to Open"
+    if is_unknown(plain) and not plain.endswith("?"):
         return "is unknown; move it to Open as a question"
-    if is_trap(text):
+    if is_trap(plain):
         return "names no visible signal; say what you will see"
+    return None
+
+
+def question(item):
+    """An Open item as the brief asks it, with any leading `unknown:` or `stated:` gone."""
+    return re.sub(r"^(?:\s*(?:unknown|stated)\s*:)+", "", item, flags=re.I).strip()
+
+
+def misplaced(value, slot):
+    """Why a slot value starts with a brief tag that belongs in another slot, or None."""
+    tag = TAG_LEAD.match(re.sub(r"\*\*|__|`", "", unstated(value)))
     if tag and TAG_HOME[tag.group(1).lower()] != slot:
         return f"starts with {tag.group(0)!r}, a brief tag that belongs in {TAG_HOME[tag.group(1).lower()]}; reword it"
-    if slot == "Goal" and DEFAULT_LEAD.match(text):
-        return "starts with 'default', which the brief reads as a default beside the decide question; reword it"
     return None
 
 
 def brief_item(text, slot):
     """A line that is not a slot, as the mapper writes it in brief slot `slot` (Done or Parking lot).
 
-    When its first words would trip a brief tag, `stated:` goes in front. The words stay.
+    When it starts with a brief tag outside its home, or with `default`, `stated:` goes in front.
+    The words stay. Unknowns, trap words and placeholders never get here: the check fails them.
     """
     raw = text.strip()
     tag = TAG_LEAD.match(raw)
-    if (tag and TAG_HOME[tag.group(1).lower()] != slot) or UNKNOWN_LEAD.match(raw) or DEFAULT_LEAD.match(raw) or is_trap(raw):
+    if (tag and TAG_HOME[tag.group(1).lower()] != slot) or DEFAULT_LEAD.match(raw):
         return f"stated: {raw}"
     return raw
+
+
+def scoped(item):
+    """An `out of scope:` line, bold or not, as the brief writes it in Constraints."""
+    return "out of scope: " + OUT_OF_SCOPE.sub("", item.strip(), count=1)
 
 
 def is_trap(text):
@@ -204,11 +249,12 @@ def has_hole(item):
 
 
 def extra_of(item):
-    """(name, value) when the line is tools:, agents:, or evals:, else None."""
+    """(name, value) when the line is tools:, agents: (or agents and roles:), evals:, decide:, or write first:."""
     match = EXTRA_HEAD.match(item.strip())
     if not match:
         return None
-    return match.group(1).lower(), match.group(2).strip()
+    name = match.group(1).lower()
+    return "agents" if name == "agents and roles" else name, match.group(2).strip()
 
 
 def is_question(item):
@@ -303,9 +349,9 @@ def check(text):
         results.append((name, fails))
 
     add("code fence is closed", [] if not unclosed else ["a code fence is opened and never closed"])
-    add("no code fence under Decided",
-        ["a code fence under Decided is not read, so its text would be lost. Put that text on the item's own line"
-         for section in fenced if section == "Decided"])
+    add("no code fence under Decided, Open or Parked",
+        [f"a code fence under {section} is not read, so its text would be lost. Put that text on the item's own line"
+         for section in fenced if section in ("Decided", "Open", "Parked")])
     add("file has a Decisions title", [] if TITLE.search(visible) else ["missing a `# Decisions` title"])
 
     present = []
@@ -330,7 +376,7 @@ def check(text):
     for item in opens:
         if not is_question(item):
             q_fails.append(f"open item needs one question at the end: {item!r}")
-        elif not slot_of(item) and classify(item) == "fail":
+        elif not slot_of(item) and classify(question(item)) == "fail":
             q_fails.append(f"open item is a placeholder, not a question: {item!r}")
     add("every open item ends with a question", q_fails)
     loose = {}
@@ -368,21 +414,25 @@ def check(text):
     add("a slot is not in Decided and Open", both_fails)
     add("slot values are not empty", empty_fails)
 
+    lands = [landing(item) for item in decided]
+    labels = [label for _, _, label in lands]
+    goal_unknown = "goal" not in labels or "decide" not in labels
+
+    def goal_default(value, slot):
+        if slot == "Goal" and goal_unknown and DEFAULT_LEAD.match(unstated(value)):
+            return "starts with 'default', which the brief reads as a default beside an unknown in Goal; reword it"
+        return None
+
     ph_fails = []
     for slot in SLOTS:
         for item in (row for row in decided if slot_of(row) == slot):
             value = slot_value(item) or ""
-            if not value:
-                continue
-            if classify(value) == "fail":
-                ph_fails.append(f"slot {slot} is a placeholder: {value!r}")
-            elif value.strip().endswith("?"):
-                ph_fails.append(f"slot {slot} is a question, not a decision: {value!r}")
-            elif unready(value, BRIEF_SLOT[slot]):
-                ph_fails.append(f"slot {slot} {unready(value, BRIEF_SLOT[slot])}: {value!r}")
+            why = value and (unready(value) or misplaced(value, BRIEF_SLOT[slot]) or goal_default(value, BRIEF_SLOT[slot]))
+            if why:
+                ph_fails.append(f"slot {slot} {why}: {value!r}")
         for item in (row for row in opens if slot_of(row) == slot):
             value = slot_value(item) or ""
-            if value and classify(value) == "fail":
+            if value and classify(question(value)) == "fail":
                 ph_fails.append(f"slot {slot} is a placeholder: {value!r}")
     add("slot values are not placeholders", ph_fails)
 
@@ -396,28 +446,38 @@ def check(text):
         if name in seen_extra:
             extra_fails.append(f"{name}: is on more than one Decided line")
         seen_extra[name] = value
+        if name == "write first" and core(value) == "none":
+            continue
         if not value or classify(value) == "fail" or value.endswith("?"):
             extra_fails.append(f"{name}: needs a real value, not a placeholder or a question")
             continue
+        if name == "evals":
+            extra_fails += [f"evals: {fail}" for check_name, fails in check_brief(f"- Evals: {value}\n")
+                            if check_name in ("no placeholder", "no template hole") for fail in fails]
         cases = eval_cases(value) if name == "evals" else []
-        why = next(filter(None, (unready(part, BRIEF_SLOT[name]) for part in [value] + [b for _, b in cases])), None)
+        why = next(filter(None, (unready(part) or misplaced(part, BRIEF_SLOT[name]) or goal_default(part, BRIEF_SLOT[name])
+                                 for part in [value] + [b for _, b in cases if classify(b) != "fail"])), None)
         if why:
             extra_fails.append(f"{name}: {why}: {value!r}")
             continue
-        kinds = {kind for kind, body in cases if classify(body) != "fail"}
-        if name == "evals" and kinds != {"pass", "fail"}:
+        if name == "evals" and {kind for kind, _ in cases} != {"pass", "fail"}:
             extra_fails.append("evals: needs a pass case and a fail case, in the user's words."
                                " Write `pass: <case>; fail: <case>` or `<case> should pass, <case> should fail`")
     add("tools, agents, evals, and decide lines are usable", extra_fails)
 
+    parked = real_items(sections.get("Parked", []))
+    others = [("Decided", item) for item, (_, _, label) in zip(decided, lands) if label in (None, "out of scope")]
+    others += [("Parked", item) for item in parked]
     add("no placeholder line",
-        [f"{name}: {item!r} is a placeholder; say what it is or remove it" for name in ("Decided", "Parked")
-         for item in real_items(sections.get(name, []))
-         if not slot_of(item) and not extra_of(item) and judge(item) == ("fail", "placeholder")])
+        [f"{name}: {item!r} is a placeholder; say what it is or remove it" for name, item in others
+         if judge(unstated(item)) == ("fail", "placeholder")])
     add("no template hole",
-        [f"{name}: {item!r} holds a template hole; fill it" for name in ("Decided", "Open", "Parked")
-         for item in real_items(sections.get(name, []))
-         if not slot_of(item) and not extra_of(item) and has_hole(item)])
+        [f"{name}: {item!r} holds a template hole; fill it"
+         for name, item in others + [("Open", item) for item in opens if not slot_of(item) and not extra_of(item)]
+         if has_hole(unstated(item))])
+    add("other Decided and Parked lines are ready",
+        [f"{name}: {item!r} {unready(item, name == 'Decided')}" for name, item in others
+         if judge(unstated(item))[0] != "fail" and unready(item, name == "Decided")])
 
     handoff = sections.get("Handoff", [])
     handoff_ready = counts.get("Handoff") == 1
@@ -527,16 +587,20 @@ def check(text):
 
 
 def landing(item):
-    """(brief slot, value) for one Decided line, as the mapper writes it."""
+    """(brief slot, value, label) for one Decided line, as the mapper places it.
+
+    label is the slot or line label (goal, tools, write first, out of scope, ...), or None for any
+    other line, which lands in Done. A `decide:` value is the Goal's decide item, with no prefix.
+    """
     slot = slot_of(item)
     if slot:
-        return BRIEF_SLOT[slot], slot_value(item)
+        return BRIEF_SLOT[slot], slot_value(item), slot
     extra = extra_of(item)
     if extra:
-        return BRIEF_SLOT[extra[0]], f"decide: {extra[1]}" if extra[0] == "decide" else extra[1]
+        return BRIEF_SLOT[extra[0]], extra[1], extra[0]
     if OUT_OF_SCOPE.match(item.strip()):
-        return "Constraints", item.strip()
-    return "Done", brief_item(item, "Done")
+        return "Constraints", scoped(item), "out of scope"
+    return "Done", item.strip(), None
 
 
 def asks(text):
@@ -547,23 +611,31 @@ def asks(text):
     """
     visible = split_fences(text.lstrip("\ufeff"))[0]
     sections = parse(visible)[0]
-    lines = [f"- {slot}: {value}" for slot, value in map(landing, real_items(sections.get("Decided", []))) if value]
+    lines = [f"- {slot}: {unstated(value)}" for slot, value, _ in map(landing, real_items(sections.get("Decided", [])))
+             if value]
     lines += ["## Confirmed"] + [f"- {item}" for item in sections.get("Confirmed", [])]
     return brief_asks("\n".join(lines))
 
 
 def read(path):
-    """The file's text without a BOM, or None when it is not UTF-8."""
+    """(text without a BOM, None), or (None, why) when the path cannot be read as UTF-8 text."""
     try:
-        return open(path, encoding="utf-8-sig").read()
+        with open(path, encoding="utf-8-sig") as handle:
+            return handle.read(), None
     except UnicodeDecodeError:
-        return None
+        return None, "not UTF-8 text"
+    except OSError as err:
+        return None, err.strerror or str(err)
+
+
+def unreadable(path, why):
+    """Prints the one usage line for a path that cannot be read, and returns exit 3."""
+    print(f"usage: cannot read {path}: {why}", file=sys.stderr)
+    return 3
 
 
 def report(text, path):
     """(exit code, printed lines). 0 pass, 1 fail, 2 ask."""
-    if text is None:
-        return 1, ["FAIL file is not UTF-8", f"FAIL decisions: {path}"]
     lines, failed = [], False
     for name, fails in check(text):
         lines.append(f"{'FAIL' if fails else 'PASS'} {name}")
@@ -577,7 +649,10 @@ def report(text, path):
 
 
 def main(path):
-    code, lines = report(read(path), path)
+    text, why = read(path)
+    if why:
+        return unreadable(path, why)
+    code, lines = report(text, path)
     print("\n".join(lines))
     return code
 

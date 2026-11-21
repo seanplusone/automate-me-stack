@@ -88,8 +88,9 @@ for name in sorted(os.listdir(FIXTURES)):
 
 binary = os.path.join(FIXTURES, "a24_binary.bin")
 ran = subprocess.run([sys.executable, SCRIPT, binary], capture_output=True, text=True)
-binary_ok = ran.returncode == 1 and "FAIL file is not UTF-8" in ran.stdout and "Traceback" not in ran.stderr
-print(f"{'PASS' if binary_ok else 'FAIL'} a24_binary.bin: file is not UTF-8")
+said = (ran.stdout + ran.stderr).strip().splitlines()
+binary_ok = ran.returncode == 3 and len(said) == 1 and "not UTF-8" in said[0] and "Traceback" not in ran.stderr
+print(f"{'PASS' if binary_ok else 'FAIL'} a24_binary.bin: file is not UTF-8, a usage error")
 if not binary_ok:
     FAILS.append(f"a24_binary.bin: stdout={ran.stdout!r} stderr={ran.stderr!r}")
 
