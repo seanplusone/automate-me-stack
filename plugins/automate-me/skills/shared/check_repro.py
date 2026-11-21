@@ -3,7 +3,8 @@
 Usage: python3 check_repro.py --test <path-or-command> --parent <sha> --head <sha> [--repo DIR] [--timeout SECONDS]
 
 Checks out the parent and the head into throwaway git worktrees under a temp folder, and removes them after.
-The user's own worktree is never touched.
+The user's own worktree is never touched. Other worktrees are left alone; this check does not prune the repo.
+The test file must be new (absent at parent). The parent commit must be an ancestor of head.
 
 1. Parent side: the head version of the test file goes into the parent tree. Every other parent file stays as it was.
    The test must fail (exit not 0). If it passes, the test does not reproduce the bug: a tweaked old test that
@@ -39,13 +40,20 @@ def at_head(repo, head, path):
     return git(repo, "cat-file", "-e", f"{head}:{path}").returncode == 0
 
 
+def is_test_path(path):
+    """A copied file has to look like a test, not any file the command happened to name."""
+    name = os.path.basename(path)
+    return name.endswith((".py", ".sh")) or "test" in name.lower()
+
+
 def test_files(test, repo, head):
-    """Returns (command, files at head the command names)."""
+    """Returns (command, test files at head the command names)."""
     if " " not in test.strip():
         files = [test] if at_head(repo, head, test) else []
         return ([sys.executable, test] if test.endswith(".py") else ["sh", "-c", test]), files
     words = [w for w in shlex.split(test) if not w.startswith("-")]
-    return ["sh", "-c", test], [w for w in words if at_head(repo, head, os.path.normpath(w))]
+    files = [w for w in words if at_head(repo, head, os.path.normpath(w)) and is_test_path(w)]
+    return ["sh", "-c", test], files
 
 
 def run(cmd, cwd, timeout):
@@ -72,9 +80,19 @@ def check_repro(test, parent, head, repo=".", timeout=600):
     if fails:
         report(f"repro: {test}", fails)
         return fails
+    if git(repo, "merge-base", "--is-ancestor", p_sha, h_sha).returncode != 0:
+        fails.append(f"parent {p_sha[:12]} is not an ancestor of head {h_sha[:12]}")
+        report(f"repro: {test}", fails)
+        return fails
     cmd, files = test_files(test, repo, h_sha)
     if not files:
         fails.append(f"test missing at head: {test} names no file in {h_sha[:12]}")
+        report(f"repro: {test}", fails)
+        return fails
+    existed = [f for f in files if at_head(repo, p_sha, f)]
+    if existed:
+        fails.append(f"not a new test: {existed[0]} already existed at parent {p_sha[:12]}. "
+                     "Add a new test file that fails on the parent, then make it pass at head.")
         report(f"repro: {test}", fails)
         return fails
 
@@ -108,7 +126,6 @@ def check_repro(test, parent, head, repo=".", timeout=600):
             if os.path.isdir(path):
                 git(repo, "worktree", "remove", "--force", path)
         shutil.rmtree(tmp, ignore_errors=True)
-        git(repo, "worktree", "prune")
     for n in notes:
         print(f"  {n}")
     report(f"repro: {test}", fails)

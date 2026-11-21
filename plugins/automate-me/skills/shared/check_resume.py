@@ -27,16 +27,18 @@ Pointer kinds. Paths are relative to --root, default the folder that holds the r
 1. a log path that exists: `logs/x.txt` or `log: logs/x.txt`;
 2. a script that exists, its exit code and a log that exists: `script: checks/lint.sh exit 0 log: logs/lint.txt`;
 3. a commit SHA, full or unambiguous short, in --git-dir (default: the current repo).
-A pointer of only words fails as self-report. A dangling path or an unknown SHA fails even next to one that resolves.
+A pointer of only words fails as self-report. A dangling or empty log, or an unknown SHA, fails even next to one that resolves.
+A hex-shaped branch or tag name is not a SHA. Quoted paths with spaces are allowed: `log: "logs/trim parent.txt"`.
 
 Repro: all three slots none for a run that fixes no bug. Otherwise Repro test is a path that exists, Repro at parent is fail
-evidence (a log that exists, any recorded exit not 0) and Repro at head is pass evidence (exit 0 and a log that exists).
+evidence (a non-empty log and a recorded exit that is not 0) and Repro at head is pass evidence (exit 0 and a non-empty log).
 
 Prints PASS or FAIL and exits 1 on FAIL.
 """
 import argparse
 import os
 import re
+import shlex
 import subprocess
 import sys
 
@@ -52,11 +54,11 @@ REPRO = ["Repro test", "Repro at parent", "Repro at head"]
 TITLE = re.compile(r"^# Resume:\s*(.*)$")
 SLOT = re.compile(r"^- ([A-Za-z ]+?):(.*)$")
 ITEM = re.compile(r"^\s*- (.*)$")
-SCRIPT = re.compile(r"\bscript:\s*(\S+)")
-LOG = re.compile(r"\blog:\s*(\S+)")
 EXIT = re.compile(r"\bexit(?:\s+code)?\s*[:=]?\s*(-?\d+)\b")
-SHA = re.compile(r"(?:commit:|sha:)?([0-9a-f]{7,40})")
+SHA = re.compile(r"(?:commit:|sha:)?([0-9a-f]{7,40})", re.I)
 PATHLIKE = re.compile(r"/|[^./]\.[A-Za-z]\w{0,4}$")
+REPORT = re.compile(r"^(tests passed|i checked|ok|done|step \d+ done|passed)\.?$", re.I)
+LABELED = re.compile(r'\b(script|log):\s*("([^"]+)"|\'([^\']+)\'|(\S+))')
 
 
 def is_none(value):
@@ -67,25 +69,45 @@ def clean(tok):
     return tok.strip("`'\"()[]<>").rstrip(".,;:")
 
 
+def labeled_paths(text):
+    """Pulls `script:` and `log:` values, including quoted paths with spaces, and returns (scripts, logs, rest)."""
+    scripts, logs = [], []
+    for m in LABELED.finditer(text):
+        value = next(g for g in m.groups()[2:] if g is not None)
+        (scripts if m.group(1) == "script" else logs).append(value)
+    return scripts, logs, LABELED.sub(" ", text)
+
+
 def parse_pointer(text):
     """Splits an evidence pointer into scripts, logs, exit codes and SHAs. Plain words are dropped."""
-    p = {"scripts": [clean(t) for t in SCRIPT.findall(text)], "logs": [clean(t) for t in LOG.findall(text)],
-         "exits": [int(n) for n in EXIT.findall(text)], "shas": []}
-    rest = EXIT.sub(" ", LOG.sub(" ", SCRIPT.sub(" ", text)))
-    for raw in rest.split():
+    scripts, logs, rest = labeled_paths(text)
+    p = {"scripts": scripts, "logs": logs, "exits": [int(n) for n in EXIT.findall(rest)], "shas": []}
+    rest = EXIT.sub(" ", rest)
+    try:
+        tokens = shlex.split(rest)
+    except ValueError:
+        tokens = rest.split()
+    for raw in tokens:
         tok = clean(raw)
         m = SHA.fullmatch(tok)
         if m:
-            p["shas"].append(m.group(1))
+            p["shas"].append(m.group(1).lower())
         elif tok and "://" not in tok and PATHLIKE.search(tok):
             p["logs"].append(tok)
     return p
 
 
 def sha_exists(sha, git_dir):
+    """True when sha is an object-id prefix in git_dir, not a branch or tag whose name happens to be hex."""
     r = subprocess.run(["git", "-C", git_dir, "rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}"],
                        capture_output=True, text=True)
-    return r.returncode == 0
+    if r.returncode != 0:
+        return False
+    ref = subprocess.run(["git", "-C", git_dir, "rev-parse", "--verify", "--quiet", "--symbolic-full-name", sha],
+                         capture_output=True, text=True)
+    if ref.stdout.strip():
+        return False
+    return r.stdout.strip().lower().startswith(sha.lower())
 
 
 def resolve(text, root, git_dir, where):
@@ -101,10 +123,15 @@ def resolve(text, root, git_dir, where):
     if p["scripts"] and not p["logs"]:
         fails.append(f"{where}: script has no log. Write `log: <path>`")
     for log in p["logs"]:
-        if os.path.isfile(os.path.join(root, log)):
-            ok = True
-        else:
+        path = os.path.join(root, log)
+        if not os.path.isfile(path):
             fails.append(f"{where}: path does not exist: {log}")
+        elif os.path.getsize(path) == 0:
+            fails.append(f"{where}: log is empty: {log}")
+        elif REPORT.fullmatch(open(path).read().strip()):
+            fails.append(f"{where}: log is self-report: {log}")
+        else:
+            ok = True
     for sha in p["shas"]:
         if sha_exists(sha, git_dir):
             ok = True
@@ -119,14 +146,22 @@ def parse(lines):
     """Returns (title, slots, items, fails). slots maps a label to its values, one per time it appears."""
     title, slots, items, fails = None, {}, [], []
     current = None
+    seen = False
     for n, raw in enumerate(lines, 1):
         line = raw.rstrip("\n")
         if not line.strip():
             continue
         t = TITLE.match(line)
         if t and title is None:
+            if seen:
+                fails.append("first heading must be `# Resume: <short title>` on the first non-empty line")
             title = t.group(1).strip()
+            seen = True
             continue
+        if title is None:
+            seen = True
+            fails.append("first heading must be `# Resume: <short title>` on the first non-empty line")
+            # keep scanning so later slots are still checked
         s = SLOT.match(line)
         if s and s.group(1) in SLOTS:
             current = s.group(1)
@@ -138,8 +173,8 @@ def parse(lines):
         i = ITEM.match(line)
         if i:
             items.append((n, i.group(1).strip()))
-        elif line[:1].isspace():
-            fails.append(f"line {n}: a done item is one list line: `  - <item> | evidence: <pointer>`")
+        else:
+            fails.append(f"line {n}: unexpected line in Done and verified: {line.strip()}")
     return title, slots, items, fails
 
 
@@ -188,8 +223,8 @@ def check_repro(slots, root, git_dir):
             fails.append(f"{label}: needs a log path that exists")
         if want_pass and p["exits"] != [0]:
             fails.append(f"{label}: needs `exit 0` as pass evidence, got {p['exits'] or 'no exit'}")
-        if not want_pass and 0 in p["exits"]:
-            fails.append(f"{label}: records exit 0, but the new test must fail at the parent")
+        if not want_pass and (not p["exits"] or 0 in p["exits"]):
+            fails.append(f"{label}: needs a non-zero exit, because the new test must fail at the parent")
     return fails
 
 

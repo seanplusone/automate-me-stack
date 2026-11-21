@@ -28,7 +28,7 @@ Each slot appears once, with exactly this label:
 
 | Slot | Rule |
 |---|---|
-| Title | `# Resume: ` and a short title, on the first line. |
+| Title | `# Resume: ` and a short title, on the first non-empty line. |
 | Goal, Next step, Key files | Required. Never empty, never `none`. |
 | Status | One of `in progress`, `waiting on user`, `blocked`, `done`. |
 | Branch, Not done, Gotchas | A value, or `none`. |
@@ -42,9 +42,9 @@ Each slot appears once, with exactly this label:
 
 A pointer resolves in one of three ways. Paths are relative to `--root`, which defaults to the folder that holds the resume.
 
-1. A log path that exists: `evidence: logs/trim-test.txt` or `evidence: log: logs/trim-test.txt`.
+1. A log path that exists and is not empty: `evidence: logs/trim-test.txt` or `evidence: log: logs/trim-test.txt`. A quoted path may contain spaces: `log: "logs/trim parent.txt"`. An empty file fails, and so does a file whose only text is a claim such as "tests passed".
 2. A script that exists, with its exit code and a log that exists: `evidence: script: checks/lint.sh exit 0 log: logs/lint.txt`. The exit code is recorded, not judged: a new test that fails on the parent is done work with `exit 1`.
-3. A git commit SHA in the repo, full or an unambiguous short form: `evidence: 3f2a9c1`. The repo is `--git-dir`, or the current one.
+3. A git commit SHA in the repo, full or an unambiguous short form: `evidence: 3f2a9c1`. The repo is `--git-dir`, or the current one. A branch or tag name is not a SHA, even if it looks like hex.
 
 A pointer of only words ("tests passed", "I checked", "step 3 done", "ok") fails as self-report. A path that does not exist and a SHA the repo does not have fail too, even next to one that resolves.
 
@@ -53,12 +53,12 @@ A pointer of only words ("tests passed", "I checked", "step 3 done", "ok") fails
 When `Repro test` is not `none`, the run is a bug fix:
 
 - `Repro test` is the path of the new test, and it exists.
-- `Repro at parent` is fail evidence that resolves: a log that exists, plus `exit N` with N not 0 when an exit is recorded. A recorded `exit 0` fails.
-- `Repro at head` is pass evidence: `exit 0` and a log that exists.
+- `Repro at parent` is fail evidence that resolves: a non-empty log and a recorded `exit N` with N not 0. A missing exit or a recorded `exit 0` fails.
+- `Repro at head` is pass evidence: `exit 0` and a non-empty log.
 
 A SHA may sit on a Repro line as extra pointer text, for example `exit 1 log: logs/parent.txt at 3f2a9c1`. It must exist.
 
-The logs show what ran once. `check_repro.py` proves it again: it runs the head version of the test on the parent tree, where it must fail, and on head, where it must pass. A test that already passed on the parent, such as a tweaked old test, fails that check.
+The logs show what ran once. `check_repro.py` proves it again: the test file must be new (it did not exist at the parent commit), the parent must be an ancestor of head, and it runs the head version of the test on the parent tree, where it must fail, and on head, where it must pass. A tweaked old test, or a test that already passed on the parent, fails that check. It does not prune other worktrees in the repo.
 
 ## Example
 

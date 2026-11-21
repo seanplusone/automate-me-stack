@@ -122,6 +122,27 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out = run(elsewhere, "--root", root)
     expect("--root moves where paths resolve", code == 0, out)
 
+    # Round-2: self-report must not hide behind a pointer that barely exists.
+    open(os.path.join(root, "logs", "empty.txt"), "w").close()
+    open(os.path.join(root, "logs", "words.txt"), "w").write("tests passed\n")
+    code, out = check([(lint, "log: logs/empty.txt")])
+    expect("an empty log fails", code == 1 and "empty" in out, out)
+    code, out = check([(lint, "log: logs/words.txt")])
+    expect("a log that only says tests passed fails", code == 1 and "self-report" in out, out)
+    open(os.path.join(root, "logs", "trim parent.txt"), "w").write("lint ok\n")
+    code, out = check([(lint, 'log: "logs/trim parent.txt"')])
+    expect("a quoted log path with a space resolves", code == 0, out)
+    code, out = check([(f"| evidence: {lint}\n", f"| evidence: {lint}\n* tests passed\n")])
+    expect("a star bullet in Done is not skipped", code == 1 and "tests passed" in out, out)
+    subprocess.run(GIT + ["branch", "deadbeef"], cwd=root, check=True)
+    code, out = check([(lint, "deadbeef")])
+    expect("a hex-shaped branch name is not a commit SHA", code == 1 and "deadbeef" in out, out)
+    code, out = check([("- Repro at parent: exit 1 log: logs/trim-parent.txt",
+                        "- Repro at parent: log: logs/trim-parent.txt")], base="bugfix.md")
+    expect("Repro at parent needs a non-zero exit", code == 1 and "must fail at the parent" in out, out)
+    code, out = check([("# Resume: lint the counter module\n\n", "Note.\n\n# Resume: lint the counter module\n\n")])
+    expect("the title is the first non-empty line", code == 1 and "first" in out, out)
+
 if FAILS:
     print("\n".join(FAILS))
     sys.exit(1)
