@@ -18,6 +18,7 @@ import json
 import os
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -160,29 +161,135 @@ def _inside(path, root):
     return target == base or target.startswith(base + os.sep)
 
 
-def _case_key_id(root):
-    key = os.path.join(os.path.dirname(root), "key.md")
+class _Refuse(Exception):
+    """A run that must stop before any agent starts."""
+
+
+def _key_inode(path):
     try:
-        info = os.stat(key)
+        info = os.stat(path)
     except OSError:
+        return None
+    if not stat.S_ISREG(info.st_mode):
         return None
     return (info.st_dev, info.st_ino)
 
 
-def _linked_key(source, key_id):
-    if not key_id or os.path.islink(source):
+def _key_ids_under(start):
+    """Inodes of every key.md under start, including dot directories and links."""
+    ids = set()
+    seen = set()
+    if not os.path.isdir(start):
+        return ids
+    for dirpath, dirnames, filenames in os.walk(start, followlinks=True, onerror=lambda _err: None):
+        try:
+            real = os.path.realpath(dirpath)
+        except OSError:
+            dirnames[:] = []
+            continue
+        if real in seen:
+            dirnames[:] = []
+            continue
+        seen.add(real)
+        if "key.md" in filenames:
+            ident = _key_inode(os.path.join(dirpath, "key.md"))
+            if ident:
+                ids.add(ident)
+    return ids
+
+
+def _ancestor_case_ids(start):
+    """Inodes of key.md files on this directory's parents and their case folders."""
+    ids = set()
+    current = os.path.abspath(start)
+    while True:
+        ident = _key_inode(os.path.join(current, "key.md"))
+        if ident:
+            ids.add(ident)
+        bases = []
+        if os.path.basename(current) == "cases":
+            bases.append(current)
+        nested = os.path.join(current, "cases")
+        if os.path.isdir(nested):
+            bases.append(nested)
+        for base in bases:
+            try:
+                names = os.listdir(base)
+            except OSError:
+                continue
+            for name in names:
+                ident = _key_inode(os.path.join(base, name, "key.md"))
+                if ident:
+                    ids.add(ident)
+        parent = os.path.dirname(current)
+        if parent == current:
+            break
+        current = parent
+    return ids
+
+
+def _hardlinked_key(cwd, ids):
+    """True when a regular file here is a second link to a known key.md."""
+    if not ids or not os.path.isdir(cwd):
+        return False
+    seen = set()
+    for dirpath, dirnames, filenames in os.walk(cwd, followlinks=True, onerror=lambda _err: None):
+        try:
+            real = os.path.realpath(dirpath)
+        except OSError:
+            dirnames[:] = []
+            continue
+        if real in seen:
+            dirnames[:] = []
+            continue
+        seen.add(real)
+        for name in filenames:
+            path = os.path.join(dirpath, name)
+            if os.path.islink(path):
+                continue
+            try:
+                info = os.stat(path)
+            except OSError:
+                continue
+            if stat.S_ISREG(info.st_mode) and info.st_nlink > 1 and (info.st_dev, info.st_ino) in ids:
+                return True
+    return False
+
+
+def _linked_key(source, key_ids):
+    if not key_ids or os.path.islink(source):
         return False
     try:
         info = os.stat(source)
     except OSError:
         return False
-    return info.st_nlink > 1 and (info.st_dev, info.st_ino) == key_id
+    return (info.st_dev, info.st_ino) in key_ids
 
 
-def _copy_tree(src, dst, root, key_id=None):
+def _remove_tree(path):
+    try:
+        removed = []
+        for dirpath, dirnames, filenames in os.walk(path, topdown=False):
+            for name in filenames:
+                try:
+                    os.remove(os.path.join(dirpath, name))
+                except OSError:
+                    pass
+            removed.append(dirpath)
+        for dirpath in removed:
+            try:
+                os.rmdir(dirpath)
+            except OSError:
+                pass
+    except OSError:
+        shutil.rmtree(path, ignore_errors=True)
+
+
+def _copy_tree(src, dst, root, key_ids=None):
     """Copy a tree. A symlink that points outside the tree is skipped."""
-    if key_id is None:
-        key_id = _case_key_id(root)
+    if key_ids is None:
+        ident = _key_inode(os.path.join(os.path.dirname(root), "key.md"))
+        key_ids = {ident} if ident else set()
     os.makedirs(dst, exist_ok=True)
     try:
         names = os.listdir(src)
@@ -199,9 +306,9 @@ def _copy_tree(src, dst, root, key_id=None):
             os.symlink(os.readlink(source), target)
             continue
         if os.path.isdir(source):
-            _copy_tree(source, target, root, key_id)
+            _copy_tree(source, target, root, key_ids)
             continue
-        if _linked_key(source, key_id):
+        if _linked_key(source, key_ids):
             continue
         shutil.copy2(source, target, follow_symlinks=False)
 
@@ -241,20 +348,27 @@ def _copyable_cases(path):
 def agent_cwd(cwd):
     """(directory, created). Practice trees are copied without their key.md."""
     cases = _copyable_cases(cwd)
+    ids = _key_ids_under(cwd) | _ancestor_case_ids(cwd)
     if not cases:
+        if _hardlinked_key(cwd, ids):
+            raise _Refuse("error: a hard link to a key.md is inside this directory. Refusing to run.")
         return cwd, False
     temp = tempfile.mkdtemp(prefix="attack-cwd-%s-" % os.getpid())
     single = len(cases) == 1
     copied = False
-    for case in cases:
-        label = "" if single else os.path.basename(case)
-        for name in ("head", "base"):
-            src = os.path.join(case, name)
-            if not os.path.isdir(src):
-                continue
-            dest = os.path.join(temp, name) if not label else os.path.join(temp, label, name)
-            _copy_tree(src, dest, src)
-            copied = True
+    try:
+        for case in cases:
+            label = "" if single else os.path.basename(case)
+            for name in ("head", "base"):
+                src = os.path.join(case, name)
+                if not os.path.isdir(src):
+                    continue
+                dest = os.path.join(temp, name) if not label else os.path.join(temp, label, name)
+                _copy_tree(src, dest, src, ids)
+                copied = True
+    except RecursionError:
+        _remove_tree(temp)
+        raise _Refuse("error: the case tree is too deep to copy. Refusing to run.")
     if not copied:
         shutil.rmtree(temp, ignore_errors=True)
         return None, False
@@ -329,20 +443,39 @@ def _clean_config(data, roots):
     return out
 
 
+def _toml_escape(text):
+    out = []
+    for ch in text:
+        code = ord(ch)
+        if ch == "\\":
+            out.append("\\\\")
+        elif ch == '"':
+            out.append('\\"')
+        elif ch == "\b":
+            out.append("\\b")
+        elif ch == "\t":
+            out.append("\\t")
+        elif ch == "\n":
+            out.append("\\n")
+        elif ch == "\f":
+            out.append("\\f")
+        elif ch == "\r":
+            out.append("\\r")
+        elif code < 32 or code == 127:
+            out.append("\\u%04x" % code)
+        else:
+            out.append(ch)
+    return '"' + "".join(out) + '"'
+
+
 def _toml_key(key):
     if key and all(ch.isascii() and (ch.isalnum() or ch in "_-") for ch in key):
         return key
-    return '"' + key.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return _toml_escape(key)
 
 
 def _toml_string(value):
-    if "\n" not in value and "\r" not in value and all(ord(ch) >= 32 or ch == "\t" for ch in value):
-        escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\t", "\\t")
-        return '"' + escaped + '"'
-    if "'''" not in value and not value.endswith("'"):
-        return "'''\n" + value + "'''"
-    body = value.replace("\\", "\\\\").replace('"""', '\\"""')
-    return '"""\n' + body + '"""'
+    return _toml_escape(value)
 
 
 def _toml_scalar(value):
@@ -492,9 +625,11 @@ def cleanup_stale():
                 continue
             pid = _work_pid(name)
             alive = pid is not None and _pid_alive(pid)
+            if alive:
+                continue
             old = now - os.path.getmtime(path) > STALE_SECONDS
             dead = pid is not None and not alive
-            if dead or old or (_is_empty_dir(path) and not alive):
+            if dead or old or _is_empty_dir(path):
                 shutil.rmtree(path, ignore_errors=True)
         except OSError:
             continue
@@ -517,7 +652,7 @@ def _dir_blocks(directory):
     try:
         os.listdir(directory)
     except OSError:
-        return _named_key(directory) or True
+        return True
     try:
         return os.path.isfile(key)
     except OSError:
@@ -532,9 +667,6 @@ def key_reachable(path):
 
     def onerror(err):
         blocked.append(err)
-        filename = getattr(err, "filename", None)
-        if filename:
-            _named_key(filename)
 
     seen = set()
     if os.path.isdir(start):
@@ -887,7 +1019,11 @@ def run_all(brief_path, out_dir, search_path=None, runner=None, timeout=DEFAULT_
         chosen = "none"
     elif chosen == "none":
         print("warning: --sandbox none leaves the whole filesystem visible.", file=sys.stderr)
-    work, made = agent_cwd(origin)
+    try:
+        work, made = agent_cwd(origin)
+    except _Refuse as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     if work is None:
         print("error: the case copy could not be read. Refusing to run.", file=sys.stderr)
         return 2

@@ -4,6 +4,7 @@ Practice-case agents must not see the case key. bwrap is the reference
 sandbox. When it is missing, the live probe prints SKIP.
 """
 import datetime
+import io
 import os
 import shutil
 import stat
@@ -11,6 +12,7 @@ import sys
 import tempfile
 import time
 import tomllib
+from contextlib import redirect_stderr
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from attack_agents import _minimal_codex_config, agent_cwd, bwrap_command, cleanup_stale, command, key_reachable, practice_roots, resolve_sandbox, run_all  # noqa: E402
@@ -132,6 +134,12 @@ dead = tempfile.mkdtemp(prefix="attack-cwd-%s-" % dead_pid)
 open(os.path.join(dead, "head.txt"), "w").write("x\n")
 cleanup_stale()
 expect("a dead run's work copy is removed", os.path.isdir(dead), False)
+live = tempfile.mkdtemp(prefix="attack-cwd-%s-" % os.getpid())
+open(os.path.join(live, "head.txt"), "w").write("x\n")
+os.utime(live, (time.time() - 7200, time.time() - 7200))
+cleanup_stale()
+expect("a live run's old work copy stays", os.path.isdir(live), True)
+shutil.rmtree(live, ignore_errors=True)
 home = os.path.expanduser("~")
 repo = tempfile.mkdtemp()
 sample = "\n".join([
@@ -204,6 +212,21 @@ expected = {
     "history": {"persistence": "none"},
 }
 expect("config round trip matches the kept settings", parsed, expected)
+controls = "\n".join([
+    r'"\u0000key" = "a\u0000b\u001fc\u007fd"',
+    r'cr = "a\rb"',
+    r'quotes = "\"\"\""',
+])
+control_original = tomllib.loads(controls)
+control_written = _minimal_codex_config(controls)
+control_text = control_written.decode()
+control_parsed = tomllib.loads(control_text)
+expect("control characters round trip", control_parsed, control_original)
+expect(
+    "control characters are escaped",
+    "\r" not in control_text and "\x00" not in control_text and "\x1f" not in control_text and "\x7f" not in control_text,
+    True,
+)
 shutil.rmtree(fresh, ignore_errors=True)
 shutil.rmtree(repo, ignore_errors=True)
 
@@ -262,6 +285,55 @@ if link_work:
 expect("a hardlinked key is not copied", "alias.md" not in link_names, True)
 if link_made and link_work:
     shutil.rmtree(link_work, ignore_errors=True)
+pair = tempfile.mkdtemp()
+case_a = os.path.join(pair, "cases", "a")
+case_b = os.path.join(pair, "cases", "b", "head")
+os.makedirs(os.path.join(case_a, "head"))
+os.makedirs(case_b)
+open(os.path.join(case_a, "key.md"), "w").write("SECRET-A\n")
+open(os.path.join(pair, "cases", "b", "key.md"), "w").write("SECRET-B\n")
+open(os.path.join(case_b, "cap.py"), "w").write("x\n")
+os.link(os.path.join(case_a, "key.md"), os.path.join(case_b, "notes.md"))
+pair_work, pair_made = agent_cwd(os.path.join(pair, "cases"))
+pair_names, pair_text = [], []
+if pair_work:
+    for dirpath, dirnames, filenames in os.walk(pair_work):
+        pair_names.extend(filenames)
+        for name in filenames:
+            pair_text.append(open(os.path.join(dirpath, name), errors="replace").read())
+expect("another case's key is not linked into head", pair_work is not None and "notes.md" not in pair_names, True)
+expect("another case's key text is not copied", pair_text and all("SECRET-A" not in item for item in pair_text), True)
+if pair_made and pair_work:
+    shutil.rmtree(pair_work, ignore_errors=True)
+plain_root = tempfile.mkdtemp()
+os.makedirs(os.path.join(plain_root, "cases", "a"))
+plain = os.path.join(plain_root, "c")
+os.makedirs(plain)
+open(os.path.join(plain_root, "cases", "a", "key.md"), "w").write("SECRET-OUT\n")
+os.link(os.path.join(plain_root, "cases", "a", "key.md"), os.path.join(plain, "hard"))
+expect("a hard link outside the cwd is still a known case key", key_reachable(plain), False)
+expect("a hard link to a case key is refused", run_all(
+    brief, tempfile.mkdtemp(), search_path=stubs, cwd=plain, sandbox="bwrap",
+), 2)
+deep_root = tempfile.mkdtemp()
+deep_case = os.path.join(deep_root, "cases", "item")
+deep_head = os.path.join(deep_case, "head")
+os.makedirs(deep_head)
+open(os.path.join(deep_case, "key.md"), "w").write("Planted: yes\n")
+nested = deep_head
+for _ in range(1100):
+    nested = os.path.join(nested, "n")
+    os.mkdir(nested)
+deep_err = io.StringIO()
+with redirect_stderr(deep_err):
+    deep_code = run_all(brief, tempfile.mkdtemp(), search_path=stubs, cwd=deep_case, sandbox="bwrap")
+deep_text = deep_err.getvalue()
+expect("a very deep head is an error", deep_code, 2)
+expect("a very deep head names the problem", "too deep" in deep_text and "Usage:" not in deep_text, True)
+for dirpath, dirnames, filenames in os.walk(deep_root, topdown=False):
+    for name in filenames:
+        os.remove(os.path.join(dirpath, name))
+    os.rmdir(dirpath)
 
 if shutil.which("bwrap") is None:
     print("SKIP bwrap is not installed")
