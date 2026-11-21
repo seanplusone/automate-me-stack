@@ -198,8 +198,12 @@ async function collect(opts) {
     const nodes = []
     if (el.tagName === "SLOT" && el.assignedElements) nodes.push(...el.assignedElements())
     if (el.shadowRoot) el.shadowRoot.querySelectorAll("slot").forEach((slot) => nodes.push(...slot.assignedElements()))
-    if (!nodes.length) return null
-    return nodes.map((node) => {
+    const placed = nodes.filter((node) => {
+      const pos = getComputedStyle(node).position
+      return pos !== "absolute" && pos !== "fixed"
+    })
+    if (!placed.length) return null
+    return placed.map((node) => {
       const r = node.getBoundingClientRect()
       return { left: r.x, top: r.y, right: r.x + r.width, bottom: r.y + r.height, width: r.width, height: r.height }
     }).filter((r) => r.width > 0 || r.height > 0)
@@ -239,23 +243,44 @@ async function collect(opts) {
       const cs = getComputedStyle(child)
       return (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0) > 0
     })
-    const blocked = new Set(["html", "body", "header", "nav", "aside", "footer", "pre", "code", "td", "th", "tr", "table", "button", "input", "textarea", "select", "option", "label", "iframe"])
-    const inline = /^inline/.test(style.display)
+    const blocked = new Set(["html", "body", "header", "nav", "footer", "pre", "code", "td", "th", "tr", "table", "button", "input", "textarea", "select", "option", "label", "iframe"])
     const textLen = (el.innerText || "").trim().length
+    const radius = parseFloat(style.borderRadius) || 0
+    const avatar = rect.width >= 16 && rect.width <= 64 && Math.abs(rect.width - rect.height) <= 6 && radius >= rect.width * 0.4
+    const oneLine = el.querySelectorAll("h1,h2,h3,p,ul,ol,table").length === 0
+    const controlBox = rect.height > 0 && rect.height <= 48 && rect.width > 0 && rect.width <= 280 && oneLine && textLen > 0 && textLen < 40
+    const sidebar = tag === "aside" && rect.height > window.innerHeight * 0.55 && rect.width < window.innerWidth * 0.45
+    const inlineOnly = style.display === "inline"
     const parentLayout = parentStyle && (parentStyle.display.includes("flex") || parentStyle.display.includes("grid"))
-    const fills = Boolean(parentLayout && parentStyle.boxHeight > 80 && Math.abs(rect.height - parentStyle.boxHeight) <= 4)
+    let fills = false
+    if (parentLayout && parentStyle.boxHeight > 80 && Math.abs(rect.height - parentStyle.boxHeight) <= 4 && el.parentElement) {
+      const stretch = style.alignSelf === "stretch" || ((style.alignSelf === "auto" || style.alignSelf === "normal") && (parentStyle.alignItems === "stretch" || parentStyle.alignItems === "normal"))
+      const others = [...el.parentElement.children].filter((sib) => sib !== el).map((sib) => sib.getBoundingClientRect().height)
+      const tallestOther = others.length ? Math.max(...others) : 0
+      fills = stretch && tallestOther >= rect.height - 8
+      const grand = el.parentElement.parentElement
+      if (!fills && grand) {
+        const gd = getComputedStyle(grand).display
+        if (gd.includes("flex") || gd.includes("grid")) {
+          const row = [...grand.children].filter((sib) => sib !== el.parentElement).map((sib) => sib.getBoundingClientRect().height)
+          const tallestRow = row.length ? Math.max(...row) : 0
+          const parentH = el.parentElement.getBoundingClientRect().height
+          if (Math.abs(rect.height - parentH) <= 4 && tallestRow >= rect.height - 8) fills = true
+        }
+      }
+    }
     let cardLike = false
     let guess = ""
     const strong = hasBorder || hasShadow || (hasBg && (hasPad || rect.height >= 48))
     const weak = outline > 0 || beforeOn || (image !== "none" && !hasBg) || (hasPad && childBorder)
-    if (!blocked.has(tag) && !fills && !inline && textLen > 0 && (strong || weak)) {
+    if (!blocked.has(tag) && !fills && !inlineOnly && !controlBox && !avatar && !sidebar && textLen > 0 && (strong || weak)) {
       cardLike = true
       guess = strong ? "high" : "low"
     }
+    const minH = parseFloat(style.minHeight) || 0
     const band = tag === "section" || tag === "header" || el.classList.contains("hero")
-    const first = band && firstBand
     if (tag === "section" || tag === "header") firstBand = false
-    const fullBleed = hasBg && !hasBorder && rect.width >= window.innerWidth - 24
+    const fullBleed = hasBg && rect.width >= window.innerWidth - 32 && rect.top < 280 && minH >= 160
     const stretched = Boolean(parentStyle && (parentStyle.display.includes("flex") || parentStyle.display.includes("grid")) && ((style.alignSelf === "auto" || style.alignSelf === "normal") ? (parentStyle.alignItems === "stretch" || parentStyle.alignItems === "normal") : (style.alignSelf === "stretch" || style.alignSelf === "normal")))
     const i = elements.length
     elements.push({
@@ -276,7 +301,7 @@ async function collect(opts) {
       moved: moved.has(el),
       strict: Boolean(el.id && false),
       minHeight: parseFloat(style.minHeight) || 0,
-      hero: band && ((first && !hasBorder) || fullBleed),
+      hero: fullBleed || (band && minH >= 160 && hasBg && rect.top < 280 && !hasBorder),
       password: tag === "input" && (el.getAttribute("type") || "") === "password",
       slotted: slotBoxes(el),
       control: tag === "input" || tag === "textarea" || tag === "select",
@@ -321,8 +346,10 @@ async function collect(opts) {
   const shown = [...(document.body ? document.body.children : [])].filter((el) => !/^(SCRIPT|STYLE)$/.test(el.tagName))
   const onlyPre = shown.length === 1 && shown[0].tagName === "PRE"
   const preText = onlyPre ? shown[0].innerText.trim() : ""
-  const statusHeading = [...document.querySelectorAll("h1")].some((h) => /^\d{3}\b/.test((h.innerText || "").trim()) && (parseFloat(getComputedStyle(h).fontSize) || 0) >= 24)
-  const busy = Boolean(document.querySelector("[aria-busy='true'], [role='status'], [role='progressbar']")) && raw.length < 80 && !document.querySelector("form")
+  const statusHeading = [...document.querySelectorAll("h1,h2")].some((h) => /^(?:(?:erreur|error|fehler|http)\s+)?\d{3}(?:\s+(?:not found|error|erreur|introuvable|unavailable|service unavailable|internal server error|bad gateway))?$/i.test((h.innerText || "").trim()))
+  const statusNode = document.querySelector("[role='status'], [role='progressbar']")
+  const statusText = statusNode ? (statusNode.innerText || "").trim() : ""
+  const busy = Boolean(document.querySelector("[aria-busy='true']")) && raw.length < 120 || (statusText.length > 0 && raw.length < 120 && statusText.length >= Math.max(1, raw.length) * 0.7)
   const bars = [...document.querySelectorAll("div, span")].filter((el) => {
     if (el.children.length || [...el.childNodes].some((node) => node.nodeType === 3 && node.textContent.trim())) return false
     const s = getComputedStyle(el)
@@ -354,6 +381,18 @@ async function collect(opts) {
     hero = (!border && (heroEl.matches("section, header") || heroEl.classList.contains("hero"))) || (bg && !border && r.width >= window.innerWidth - 24)
   }
   const thin = raw.length < 40 && !controls && !hero
+  const heads = [...document.querySelectorAll("h1,h2,h3")].map((h) => (h.innerText || "").trim()).join(" ")
+  const blob = `${heads} ${raw}`.toLowerCase()
+  const paras = document.querySelectorAll("p").length
+  const errorish = raw.length < 500 && paras < 5 && /something went wrong|try again|could not load|unable to|page not found|introuvable|nicht verf|nicht gefunden|erreur|fehler|cargando|読み込み|エラー|\bloading\b/.test(blob)
+  const spinner = [...document.querySelectorAll("div,span")].some((el) => {
+    const s = getComputedStyle(el)
+    const r = el.getBoundingClientRect()
+    const spin = s.animationName && s.animationName !== "none"
+    return spin && r.width >= 12 && r.width <= 80 && Math.abs(r.width - r.height) <= 8 && raw.length < 220
+  })
+  const root = document.querySelector("#root, #app")
+  const shell = Boolean(root) && !(root.innerText || "").trim() && root.children.length === 0 && raw.length < 80
   return {
     viewportWidth: window.innerWidth,
     scrollWidth: Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0),
@@ -364,6 +403,9 @@ async function collect(opts) {
     bodyBox: document.body ? (() => { const r = document.body.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: Math.min(r.height, 800) } })() : { x: 0, y: 0, width: 320, height: 180 },
     text: raw.slice(0, 240),
     thin,
+    errorish,
+    spinner,
+    shell,
     busy,
     skeleton,
     emptyRoot,
@@ -445,26 +487,42 @@ function writeAll(fd, text) {
   }
 }
 
-async function shoot(page, rules, width, dir) {
-  if (!dir) return
+async function shoot(page, rules, width, dir, remaining, stamp) {
+  if (!dir) return true
   mkdirSync(dir, { recursive: true })
   let n = 0
   for (const rule of rules) {
+    if (remaining && remaining() < 150) return false
     if (rule.status !== "review") continue
     const box = rule.measured || {}
     if (!(box.width > 1) || !(box.height > 1)) continue
-    const file = path.join(dir, `${width}-${n}.png`)
+    const file = path.join(dir, `${stamp}-${width}-${n}.png`)
     n += 1
     try {
-      const top = Math.max(0, (box.y || 0) - 8)
-      await page.evaluate((y) => window.scrollTo(0, y), top)
-      const scrollY = await page.evaluate(() => window.scrollY || 0)
+      const placed = await page.evaluate(({ x, y, w, h }) => {
+        const nodes = [...document.querySelectorAll("body *")]
+        const el = nodes.find((node) => {
+          const r = node.getBoundingClientRect()
+          return Math.abs(r.x - x) < 3 && Math.abs(r.y - y) < 3 && Math.abs(r.width - w) < 6 && Math.abs(r.height - h) < 6
+        })
+        if (el) el.scrollIntoView({ block: "center", inline: "center" })
+        window.scrollBy(-16, -16)
+        let r = el ? el.getBoundingClientRect() : { x, y: y - window.scrollY, width: w, height: h }
+        if (el && (r.x < 0 || r.y < 0 || r.right > window.innerWidth - 2 || r.bottom > window.innerHeight - 2)) {
+          el.style.setProperty("position", "relative", "important")
+          el.style.setProperty("left", "8px", "important")
+          el.style.setProperty("top", "8px", "important")
+          r = el.getBoundingClientRect()
+        }
+        return { x: r.x, y: r.y, width: r.width, height: r.height }
+      }, { x: box.x || 0, y: box.y || 0, w: box.width, h: box.height })
       const clip = {
-        x: Math.max(0, box.x || 0),
-        y: Math.max(0, (box.y || 0) - scrollY),
-        width: Math.min(box.width, 1200),
-        height: Math.min(box.height, 800, VIEWPORT_HEIGHT - 2),
+        x: Math.max(0, placed.x || 0),
+        y: Math.max(0, placed.y || 0),
+        width: Math.min(Math.max(2, placed.width || box.width), 1200),
+        height: Math.min(Math.max(2, placed.height || box.height), 800, VIEWPORT_HEIGHT - 2),
       }
+      if (clip.x + clip.width > width) clip.width = Math.max(2, width - clip.x - 1)
       if (clip.y + clip.height > VIEWPORT_HEIGHT) clip.height = Math.max(2, VIEWPORT_HEIGHT - clip.y - 1)
       await page.screenshot({ path: file, clip })
       rule.shot = file
@@ -472,6 +530,7 @@ async function shoot(page, rules, width, dir) {
       rule.shot = ""
     }
   }
+  return true
 }
 
 async function measureWidth(browser, target, width, widths, config, remaining, waitFor) {
@@ -499,7 +558,7 @@ async function measureWidth(browser, target, width, widths, config, remaining, w
     else warnings.push(`request failed: ${req.url()}`)
   })
   try {
-    if (/\.(xml|json)$/i.test(target)) {
+    if (!/^https?:/i.test(target) && /\.(xml|json)$/i.test(target)) {
       return {
         width,
         rules: [{ id: "G1", status: "skip", element: "", measured: {}, limit: {}, message: "The document is not HTML." }],
@@ -520,6 +579,17 @@ async function measureWidth(browser, target, width, widths, config, remaining, w
     loaded = true
     const status = response ? response.status() : 0
     const type = response ? (response.headers()["content-type"] || "") : ""
+    if (type && !/html/i.test(type)) {
+      return {
+        width,
+        rules: [{ id: "G1", status: "skip", element: "", measured: {}, limit: {}, message: "The document is not HTML." }],
+        warnings,
+        fatal: true,
+        reason: "The document is not HTML.",
+        page,
+        context,
+      }
+    }
     if (waitFor) await until(page.waitForSelector(waitFor, { timeout: remaining() }), remaining())
     const still = await settle(page, Math.min(3000, remaining()), remaining)
     const snapshot = await until(page.evaluate(collect, { selectors: config.selectors, deadline: Date.now() + remaining() }), remaining())
@@ -549,16 +619,20 @@ async function measureWidth(browser, target, width, widths, config, remaining, w
       throw e
     }
     const box = snapshot.bodyBox || { x: 0, y: 0, width: 320, height: 180 }
-    if (snapshot.statusHeading || snapshot.skeleton || snapshot.busy || snapshot.emptyRoot || snapshot.thin) {
+    if (snapshot.statusHeading || snapshot.skeleton || snapshot.busy || snapshot.emptyRoot || snapshot.shell || snapshot.spinner || snapshot.errorish || snapshot.thin) {
       const message = snapshot.statusHeading
         ? "The main heading is a status code. It needs a look."
-        : snapshot.skeleton
-          ? "This page is a skeleton. It needs a look."
-          : snapshot.busy
-            ? "This page is still busy. It needs a look."
-            : snapshot.emptyRoot
-              ? "This page is an empty app shell. It needs a look."
-              : "This page has almost no text. It needs a look."
+        : snapshot.spinner
+          ? "This page is only a spinner. It needs a look."
+          : snapshot.skeleton
+            ? "This page is a skeleton. It needs a look."
+            : snapshot.busy
+              ? "This page is still busy. It needs a look."
+              : snapshot.emptyRoot || snapshot.shell
+                ? "This page is an empty app shell. It needs a look."
+                : snapshot.errorish
+                  ? "This looks like an error screen. It needs a look."
+                  : "This page has almost no text. It needs a look."
       rules.push(pageReview(box, message))
     }
     let reason = snapshot.reason || ""
@@ -640,20 +714,27 @@ async function main() {
     const deadline = Date.now() + timeout
     const remaining = () => Math.max(1, deadline - Date.now())
     const shots = args.shots || (args.out ? path.join(path.dirname(path.resolve(args.out)), "shots") : mkdtempSync(path.join(tmpdir(), "check-ui-")))
+    const stamp = Date.now().toString(36)
     const open = []
     const reports = []
+    let timedOut = false
     for (const width of widths) {
-      if (Date.now() >= deadline) stop("timed out")
+      if (Date.now() >= deadline) { timedOut = true; break }
       const item = await measureWidth(browser, target, width, widths, config, remaining, args.waitFor)
       open.push(item)
-      if (shots) await shoot(item.page, item.rules, item.width, shots)
+      if (shots) {
+        const ok = await shoot(item.page, item.rules, item.width, shots, remaining, stamp)
+        if (!ok) timedOut = true
+      }
       reports.push(item)
+      if (timedOut) break
     }
+    if (!reports.length) stop("timed out")
     const warnings = [...new Set(reports.flatMap((item) => item.warnings || []))]
-    const fatal = reports.some((item) => item.fatal)
+    const fatal = timedOut || reports.some((item) => item.fatal)
     const report = buildReport(args.url, reports, {
       fatal,
-      reason: (reports.find((item) => item.reason) || {}).reason || "",
+      reason: timedOut ? "timed out" : ((reports.find((item) => item.reason) || {}).reason || ""),
       warnings,
       shots,
     })

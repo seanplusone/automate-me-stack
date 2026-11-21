@@ -619,27 +619,29 @@ function columnExemption(column, elements, config) {
     }
     return false
   }
-  const bareLinks = tree.filter((e) => e.tag === "a" && (byIndex.get(e.parent) || {}).tag !== "p")
+  const bareLinks = tree.filter((e) => e.tag === "a" && e.parent === column.i && (byIndex.get(e.parent) || {}).tag !== "p")
   const map = childMap(elements)
   const resultBlocks = tree.filter((e) => {
     if (e.tag !== "li" && e.tag !== "article") return false
     const kids = descendantsOf(e.i, map)
     return kids.some((d) => d.tag === "a") && kids.some((d) => d.tag === "p")
   })
-  const searchList = (bareLinks.length >= 4 && bareLinks.length + 1 >= paragraphs.length) || resultBlocks.length >= 4
+  const searchList = resultBlocks.length >= 4 || (bareLinks.length >= 4 && paragraphs.length <= bareLinks.length + 1)
   const blocking = cards.filter((e) => !callout(e))
-  const grids = tree.some((e) => !inForm(e) && (e.display === "grid" || e.display === "inline-grid" || e.tag === "table"))
-  const blocked = searchList || blocking.length > 1 || grids
+  const grids = tree.some((e) => !inForm(e) && (e.display === "grid" || e.display === "inline-grid"))
+  const tables = tree.some((e) => e.tag === "table")
+  const blocked = searchList || blocking.length > 2 || grids || tables
   if (allowed.has("prose") && !blocked && ch >= 55 && ch <= 80 && paragraphs.length >= 1) return { kind: "prose", ch }
   const left = column.rect.x
   const right = (column.viewport || 0) - (column.rect.x + column.rect.width)
   const centered = left >= 24 && right >= 24 && Math.abs(left - right) <= 24
   const password = tree.some((e) => e.password)
   const form = tree.some((e) => e.tag === "form")
+  const fields = tree.filter((e) => e.tag === "input" || e.tag === "textarea" || e.tag === "select").length
   const nav = tree.some((e) => e.tag === "nav" || e.tag === "header" || e.role === "navigation")
   const outside = cards.filter((e) => !inForm(e) && !callout(e))
-  const data = grids || outside.length > 1
-  if (allowed.has("signin") && password && form && centered && !nav && !data) return { kind: "signin", ch }
+  const data = grids || tables || outside.length > 1
+  if (allowed.has("signin") && password && form && centered && !nav && !data && fields <= 3) return { kind: "signin", ch }
   return { kind: "", ch }
 }
 

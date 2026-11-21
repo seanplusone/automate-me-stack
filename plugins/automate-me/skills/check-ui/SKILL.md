@@ -39,7 +39,7 @@ node "$SKILL_DIR"/check/measure.mjs --url http://127.0.0.1:3000/settings --width
 
 `--url` is an http or https URL, or a path to an HTML file. `--widths` defaults to 390 and 1280. `--config` is optional. `--out` writes the same JSON the command prints. `--shots` is the folder for crops of rows that need a look. When it is omitted, crops go in a temporary folder and the report names that path. `--wait-for` is a selector to wait for after load. `--timeout` is the whole run, in milliseconds.
 
-The page loads, then the tool waits until the DOM and any animation have been still for about half a second. That wait stops at 3 seconds. Content that arrives later needs `--wait-for`. A page with almost no text, a skeleton, an empty app root, or a status-code heading needs a look. A form is not a data region, so a centered sign-in form can use `display: grid`.
+The page loads, then the tool waits until the DOM and any animation have been still for about half a second. That wait stops at 3 seconds. Content that arrives later needs `--wait-for`. A page with almost no text, a skeleton, an empty app shell, a spinner, or an error heading needs a look. That includes a status code and a short message in another language. A form is not a data region, so a centered sign-in form can use `display: grid`.
 
 Exit 0 when every rule passes. Exit 1 when a rule fails. Exit 3 when nothing fails but a row needs a look. Exit 2 when the arguments are wrong, the page does not load, or the run is inconclusive. The report names the reason. A blank page, or the page's own script dying before the first paint, is inconclusive. A console error, a widget error, or a failed iframe is a warning. `--help` prints usage and exits 0.
 
