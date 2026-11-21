@@ -86,7 +86,7 @@ def without_questions(text):
 def score(key_path, brief_path):
     with open(brief_path) as handle:
         text = handle.read()
-    slots, questions, _ = parse(text)
+    slots, questions, _, _ = parse(text)
     unknown_items = [i for items in slots.values() for i in items if UNKNOWN_START.match(i)] + questions
     items = read_key(key_path)
     if not items:

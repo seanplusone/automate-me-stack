@@ -11,6 +11,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "explain-doc", "check"))
 from render_page import CSS, FONTS, Rich  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "outcome", "check"))
+from check_brief import core  # noqa: E402
 
 EXTRA = """
 .outcome{max-width:70ch;margin-top:14px;background:var(--accent-soft);border-radius:6px;padding:12px 14px;display:grid;gap:4px}
@@ -187,7 +189,15 @@ def render_prompt(p, iid):
         "## Questions",
         "",
         "1. What is one case that should pass, and one that should fail?",
+        *confirmed_lines(p, s),
     ]) + "\n"
+
+
+def confirmed_lines(p, s):
+    """Done and Output carry a spec value alone, so a value the person confirmed in the plan is confirmed here too."""
+    lines = [f"- {slot}: {s[f]}" for slot, f in (("Done", "done_when"), ("Output", "output"))
+             if core(str(s[f])) in {core(str(v)) for v in p.get("confirmed", [])}]
+    return ["", "## Confirmed", "", *lines] if lines else []
 
 
 def main(argv):

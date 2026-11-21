@@ -11,8 +11,10 @@ Status: new. Four synthetic scored cases, plus `missing-evals`, which fails the 
 `check/check_brief.py` checks a brief's shape:
 
 - every required slot is present once and filled (Goal, Done, Output, Constraints, Tools, Agents and roles, Evals, Verification). Kind, Plan first, Taste, Skills, Parking lot and Unknowns are optional. A note in brackets after a label, as in `- Taste (flag, don't filter):`, is allowed;
-- a required slot whose items have no real words fails, and the failure names the slot. Bold, code marks, and surrounding punctuation and brackets are stripped first. Placeholder tokens are tbd, todo, tbc, n/a, none and placeholder. A template hole such as `<goal here>` or `{{goal}}` counts. `none` alone is allowed on Skills, Parking lot and Unknowns. Tools and Constraints may use `none: <why>` when the reason has a real word. Bare `none` does not. `write first: none` does not name a tool;
-- Evals names a real pass case and a real fail case. The label is the word pass or fail followed by a colon, or the phrase should pass, must pass, should fail or must fail. The case text after that label must have a real word;
+- a required slot whose items are all placeholders fails, and the failure names the slot. Bold, code marks, one leading tag label and surrounding punctuation are stripped first. A placeholder is then empty, or holds only words from a fixed list. The words are tbd, tbc, tba, todo, fixme, xxx, n/a, na, none, pending, placeholder and later. The phrases are to be determined, to be decided, to be confirmed, fill in, fill in later, see below, see above and same as above. Words are Unicode, so non-English values are real. So are `make`, `$500`, `#123` and `24`. `none` alone is allowed on Skills, Parking lot and Unknowns. Tools and Constraints may use `none: <why>` when the reason is real. `write first: none` alone does not name a tool;
+- a template hole in any slot fails: `<goal>` (nesting allowed), `{{x}}`, `{x}`, `${x}` or `[insert x]`. Holes inside code marks, autolinks and `a < b` comparisons do not count;
+- Kind, when present, is one of build, review, design, learn, search/decide;
+- Evals names a pass case and a fail case that are not placeholders. A label is the word pass or fail followed by a colon, or should or must pass or fail. It may sit anywhere in an item. A colon label's case runs to the next label. An `unknown: <question>?` Evals item stands in for the cases when the Questions block has a question;
 - Plan first, when present, starts with `yes` or `none needed`;
 - an `investigate:` item sits in Done, an `out of scope:` item in Constraints, and a `how:` item in Agents and roles;
 - a slot that holds `unknown:` offers no default beside it;
@@ -20,6 +22,12 @@ Status: new. Four synthetic scored cases, plus `missing-evals`, which fails the 
 - when Unknowns is present, it holds only unknown markers, and does not say `none` while a slot is unknown;
 - a brief with unknowns has a Questions block, with at most 3 numbered questions, each with a question mark;
 - no item is only trap adjectives (modern, clean, good, better, correct, valid, nice).
+
+It exits 0 (PASS), 1 (FAIL) or 2 (ASK). Any FAIL wins. Otherwise it asks about each value in a required slot, or Evals case, that is suspicious but not on the list. It prints `ASK: <slot>: Is '<value>' a real answer for <slot>?` and exits 2. A suspicious value is only symbols with no letter or digit, or one word of one or two letters. So is a value of only hedges: it depends, depends, we'll see, we will see, not sure, unsure, maybe, perhaps, idk, dunno. The skill stops the hand-off there and asks the person. A yes goes in a `## Confirmed` block at the end of the brief, one `- <Slot>: <value>` line each, and that value then passes. A no replaces the value.
+
+The list is deliberately narrow. check_brief catches common placeholders and template holes. A needs-human value (exit 2, one ASK line each) is the break point where the agent stops and asks the person. The read-back catches the rest. A placeholder outside the list, such as `Por determinar.`, passes.
+
+Other skills import `classify(value)` (`"pass"`, `"fail"` or `"ask"`), `is_placeholder`, `eval_cases`, `case_is_real`, `check` and `asks` from `check/check_brief.py`. `breakdown/check_plan.py` applies `classify` to every plan field that lands in a prompt.
 
 `check/score_case.py` scores a brief against a case key: facts in the speaker's words, slot terms, gaps asked rather than guessed, guesses that must not appear, and Parking lot items.
 
