@@ -64,6 +64,18 @@ def expect(name, text, want):
         FAILS.append(f"{name}: wanted {sorted(want)}, got {sorted(got)}")
 
 
+def outcome(text):
+    """'fail', 'ask' or 'pass' for a whole brief, by the exit-code precedence."""
+    return "fail" if failed(text) else "ask" if asks(text) else "pass"
+
+
+def expect_outcome(name, text, want):
+    RAN.append(name)
+    got = outcome(text)
+    if got != want:
+        FAILS.append(f"{name}: wanted {want}, got {got}; failed {sorted(failed(text))}, asks {asks(text)}")
+
+
 def swap(old, new, text=GOOD):
     assert old in text, old
     return text.replace(old, new)
@@ -147,8 +159,7 @@ expect("adjective in a sub-item", swap("  - 3 bed. Proof is the listing.", "  - 
 expect("adjective with a signal passes", swap("- Taste: Modern, flag don't filter. Signal is the kitchen photo.", "- Taste: modern kitchen in the photos"), set())
 expect("check is filler, so a bare correct fails", swap("- Taste: Modern, flag don't filter. Signal is the kitchen photo.", "- Taste: Check it is correct."), {TRAP})
 
-PLACE = "no required slot is only a placeholder"
-EVALS_BOTH = "Evals has a pass and a fail"
+PLACE = "no placeholder"
 REQUIRED = ["Goal", "Done", "Output", "Constraints", "Tools", "Agents and roles", "Evals", "Verification"]
 TBD = "# Brief: t\n" + "".join(f"- {s}: TBD\n" for s in REQUIRED)
 RAN.append("every slot TBD names each required slot")
@@ -162,7 +173,8 @@ for ph in ("TBD", "TODO", "N/A", "...", "-", "?", "(later)", "[later]", "none"):
     if not any("Evals" in msg and "placeholder" in msg for msg in msgs):
         FAILS.append(f"Evals placeholder {ph}: {msgs}")
 
-expect("pass case only", MIN.replace(EVALS, "- Evals:\n  - Pass: keep a 3 bed listing.\n"), {EVALS_BOTH})
+# Real Evals content with no fail case asks rather than fails (round 4).
+expect_outcome("pass case only asks", MIN.replace(EVALS, "- Evals:\n  - Pass: keep a 3 bed listing.\n"), "ask")
 expect("should pass and should fail", MIN.replace(EVALS, "- Evals: One row should pass, and one row should fail.\n"), set())
 expect("numbered evals", MIN.replace(EVALS, "- Evals:\n  1. Pass: keep a listing.\n  2. Fail: drop a listing.\n"), set())
 expect("evals inside a fence", MIN.replace(EVALS, "```\n- Evals:\n  - Pass: keep a listing.\n  - Fail: drop a listing.\n```\n"), {PRESENT})
@@ -182,12 +194,14 @@ expect("bare none on Constraints", MIN.replace("- Constraints: Stop after one pe
 for bad in ("- Evals:\n  - Pass: TBD\n  - Fail: drop a row.\n",
             "- Evals:\n  - Pass: keep a row.\n  - Fail: TBD\n",
             "- Evals:\n  - Pass:\n  - Fail: drop a row.\n",
-            "- Evals:\n  - Pass: keep a row.\n  - Fail:\n",
-            "- Evals:\n  - Pass: keep a row.\n  - Fail-safe: the run stops.\n"):
+            "- Evals:\n  - Pass: keep a row.\n  - Fail:\n"):
     RAN.append(f"bad eval {bad.splitlines()[-1]}")
     msgs = [m for _, fs in check(MIN.replace(EVALS, bad if bad.endswith("\n") else bad + "\n")) for m in fs]
     if not any("Evals" in m for m in msgs):
         FAILS.append(f"bad eval not named: {bad!r} -> {msgs}")
+
+expect_outcome("Fail-safe is not a fail case, so it asks",
+               MIN.replace(EVALS, "- Evals:\n  - Pass: keep a row.\n  - Fail-safe: the run stops.\n"), "ask")
 
 for ph in ("**TBD**", "`TBD`", "TBD!", "TBD:", "N / A", "TBD later", "TBC", "<goal here>", "{{goal}}", "placeholder"):
     RAN.append(f"required placeholder {ph}")
@@ -219,18 +233,6 @@ ran = subprocess.run([sys.executable, script, path], capture_output=True, text=T
 if ran.returncode != 1 or "Traceback" in ran.stderr or "Traceback" in ran.stdout or "Verification" not in ran.stdout:
     FAILS.append(f"dotless i label fails without a traceback: exit {ran.returncode}\n{ran.stdout}\n{ran.stderr}")
 
-def outcome(text):
-    """'fail', 'ask' or 'pass' for a whole brief, by the exit-code precedence."""
-    return "fail" if failed(text) else "ask" if asks(text) else "pass"
-
-
-def expect_outcome(name, text, want):
-    RAN.append(name)
-    got = outcome(text)
-    if got != want:
-        FAILS.append(f"{name}: wanted {want}, got {got}; failed {sorted(failed(text))}, asks {asks(text)}")
-
-
 def slot(label, block, text=MIN):
     """MIN with one slot (and its sub-items) replaced by block."""
     lines, out, skip = text.splitlines(), [], False
@@ -259,7 +261,8 @@ expect_outcome("R3-A unfilled Evals template fails",
 expect_outcome("R3-A Evals To be determined / Pending fails",
                slot("Evals", "- Evals:\n  - Pass: To be determined.\n  - Fail: Pending."), "fail")
 expect_outcome("R3-A investigate: <question> fails", slot("Done", "- Done:\n  - 3 bed.\n  - investigate: <question>"), "fail")
-expect_outcome("a template hole beside real text fails", slot("Output", "- Output: 10 rows, sorted by <field>."), "fail")
+# A hole inside a longer value asks rather than fails (round 4).
+expect_outcome("a template hole beside real text asks", slot("Output", "- Output: 10 rows, sorted by <field>."), "ask")
 expect_outcome("a hole in an optional slot fails", MIN + "- Parking lot: <tangents, not acted on>\n", "fail")
 # Deliberately left out: a placeholder in another language is not on the list. The read-back catches it.
 expect_outcome("R3-A Por determinar passes (not on the list, by design)", slot("Goal", "- Goal: Por determinar."), "pass")
@@ -269,7 +272,7 @@ with open(SKILL_MD) as handle:
     template = handle.read().split("```\n# Brief: <short title>\n", 1)[1].split("```", 1)[0]
 RAN.append("SKILL.md template pasted unfilled fails every required slot, the holes and Kind")
 got = failed("# Brief: t\n" + template)
-want = {"no required slot is only a placeholder", "no template hole", "Kind is one kind"}
+want = {PLACE, "no template hole", "Kind is one kind"}
 if not want <= got:
     FAILS.append(f"SKILL.md template: wanted {sorted(want)} within {sorted(got)}")
 msgs = [m for _, fs in check("# Brief: t\n" + template) for m in fs]
@@ -298,8 +301,8 @@ expect_outcome("a colon label and a phrase in one item",
 expect_outcome("Evals unknown passes when Questions holds it, whatever its wording",
                slot("Evals", "- Evals:\n  - unknown: Which cases prove it works?") + "\n## Questions\n\n1. Which cases prove it works?\n",
                "pass")
-expect("Evals unknown with no Questions block fails", slot("Evals", "- Evals:\n  - unknown: Which cases prove it works?"), {QS, EVALS_BOTH})
-expect_outcome("a bare number is not an Evals case", slot("Evals", "- Evals: 123"), "fail")
+expect("Evals unknown with no Questions block fails", slot("Evals", "- Evals:\n  - unknown: Which cases prove it works?"), {QS})
+expect_outcome("a bare number is not an Evals case, so it asks", slot("Evals", "- Evals: 123"), "ask")
 
 # Needs-human: suspicious but not on the list. exit 2, one ASK line each.
 for label, block in (("Goal", "- Goal: maybe"), ("Goal", "- Goal: It depends."), ("Goal", "- Goal: We'll see."),
@@ -334,6 +337,85 @@ expect_outcome("a confirmed Evals case passes",
                slot("Evals", "- Evals:\n  - Pass: x\n  - Fail: y") + "\n## Confirmed\n\n- Evals: x\n- Evals: y\n", "pass")
 
 
+# Round 4: every line of round4/repro/run.sh, with its target outcome.
+GOOD_MD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cases", "apartment-search", "runs", "run-1", "brief.md")
+with open(GOOD_MD) as handle:
+    APT = handle.read()
+expect_outcome("R4 base apartment brief passes", APT, "pass")
+# X1: one on-list placeholder among real items fails, per item.
+for label, block in (("Done", "- Done:\n  - Ten listings with a link each.\n  - TBD"),
+                     ("Verification", "- Verification:\n  - Every claim names its listing link.\n  - N/A"),
+                     ("Evals", "- Evals:\n  - Pass: TBD\n  - Pass: one listing has a photo.\n  - Fail: one listing has no photo.")):
+    expect_outcome(f"R4 X1 {label} with one TBD item fails", slot(label, block, APT), "fail")
+# X2: on-list variants fail once core() normalizes them; a placeholder with only a hedge beside it fails.
+for v in ("N.A.", "n.a.", "to-be-determined", "TO_BE_DETERMINED", "fill-in", "To be *determined*.", "maybe tbd",
+          "T.B.D.", "later, maybe", "ＴＢＤ", "“write first: TBD”"):
+    expect_outcome(f"R4 X2 Output {v} fails", slot("Output", f"- Output: {v}", APT), "fail")
+# X3: hedge-only values ask.
+for v in ("We will *see*.", "not sure yet", "unclear", "maybe, maybe not", "write first: depends", "idk tbh", "depending"):
+    expect_outcome(f"R4 X3 Output {v} asks", slot("Output", f"- Output: {v}", APT), "ask")
+# X4: real values with a hole-like part ask or pass, never fail.
+for v in ("Rows as JSON {link, price}, one per listing.", "A Vec<String> of listing links.", "Write under ${HOME}/out.",
+          "p95<target and p99>budget", "Call <tel:+15551234567> for help.", "Press <Enter> to submit.",
+          "Mail <user@example.com> the list.", "A `` `<col>` `` span and nothing else."):
+    RAN.append(f"R4 X4 Output {v} never fails")
+    if outcome(slot("Output", f"- Output: {v}", APT)) == "fail":
+        FAILS.append(f"R4 X4 Output {v} never fails: {[f for _, fs in check(slot('Output', f'- Output: {v}', APT)) for f in fs]}")
+expect_outcome("R4 X4 autolink passes", slot("Output", "- Output: Call <tel:+15551234567> for help.", APT), "pass")
+# X5: whole-value holes still fail; a hole inside a file name asks.
+for v in ("<goal>.", "[insert goal]", "{goal}", "< output >", "{{ }}", "Ten rows. [insert the cap]",
+          "<what comes back, how many, which fields, and how the person sees it>"):
+    expect_outcome(f"R4 X5 Output {v} fails", slot("Output", f"- Output: {v}", APT), "fail")
+expect_outcome("R4 X5 One file named <name>.csv. asks", slot("Output", "- Output: One file named <name>.csv.", APT), "ask")
+expect_outcome("R4 a SKILL.md template line fails", slot("Plan first", "- Plan first: yes: <what the plan shows first> | none needed", APT), "fail")
+# X6: Evals.
+expect_outcome("R4 X6 a code literal pass: is not a label",
+               slot("Evals", "- Evals:\n  - A log containing `pass:` should pass.\n  - A missing log should fail.", APT), "pass")
+RAN.append("R4 X6 Pass case: labels pass or ask")
+if outcome(slot("Evals", "- Evals:\n  - Pass case: one listing has a photo.\n  - Fail case: one listing has no photo.", APT)) == "fail":
+    FAILS.append("R4 X6 Pass case: labels pass or ask: got fail")
+expect_outcome("R4 X6 a Fail item that says should pass has no pass case",
+               slot("Evals", "- Evals:\n  - Fail: a listing that should pass the price rule but has no photo is dropped.", APT), "ask")
+expect_outcome("R4 X6 Pass: ok; Fail: depends asks", slot("Evals", "- Evals:\n  - Pass: ok; Fail: depends", APT), "ask")
+RAN.append("R4 X6 one ASK per case body")
+if asks(slot("Evals", "- Evals:\n  - Pass: ok; Fail: depends", APT)) != [("Evals", "ok"), ("Evals", "depends")]:
+    FAILS.append(f"R4 X6 one ASK per case body: {asks(slot('Evals', '- Evals:\n  - Pass: ok; Fail: depends', APT))}")
+whole = slot("Evals", "- Evals:\n  - Pass: ok; Fail: depends", APT) + "\n## Confirmed\n\n- Evals: Pass: ok; Fail: depends\n"
+expect_outcome("R4 S6 a whole-line confirmation does not lift the case bodies", whole, "ask")
+# X7: other checks.
+expect_outcome("R4 X7 Unknown at the start of plain text passes", slot("Output", "- Output: Unknown column names listed in a CSV.", APT), "pass")
+expect_outcome("R4 X7 a digit is a visible signal", slot("Output", "- Output: 24 is valid", APT), "pass")
+expect_outcome("R4 X7 Taste: TBD fails", slot("Taste", "- Taste: TBD", APT), "fail")
+expect("R4 unknown alone is still a marker", swap("- unknown: Tour or apply?", "- unknown"), {UNK})
+# Nits.
+expect_outcome("R4 only the exact ## Confirmed heading confirms", slot("Output", "- Output: ok") + "\n# Confirmed\n\n- Output: ok\n", "fail")
+RAN.append("R4 ASK shows the value as written")
+if asks(slot("Output", "- Output: ->")) != [("Output", "->")] or asks(slot("Output", "- Output: ‘maybe’")) != [("Output", "‘maybe’")]:
+    FAILS.append(f"R4 ASK shows the value as written: {asks(slot('Output', '- Output: ->'))}")
+for v in ("?", "???", "-", "—", "..."):
+    expect_outcome(f"R4 punctuation only {v} fails", slot("Output", f"- Output: {v}"), "fail")
+for v in ("→", "\U0001F680"):
+    expect_outcome(f"R4 symbols only {v} asks", slot("Output", f"- Output: {v}"), "ask")
+RAN.append("R4 classify API")
+for value, want in (("N.A.", "fail"), ("maybe tbd", "fail"), ("not sure yet", "ask"), ("${goal}", "fail"),
+                    ("Vec<String>", "ask"), ("`Vec<String>`", "pass"), ("p95 < 200ms", "pass")):
+    if classify(value) != want:
+        FAILS.append(f"classify({value!r}) = {classify(value)!r}, wanted {want!r}")
+
+# Round 4 fix review (codex): each repro, with its target outcome.
+expect_outcome("R4 review Not pending. asks, not fails", slot("Done", "- Done: Not pending."), "ask")
+expect_outcome("R4 review a regex quantifier {2,4} passes", slot("Done", "- Done: {2,4}"), "pass")
+expect_outcome("R4 review [insert] before the first Evals label fails",
+               slot("Evals", "- Evals: [insert evals] Pass: keep a row. Fail: drop a row."), "fail")
+expect_outcome("R4 review a Fail item with an inline should pass; asks",
+               slot("Evals", "- Evals: Fail: drop a broken row. Valid rows should pass; record the count."), "ask")
+expect_outcome("R4 review real text before the first Evals label passes",
+               slot("Evals", "- Evals: Happy path. Pass: keep a row. Fail: drop a row."), "pass")
+RAN.append("R4 review ASK keeps a trailing comma on a whole item")
+if asks(slot("Done", "- Done: We’ll see,")) != [("Done", "We’ll see,")]:
+    FAILS.append(f"R4 review ASK keeps a trailing comma: {asks(slot('Done', '- Done: We’ll see,'))}")
+
+
 def run_cli(text):
     path = os.path.join(tempfile.mkdtemp(), "brief.md")
     with open(path, "w") as handle:
@@ -357,8 +439,29 @@ if ask_lines != ["ASK: Output: Is 'ok' a real answer for Output?", "ASK: Evals: 
     FAILS.append(f"cli ASK line format: {ask_lines}\n{ran.stdout}")
 RAN.append("cli FAIL lines and ASK lines are distinct")
 ran = run_cli(slot("Goal", "- Goal: TBD", slot("Output", "- Output: ok")))
-if "FAIL no required slot is only a placeholder" not in ran.stdout or "ASK: Output:" not in ran.stdout:
+if "FAIL no placeholder" not in ran.stdout or "ASK: Output:" not in ran.stdout:
     FAILS.append(f"cli FAIL lines and ASK lines are distinct:\n{ran.stdout}")
+
+
+for name, args, data in (("missing file", ["/no/such/brief.md"], None), ("directory", [tempfile.mkdtemp()], None),
+                         ("non-UTF-8 file", None, b"- Goal: \xff\xfe\n")):
+    RAN.append(f"cli usage error: {name} exits 3 with one line")
+    if data is not None:
+        args = [os.path.join(tempfile.mkdtemp(), "brief.md")]
+        with open(args[0], "wb") as handle:
+            handle.write(data)
+    ran = subprocess.run([sys.executable, script, *args], capture_output=True, text=True)
+    lines = (ran.stdout + ran.stderr).strip().splitlines()
+    if ran.returncode != 3 or len(lines) != 1 or "Traceback" in ran.stderr:
+        FAILS.append(f"cli usage error {name}: exit {ran.returncode}\n{ran.stdout}{ran.stderr}")
+RAN.append("cli hole ASK line format")
+ran = run_cli(slot("Output", "- Output: Press <Enter> to submit."))
+if "ASK: Output: Is 'Press <Enter> to submit.' a real answer for Output, or a hole to fill?" not in ran.stdout.splitlines():
+    FAILS.append(f"cli hole ASK line format:\n{ran.stdout}")
+RAN.append("cli Evals case ASK line format")
+ran = run_cli(slot("Evals", "- Evals: Pass: keep a row."))
+if "ASK: Evals: Is there a pass case and a fail case here?" not in ran.stdout.splitlines() or ran.returncode != 2:
+    FAILS.append(f"cli Evals case ASK line format:\n{ran.stdout}")
 
 
 if __name__ == "__main__":

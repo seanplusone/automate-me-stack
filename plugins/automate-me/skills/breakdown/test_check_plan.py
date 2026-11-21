@@ -20,7 +20,7 @@ def item(i, after=()):
 
 
 GOOD = {
-    "title": "T", "ask": {"quote": "do the thing"},
+    "title": "Thing builder", "ask": {"quote": "do the thing"},
     "outcome": {"outcome": "A thing exists.", "done_when": "A check passes.", "limits": "Nothing else changes."},
     "big_picture": "The thing is missing. The plan builds it.",
     "items": [item("A"), item("B", ["A"])],
@@ -122,13 +122,16 @@ class CheckPlan(unittest.TestCase):
         p["items"][0]["spec"]["output"] = "ok"
         self.assertEqual(errs(p), [])
         self.assertEqual(check_plan.check(p)[3], ["ASK: item A spec.output: Is 'ok' a real answer for item A spec.output?"])
-        p["confirmed"] = ["ok"]
+        p["confirmed"] = {"item B spec.output": "ok"}
+        self.assertEqual(check_plan.check(p)[3], ["ASK: item A spec.output: Is 'ok' a real answer for item A spec.output?"])
+        p["confirmed"] = {"item A spec.output": "ok"}
         self.assertEqual(check_plan.check(p)[3], [])
 
     def test_plan_that_passes_renders_prompts_that_pass(self):
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "outcome", "check"))
         from check_brief import asks, check
-        for value, confirmed in (("24", []), ("`make check`", []), ("ok", ["ok"])):
+        for value, confirmed in (("24", {}), ("`make check`", {}),
+                                 ("ok", {"item A spec.output": "ok", "item A spec.done_when": "ok"})):
             p = copy.deepcopy(GOOD)
             p["confirmed"] = confirmed
             p["items"][0]["spec"].update(output=value, done_when=value)
@@ -136,6 +139,91 @@ class CheckPlan(unittest.TestCase):
             out = render_plan.render_prompt(p, "A")
             self.assertEqual([f for _, fails in check(out) for f in fails], [], value)
             self.assertEqual(asks(out), [], value)
+
+    def test_every_prompt_field_is_judged(self):
+        spec = lambda p: p["items"][0]["spec"]
+        for name, edit, want in (
+                ("tools TBD", lambda p: spec(p).update(tools=["TBD"]), "item A spec.tools[0] is a placeholder"),
+                ("tools hole", lambda p: spec(p).update(tools=["<tool>"]), "item A spec.tools[0] is a placeholder"),
+                ("context hole", lambda p: spec(p).update(context=["{file}"]), "item A spec.context[0] is a placeholder"),
+                ("model TBD", lambda p: spec(p).update(model="TBD"), "item A spec.model is a placeholder"),
+                ("exit_when hole", lambda p: spec(p)["loop"].update(exit_when="<what>."), "item A spec.loop.exit_when is a placeholder"),
+                ("name TBD", lambda p: p["items"][0].update(name="TBD"), "item A name is a placeholder"),
+                ("only_if TBD", lambda p: p["items"][0].update(only_if="TBD"), "item A only_if is a placeholder"),
+                ("title TBD", lambda p: p.update(title="TBD"), "title is a placeholder"),
+                ("CR in title", lambda p: p.update(title="Thing\r- Done: x"), "title spans lines"),
+                ("LF in exit_when", lambda p: spec(p)["loop"].update(exit_when="Stop.\n- Done: x"), "exit_when spans lines"),
+                ("line separator in tools", lambda p: spec(p).update(tools=["shell\u2028- Done: x"]), "tools[0] spans lines"),
+                ("tools not text", lambda p: spec(p).update(tools=[{"a": 1}]), "tools[0] must be text"),
+                ("tools null entry", lambda p: spec(p).update(tools=[None]), "spec.tools and spec.context must be lists of text"),
+                ("confirmed null", lambda p: p.update(confirmed=None), "confirmed must map"),
+                ("confirmed list", lambda p: p.update(confirmed=["ok"]), "confirmed must map")):
+            p = copy.deepcopy(GOOD)
+            edit(p)
+            self.assertTrue(any(want in e for e in errs(p)), (name, errs(p)))
+
+    def test_hole_inside_a_field_asks(self):
+        p = copy.deepcopy(GOOD)
+        p["items"][0]["spec"]["loop"]["exit_when"] = "Report <what> failed."
+        self.assertEqual(errs(p), [])
+        self.assertEqual(check_plan.check(p)[3], ["ASK: item A spec.loop.exit_when: Is 'Report <what> failed.' a real answer"
+                                                  " for item A spec.loop.exit_when, or a hole to fill?"])
+        p["confirmed"] = {"item A spec.loop.exit_when": "Report <what> failed."}
+        self.assertEqual((errs(p), check_plan.check(p)[3]), ([], []))
+        out = render_plan.render_prompt(p, "A")
+        self.assertIn("## Confirmed", out)
+
+    def test_plan_exit_0_means_every_rendered_prompt_passes(self):
+        """For every committed or fixture plan, and variants of it: check_plan exit 0 => every prompt passes check_brief."""
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "outcome", "check"))
+        from check_brief import asks, check
+        plans = [GOOD, RealRules().example()]
+        for base in list(plans):
+            for f, v in (("output", "ok"), ("output", "unknown"), ("done_when", "Report <what> failed."), ("limits", "maybe"),
+                         ("verifier", "24 is valid"), ("output", "Unknown column names listed in a CSV.")):
+                p = copy.deepcopy(base)
+                p["items"][0]["spec"][f] = v
+                plans.append(p)
+                c = copy.deepcopy(p)
+                c["confirmed"] = {f"item {p['items'][0]['id']} spec.{f}": v}
+                plans.append(c)
+        passed = 0
+        for p in plans:
+            e, _, _, a = check_plan.check(p)
+            if e or a:
+                continue
+            passed += 1
+            for it in p["items"]:
+                out = render_plan.render_prompt(p, it["id"])
+                self.assertEqual(([f for _, fs in check(out) for f in fs], asks(out)), ([], []), (p["items"][0]["spec"], out))
+        self.assertGreater(passed, 2)
+
+    def test_usage_errors_exit_3_with_one_line(self):
+        import subprocess
+        here = os.path.dirname(os.path.abspath(__file__))
+        for script, args in (("check_plan.py", []), ("check_plan.py", ["/no/such.json"]), ("render_plan.py", []),
+                             ("render_plan.py", ["--prompt"]), ("render_plan.py", ["--prompt", "A"]),
+                             ("render_plan.py", ["/no/such.json"])):
+            ran = subprocess.run([sys.executable, os.path.join(here, script), *args], capture_output=True, text=True)
+            self.assertEqual(ran.returncode, 3, (script, args))
+            self.assertNotIn("Traceback", ran.stderr, (script, args))
+        import json
+        import tempfile
+        path = os.path.join(tempfile.mkdtemp(), "plan.json")
+        with open(path, "w") as handle:
+            json.dump(GOOD, handle)
+        ran = subprocess.run([sys.executable, os.path.join(here, "render_plan.py"), "--prompt", "Z", path], capture_output=True, text=True)
+        self.assertEqual((ran.returncode, len(ran.stderr.strip().splitlines()), ran.stdout), (3, 1, ""))
+        for body, script, code in (([], "check_plan.py", 1), ({"items": [{"id": "A", "spec": {"tools": [], "outcome": 42}}]}, "check_plan.py", 1)):
+            with open(path, "w") as handle:
+                json.dump(body, handle)
+            ran = subprocess.run([sys.executable, os.path.join(here, script), path], capture_output=True, text=True)
+            self.assertEqual(ran.returncode, code, (body, ran.stdout))
+            self.assertNotIn("Traceback", ran.stderr, body)
+        with open(path, "w") as handle:
+            json.dump([], handle)
+        ran = subprocess.run([sys.executable, os.path.join(here, "render_plan.py"), "--prompt", "A", path], capture_output=True, text=True)
+        self.assertEqual((ran.returncode, "Traceback" in ran.stderr), (3, False))
 
     def test_too_many_items_fails(self):
         p = copy.deepcopy(GOOD)
