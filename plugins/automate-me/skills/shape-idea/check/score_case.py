@@ -1,0 +1,125 @@
+"""Scores a shape-idea decisions.md against a case key.
+
+Usage: python3 check/score_case.py <cases/<name>/key.md> <decisions.md>
+
+Key lines, one item each, outside code blocks. Terms are separated by ` | `. A term written
+`a/b` matches either side. Matching ignores case. A term matches at the start of a word, so
+`pet` matches `pets` but not `carpet`. A term of 3 letters or fewer must be the whole word,
+or that word plus s. A term that ends in a digit must end the number, so `10` is not `100`.
+A term of several words matches as a phrase. The same rules as outcome's scorer.
+
+  Decided: <slot or id> | <term> ...
+  Open: <slot or id> | <term> ...
+  Parked: <slot or id> | <term> ...
+
+When the first field is goal, done, output, verify, or constraints, every term must sit on
+that slot's line in the section. Otherwise every term must sit on one line in the section
+that is not one of those slots. Keywords on a different line do not count.
+A section whose only item is `none` is empty. Lines inside code blocks are skipped.
+
+Prints one line per key item (`found` or `MISSED`), then `PASS n/m` or `FAIL n/m`.
+Exit 0 when every item matched. Exit 1 on any miss, or when the key has no scorable lines.
+Exit 2 on a usage error.
+"""
+import os
+import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from check_decisions import SLOTS, canon, parse, real_items, slot_of, split_fences  # noqa: E402
+
+KEY_LINE = re.compile(r"^(Decided|Open|Parked|Any):\s*(.+)$", re.I)
+
+
+def read_key(path):
+    items, fenced = [], False
+    for line in open(path):
+        if line.strip().startswith("```"):
+            fenced = not fenced
+            continue
+        match = KEY_LINE.match(line.strip())
+        if match and not fenced:
+            kind = "Any" if match.group(1).lower() == "any" else canon(match.group(1))
+            parts = [p.strip() for p in match.group(2).split(" | ") if p.strip()]
+            items.append((kind, parts))
+    return items
+
+
+def term_pattern(alt):
+    """Word-start match. See the module docstring. Copied from outcome's score_case."""
+    body = r"\s+".join(re.escape(w) for w in alt.split())
+    left = r"(?<!\w)" if alt[0].isalnum() or alt[0] == "_" else ""
+    right = r"(?!\d)" if alt[-1].isdigit() else ""
+    if len(alt) <= 3 and alt.isalpha():
+        right = r"s?(?!\w)"
+    return left + body + right
+
+
+def term_in(term, text):
+    return any(re.search(term_pattern(alt), text, re.I) for alt in term.split("/") if alt.strip())
+
+
+def missing(terms, text):
+    return [t for t in terms if not term_in(t, text)]
+
+
+def named(parts):
+    """A slot id with no terms is empty on purpose, so `Decided: goal` cannot pass."""
+    if len(parts) == 1:
+        return parts[0], [] if parts[0].lower() in SLOTS else parts
+    return parts[0], parts[1:]
+
+
+def score(key_path, decisions_path):
+    visible = split_fences(open(decisions_path, encoding="utf-8-sig").read())[0]
+    sections, _, _, _ = parse(visible)
+    items = read_key(key_path)
+    if not items:
+        print(f"FAIL no scorable lines in {key_path}")
+        return 1
+    pools = {}
+    misses = 0
+    for kind, parts in items:
+        ident, terms = named(parts)
+        if kind == "Any":
+            body = []
+            for section in ("Decided", "Open", "Parked"):
+                body.extend(real_items(sections.get(section, [])))
+        else:
+            body = real_items(sections.get(kind, []))
+        if kind != "Any" and ident.lower() in SLOTS:
+            if not terms:
+                misses += 1
+                print(f"{kind.lower()} {ident}: MISSED a slot line needs at least one term")
+                continue
+            body = [item for item in body if slot_of(item) == ident.lower()]
+            pool_key = (kind, ident.lower())
+        else:
+            body = [item for item in body if slot_of(item) is None]
+            pool_key = (kind, "*")
+        pool = pools.setdefault(pool_key, set(range(len(body))))
+        ranked = []
+        for index in pool:
+            lost = missing(terms, body[index])
+            ranked.append((len(lost), index, lost))
+        if not ranked:
+            best, index, lost = list(terms), None, list(terms)
+        else:
+            _, index, lost = min(ranked, key=lambda row: (row[0], row[1]))
+            best = lost
+        if not best and index is not None:
+            pool.remove(index)
+            result = "found"
+        else:
+            result = f"MISSED no {kind.lower()} item names: " + ", ".join(best)
+        misses += result.startswith("MISSED")
+        print(f"{kind.lower()} {ident}: {result}")
+    print(f"{'FAIL' if misses else 'PASS'} {len(items) - misses}/{len(items)} key items")
+    return 1 if misses else 0
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 3 or sys.argv[1] in ("-h", "--help"):
+        print(__doc__.strip())
+        sys.exit(0 if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help") else 2)
+    sys.exit(score(sys.argv[1], sys.argv[2]))

@@ -2,7 +2,7 @@
 
 Part of `automate-me`. Shared writing rules live in `../shared/writing-rules.md`. The trap list comes from `../brief-check/SKILL.md`. The slot names below are this skill's.
 
-Turns a rough idea, often a spoken ramble, into a brief an agent can run. It sorts what was said, fills the slots, marks every gap as an unknown with its question, and reads the brief back with at most 3 questions. Nothing runs until the user says yes.
+Turns a rough idea, often a spoken ramble, into a brief an agent can run. It sorts what was said, fills the slots, marks every gap as an unknown with its question, and reads the brief back with at most 3 questions. Nothing runs until the user says yes. A shape-idea decisions.md is mapped into the brief instead of being sorted as a ramble.
 
 Status: new. Four synthetic scored cases, plus `missing-evals`, which fails the shape check. The `run-*` briefs were written by hand to show the scorer working. One blind run has been scored. A fresh agent read only `SKILL.md` and brief-check's, never a key. Its scores and the key changes it led to are in each case's `runs/score.md`. Blind briefs are kept in `runs/blind/`.
 
@@ -169,18 +169,37 @@ outcome/
 From `outcome/`:
 
 ```
+set -euo pipefail
 python3 check/test_check_brief.py
 python3 check/test_score_case.py
 for c in cases/*/; do
-  [ "$(basename "$c")" = missing-evals ] && continue
+  base=$(basename "$c")
+  if [ "$base" = missing-evals ]; then
+    continue
+  fi
+  if [ "$base" = from-decisions ]; then
+    for d in "$c"*/decisions.md; do
+      tmp=$(mktemp)
+      python3 check/map_decisions.py "$d" > "$tmp"
+      python3 check/check_brief.py "$tmp"
+      rm -f "$tmp"
+    done
+    continue
+  fi
   for b in "$c"runs/*/brief.md; do
-    python3 check/check_brief.py "$b" | tail -1
-    python3 check/score_case.py "$c"key.md "$b" | tail -1
+    python3 check/check_brief.py "$b"
   done
+  python3 check/score_case.py "$c"key.md "$c"runs/run-1/brief.md
 done
 ```
 
-Every scored `run-1` passes both. `apartment-search/runs/run-2` passes the shape check and fails the score, which is the point of it. `missing-evals` has no key. Its brief fails `check_brief.py` on the missing Evals slot, and that is the point of it. Skip it in the loop above. Check it on its own:
+Every `run-1` passes both checks. The loop checks the shape of every other brief under `runs/`, and it scores `run-1` only. `from-decisions` has a `decisions.md` and no `runs/` or key. The loop maps each file and runs `check_brief.py` on the result. `set -e` stops the loop when any command fails. `apartment-search/runs/run-2` passes the shape check and fails the score, which is the point of it, so score it on its own:
+
+```
+python3 check/score_case.py cases/apartment-search/key.md cases/apartment-search/runs/run-2/brief.md
+```
+
+`missing-evals` has no key. Its brief fails `check_brief.py` on the missing Evals slot, and that is the point of it. Skip it in the loop above. Check it on its own:
 
 ```
 python3 check/check_brief.py cases/missing-evals/runs/run-1/brief.md

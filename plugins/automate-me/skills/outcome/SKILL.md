@@ -1,6 +1,6 @@
 ---
 name: outcome
-description: Turn a rough idea, often a spoken ramble or a voice transcript, into a brief an agent can run. Sorts what was said into decisions, thinking aloud, tangents, questions and facts. Then it fills the brief slots and marks every gap unknown with the one question that fills it. It reads the brief back with at most 3 questions. Nothing runs until the user says yes. Use for /outcome, "here's a rough idea", "I'm just thinking out loud", or a long unstructured message about building, reviewing, designing, learning or deciding something. When a message looks like a ramble, offer it in one line first.
+description: Turn a rough idea, often a spoken ramble or a voice transcript, into a brief an agent can run. Sorts what was said into decisions, thinking aloud, tangents, questions and facts. Then it fills the brief slots and marks every gap unknown with the one question that fills it. It reads the brief back with at most 3 questions. Nothing runs until the user says yes. Use for /outcome, "here's a rough idea", "I'm just thinking out loud", or a long unstructured message about building, reviewing, designing, learning or deciding something. When a message looks like a ramble, offer it in one line first. A shape-idea decisions.md is mapped into the brief before the read-back.
 ---
 
 # Outcome
@@ -10,6 +10,36 @@ A rough idea arrives as a ramble. It mixes firm decisions with "maybe", drifts i
 Voice is only how the text arrives. The skill works on the transcript, typos and all.
 
 `$SKILL_DIR` is this skill's directory, printed as "Base directory for this skill" when it loads. The same steps apply on any stack and for any coding agent.
+
+## A decisions file
+
+If the user brings a `decisions.md` from [shape-idea](../shape-idea/SKILL.md), run `python3 "$SKILL_DIR"/../shape-idea/check/check_decisions.py` on that file first. If it fails (exit 1), stop and show the failures. Do not map a file the check rejects. Exit 2 is a break point. Stop, ask the user each `ASK:` line as a yes/no question, and record the answer in the decisions file. A yes is a `- <Slot>: <value>` line under `## Confirmed` at its end. A no is a new value. Run the check again. Map only on exit 0. Do not sort it as a ramble. Shape-idea does not ask which tool to use, who does the work, or which two cases prove it. Those three stay `unknown:` until the user answers, unless a Decided line already names that slot. Do not invent them. Run `python3 "$SKILL_DIR"/check/check_brief.py` on the brief.
+
+| In the decisions file | In the brief |
+|---|---|
+| The `goal:` line | Goal |
+| The `done:` line | Done |
+| A decided `out of scope:` line | Constraints |
+| A decided `decide:` line | Goal, in place of the decide question |
+| Other Decided lines | Done |
+| A decided `output:` line | Output |
+| An open slot | That slot as `unknown:`, and again under Unknowns |
+| The `constraints:` line | Constraints |
+| A Parked `out of scope:` line, or one that ends in not now, `, later` or `for later` | Constraints as `out of scope:`, and the Parking lot |
+| A Parked question | Unknowns as `unknown: <question>?`, and the Parking lot |
+| Other Parked lines | Parking lot |
+| The `verify:` line | Verification, plus the evidence sentence |
+| A decided `tools:`, `agents:`, or `evals:` line | That slot, in the user's words |
+| Tools, Agents and roles, and Evals when unset | Unknowns |
+| The Confirmed section | The brief's `## Confirmed` block |
+
+A Parked line becomes `out of scope:` when it is tagged `out of scope:`, or ends in not now, `, later` or `for later`. A later inside double quotes does not count. A later in the middle of a line, as in "voters who join later can still vote", keeps its meaning and stays parked. So does a later hedged with maybe, perhaps, probably, possibly, I think, or not sure, a line that ends in `?`, and a line the brief check would not pass as written. A tagged line keeps one `out of scope:`. A parked question stays a question.
+
+Goal also gets `unknown: What will you decide with the result?` unless a Decided line starts with `decide:`. That line's value goes under Goal instead, with no `decide:` in front, as the template writes it. Tools is `unknown: Which tool must the run use, and what, if anything, must be written first?`. Agents and roles is `unknown: Who does the work, and does anyone else check it?`. Evals is `unknown: What is one case that should pass, and one that should fail?`. A decided `tools:`, `agents:` (or `agents and roles:`), or `evals:` line fills that slot instead. An Open `tools:`, `agents:`, `evals:` or `decide:` question takes the stock question's place. A decided `write first:` line goes under Tools. After the user answers, rewrite each slot in their words.
+
+Some lines start with a brief tag outside its home slot, or with `default`. When such a line is a Decided line that is not a slot, or a Parked line, it is prefixed with `stated:`. The words stay and the tag does not. A slot value is never prefixed. `stated:` never hides an unknown, a trap word, a placeholder or an ask: the decisions check judges every line without it, and fails or asks first.
+
+The read-back asks at most 3 questions, in this order: an open goal or done question, then the decide question, then Tools, then Agents and roles, then Evals. Unasked ones stay in Unknowns. Constraints also says report only, and not to run or post, because shape-idea never does. The same traps apply.
 
 ## When to offer it
 
