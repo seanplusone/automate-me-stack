@@ -157,7 +157,15 @@ Then apply brief-check's trap list (Step 2) to the brief, one line per trap foun
 - Vague scope ("the PRD", "the repo") names a link, path or branch, or becomes an unknown.
 - A check that needs a tool (a browser, images, a test run) names it in Tools, including what to write first.
 
-Run `python3 "$SKILL_DIR"/check/check_brief.py <brief.md>` and fix what it flags. It checks the shape. Every required slot is present once and filled. A required slot with no real words fails, and the line names the slot. `none` may sit on Skills, Parking lot and Unknowns. Tools and Constraints may say `none: <why>` when the reason is real. Evals names one pass case and one fail case, each with real text after the label. Plan first, when present, says yes or none needed. Every unknown has a question and no default beside it. Tagged items sit in their slots, there are at most 3 questions, and no slot is only an adjective. Run `python3 "$SKILL_DIR"/../shared/check_writing.py <brief.md>` and rewrite the lines it flags.
+Run `python3 "$SKILL_DIR"/check/check_brief.py <brief.md>`. It has three outcomes.
+
+- **Exit 1, FAIL.** Fix what it flags. It flags a missing or repeated slot and a required slot that is empty or only a placeholder. It also flags a template hole in any slot, a Kind that is not one kind, and Evals with no pass case or no fail case. A placeholder holds only words from a fixed list. The words are tbd, tbc, tba, todo, fixme, xxx, n/a, na, none, pending, placeholder and later. The phrases are to be determined, to be decided, to be confirmed, fill in, fill in later, see below, see above and same as above. A template hole is `<goal>`, `{{x}}`, `{x}`, `${x}` or `[insert x]`, so the template above fails when pasted unfilled. `none` may sit on Skills, Parking lot and Unknowns. Tools and Constraints may say `none: <why>` when the reason is real. An Evals item `unknown: <question>?` stands in for the cases when its question is in the Questions block.
+- **Exit 2, ASK.** A value is suspicious but not on the list. It is only symbols, or only hedges (it depends, depends, we'll see, we will see, not sure, unsure, maybe, perhaps, idk, dunno), or one word of one or two letters. Each prints `ASK: <slot>: Is '<value>' a real answer for <slot>?`. Stop there and ask the person that question. On a yes, add a `## Confirmed` block at the end of the brief, with one `- <Slot>: <value>` line each, and rerun. On a no, replace the value with the answer, or with `unknown: <question>?`.
+- **Exit 0, PASS.** The shape is right.
+
+The list is deliberately narrow. check_brief catches common placeholders and template holes. A needs-human value (exit 2, one ASK line each) is the break point where the agent stops and asks the person. The read-back catches the rest.
+
+Run `python3 "$SKILL_DIR"/../shared/check_writing.py <brief.md>` and rewrite the lines it flags.
 
 ## 4. Read back
 
@@ -176,7 +184,7 @@ Nothing runs until the user says yes.
 After the yes:
 
 1. Fold the answers into the brief. A slot that was unknown now holds the user's words.
-2. Run the checker again, and apply the trap list above.
+2. Run the checker again, and apply the trap list above. Hand off only on exit 0. On exit 2, ask each ASK line's question first and record the answer as above.
 3. Run it, or the skills named in the brief. A gap only the user can fill still stops the run, the same rule as brief-check Step 3.
 
 For parallel work, brief each subagent with one part of the brief and the same Verification and Constraints lines. A second agent that did not do the work checks it before the results come back.

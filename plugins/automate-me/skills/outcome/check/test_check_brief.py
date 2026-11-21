@@ -5,7 +5,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from check_brief import check  # noqa: E402
+from check_brief import asks, check, classify, parse  # noqa: E402
 
 FAILS = []
 RAN = []
@@ -156,7 +156,7 @@ tbd_msgs = [f for _, fails in check(TBD) for f in fails]
 if not all(any(s in msg and "placeholder" in msg for msg in tbd_msgs) for s in REQUIRED):
     FAILS.append(f"every slot TBD names each required slot: {tbd_msgs}")
 
-for ph in ("TBD", "TODO", "N/A", "...", "-", "?", "(later)", "[later]", "123", "none"):
+for ph in ("TBD", "TODO", "N/A", "...", "-", "?", "(later)", "[later]", "none"):
     RAN.append(f"Evals placeholder {ph}")
     msgs = [f for _, fails in check(MIN.replace(EVALS, f"- Evals: {ph}\n")) for f in fails]
     if not any("Evals" in msg and "placeholder" in msg for msg in msgs):
@@ -183,7 +183,6 @@ for bad in ("- Evals:\n  - Pass: TBD\n  - Fail: drop a row.\n",
             "- Evals:\n  - Pass: keep a row.\n  - Fail: TBD\n",
             "- Evals:\n  - Pass:\n  - Fail: drop a row.\n",
             "- Evals:\n  - Pass: keep a row.\n  - Fail:\n",
-            "- Evals: It should pass or should fail, TBD.\n",
             "- Evals:\n  - Pass: keep a row.\n  - Fail-safe: the run stops.\n"):
     RAN.append(f"bad eval {bad.splitlines()[-1]}")
     msgs = [m for _, fs in check(MIN.replace(EVALS, bad if bad.endswith("\n") else bad + "\n")) for m in fs]
@@ -206,8 +205,7 @@ stolen = MIN.replace(
     "- Goal: Find 10 listings.\n````\n- Goal: stolen\n```\nstill inside\n````\n",
 )
 RAN.append("inner fence does not close a longer fence")
-from check_brief import parse
-slots, _, counts = parse(stolen)
+slots, _, counts, _ = parse(stolen)
 if slots.get("Goal") != ["Find 10 listings."] or counts.get("Goal") != 1:
     FAILS.append(f"inner fence does not close a longer fence: {slots.get('Goal')} x{counts.get('Goal')}")
 
@@ -220,6 +218,148 @@ script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "check_brief.p
 ran = subprocess.run([sys.executable, script, path], capture_output=True, text=True)
 if ran.returncode != 1 or "Traceback" in ran.stderr or "Traceback" in ran.stdout or "Verification" not in ran.stdout:
     FAILS.append(f"dotless i label fails without a traceback: exit {ran.returncode}\n{ran.stdout}\n{ran.stderr}")
+
+def outcome(text):
+    """'fail', 'ask' or 'pass' for a whole brief, by the exit-code precedence."""
+    return "fail" if failed(text) else "ask" if asks(text) else "pass"
+
+
+def expect_outcome(name, text, want):
+    RAN.append(name)
+    got = outcome(text)
+    if got != want:
+        FAILS.append(f"{name}: wanted {want}, got {got}; failed {sorted(failed(text))}, asks {asks(text)}")
+
+
+def slot(label, block, text=MIN):
+    """MIN with one slot (and its sub-items) replaced by block."""
+    lines, out, skip = text.splitlines(), [], False
+    for line in lines:
+        if line.startswith(f"- {label}:"):
+            out.append(block)
+            skip = True
+            continue
+        if skip and line.startswith("  "):
+            continue
+        skip = False
+        out.append(line)
+    assert any(line.startswith(f"- {label}:") for line in lines), label
+    return "\n".join(out) + "\n"
+
+
+# Round 3, R3-A: placeholders that used to pass. All FAIL now.
+for v in ("To be determined.", "To be decided.", "To be confirmed.", "Pending.", "TBA", "FIXME", "XXX", "TODO: fill in",
+          "Fill in later.", "See below.", "See above.", "Same as above.", "<goal>.", "[insert goal]", "{goal}", "${goal}",
+          "tbd/tbc", "<what the person decides, or unknown: <question>?>"):
+    expect_outcome(f"R3-A Goal {v} fails", slot("Goal", f"- Goal: {v}"), "fail")
+expect_outcome("R3-A write first: TBD fails", slot("Tools", "- Tools: write first: TBD"), "fail")
+expect_outcome("R3-A none: to be determined fails", slot("Tools", "- Tools: none: to be determined"), "fail")
+expect_outcome("R3-A unfilled Evals template fails",
+               slot("Evals", "- Evals:\n  - Pass: <one case that meets Done>\n  - Fail: <one case that does not>"), "fail")
+expect_outcome("R3-A Evals To be determined / Pending fails",
+               slot("Evals", "- Evals:\n  - Pass: To be determined.\n  - Fail: Pending."), "fail")
+expect_outcome("R3-A investigate: <question> fails", slot("Done", "- Done:\n  - 3 bed.\n  - investigate: <question>"), "fail")
+expect_outcome("a template hole beside real text fails", slot("Output", "- Output: 10 rows, sorted by <field>."), "fail")
+expect_outcome("a hole in an optional slot fails", MIN + "- Parking lot: <tangents, not acted on>\n", "fail")
+# Deliberately left out: a placeholder in another language is not on the list. The read-back catches it.
+expect_outcome("R3-A Por determinar passes (not on the list, by design)", slot("Goal", "- Goal: Por determinar."), "pass")
+
+SKILL_MD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "SKILL.md")
+with open(SKILL_MD) as handle:
+    template = handle.read().split("```\n# Brief: <short title>\n", 1)[1].split("```", 1)[0]
+RAN.append("SKILL.md template pasted unfilled fails every required slot, the holes and Kind")
+got = failed("# Brief: t\n" + template)
+want = {"no required slot is only a placeholder", "no template hole", "Kind is one kind"}
+if not want <= got:
+    FAILS.append(f"SKILL.md template: wanted {sorted(want)} within {sorted(got)}")
+msgs = [m for _, fs in check("# Brief: t\n" + template) for m in fs]
+for s in REQUIRED:
+    RAN.append(f"SKILL.md template names {s} as a placeholder")
+    if f"slot {s} is only a placeholder" not in msgs:
+        FAILS.append(f"SKILL.md template names {s} as a placeholder: {msgs}")
+expect("Kind with a real kind", MIN + "- Kind: build\n", set())
+
+# Round 3, R3-B and R3-C: real values. All PASS.
+for v in ("上线第二版。", "Запустить вторую версию.", "Νέα έκδοση.", "新しい版を出す。", "Ship v2.", "Make v2.",
+          "Make it faster.", "Check the logs.", "Lancer la version deux."):
+    expect_outcome(f"real Goal {v} passes", slot("Goal", f"- Goal: {v}"), "pass")
+for v in ("`make`", "git", "gRPC", "C#", ".env", "k8s"):
+    expect_outcome(f"real Tools {v} passes", slot("Tools", f"- Tools: {v}"), "pass")
+for label, block in (("Verification", "- Verification: `make check`"), ("Constraints", "- Constraints: Under $500."),
+                     ("Constraints", "- Constraints: $500"), ("Done", "- Done: #123"), ("Output", "- Output: 24"),
+                     ("Output", "- Output: 24 cards"), ("Constraints", "- Constraints: p95 < 200ms"),
+                     ("Verification", "- Verification: `curl localhost/items/{id}` returns 200."),
+                     ("Done", "- Done: proof is <https://example.com/listing/1>."),
+                     ("Done", "- Done: a < b and c > d for every row.")):
+    expect_outcome(f"real {label} {block[len(label) + 4:]} passes", slot(label, block), "pass")
+expect_outcome("bare status codes are real cases", slot("Evals", "- Evals:\n  - Pass: 200\n  - Fail: 404"), "pass")
+expect_outcome("a colon label and a phrase in one item",
+               slot("Evals", "- Evals: Pass: a complete listing. A listing without a price should fail."), "pass")
+expect_outcome("Evals unknown passes when Questions holds it, whatever its wording",
+               slot("Evals", "- Evals:\n  - unknown: Which cases prove it works?") + "\n## Questions\n\n1. Which cases prove it works?\n",
+               "pass")
+expect("Evals unknown with no Questions block fails", slot("Evals", "- Evals:\n  - unknown: Which cases prove it works?"), {QS, EVALS_BOTH})
+expect_outcome("a bare number is not an Evals case", slot("Evals", "- Evals: 123"), "fail")
+
+# Needs-human: suspicious but not on the list. exit 2, one ASK line each.
+for label, block in (("Goal", "- Goal: maybe"), ("Goal", "- Goal: It depends."), ("Goal", "- Goal: We'll see."),
+                     ("Goal", "- Goal: not sure"), ("Output", "- Output: ok"), ("Output", "- Output: x"),
+                     ("Output", "- Output: →"), ("Done", "- Done: --> <--"), ("Goal", "- Goal: 版")):
+    expect_outcome(f"needs-human {block}", slot(label, block), "ask")
+expect_outcome("one-letter Evals cases ask", slot("Evals", "- Evals:\n  - Pass: x\n  - Fail: y"), "ask")
+# A pronoun before 'should pass' is a single short token, so it asks rather than fails (round 2 had it FAIL).
+expect_outcome("It should pass or should fail, TBD asks", slot("Evals", "- Evals: It should pass or should fail, TBD."), "ask")
+expect_outcome("a hedge in an optional slot does not ask", MIN + "- Parking lot: maybe\n", "pass")
+expect_outcome("FAIL wins over ASK", slot("Goal", "- Goal: TBD", slot("Output", "- Output: ok")), "fail")
+
+RAN.append("classify API")
+for value, want in (("TBD", "fail"), ("", "fail"), ("<goal>", "fail"), ("maybe", "ask"), ("ok", "ask"),
+                    ("24", "pass"), ("$500", "pass"), ("`make`", "pass"), ("Por determinar", "pass")):
+    if classify(value) != want:
+        FAILS.append(f"classify({value!r}) = {classify(value)!r}, wanted {want!r}")
+
+confirmed = slot("Output", "- Output: ok") + "\n## Confirmed\n\n- Output: ok\n"
+expect_outcome("a recorded confirmation turns ASK into PASS", confirmed, "pass")
+expect("the Confirmed block does not repeat the slot", confirmed, set())
+expect_outcome("a confirmation of another value still asks",
+               slot("Output", "- Output: ok") + "\n## Confirmed\n\n- Output: fine\n", "ask")
+# Under any other heading the line is a second Output slot, so it fails as a repeat instead of confirming.
+expect_outcome("only a heading named Confirmed confirms",
+               slot("Output", "- Output: ok") + "\n## Confirmed assumptions\n\n- Output: ok\n", "fail")
+expect_outcome("extra spaces inside a listed phrase still fail", slot("Goal", "- Goal: to  be determined"), "fail")
+expect_outcome("a code span in an Evals case is not a hole",
+               slot("Evals", "- Evals: Pass: `<input>` is read. Fail: missing input."), "pass")
+expect_outcome("a confirmation does not lift a FAIL", slot("Goal", "- Goal: TBD") + "\n## Confirmed\n\n- Goal: TBD\n", "fail")
+expect_outcome("a confirmed Evals case passes",
+               slot("Evals", "- Evals:\n  - Pass: x\n  - Fail: y") + "\n## Confirmed\n\n- Evals: x\n- Evals: y\n", "pass")
+
+
+def run_cli(text):
+    path = os.path.join(tempfile.mkdtemp(), "brief.md")
+    with open(path, "w") as handle:
+        handle.write(text)
+    return subprocess.run([sys.executable, script, path], capture_output=True, text=True)
+
+
+for name, text, code, last in (("PASS exits 0", MIN, 0, "PASS brief:"),
+                               ("FAIL exits 1", slot("Goal", "- Goal: TBD"), 1, "FAIL brief:"),
+                               ("ASK exits 2", slot("Output", "- Output: ok"), 2, "ASK brief:"),
+                               ("FAIL and ASK exits 1", slot("Goal", "- Goal: TBD", slot("Output", "- Output: ok")), 1, "FAIL brief:"),
+                               ("confirmed ASK exits 0", confirmed, 0, "PASS brief:")):
+    RAN.append(f"cli {name}")
+    ran = run_cli(text)
+    if ran.returncode != code or not ran.stdout.strip().splitlines()[-1].startswith(last):
+        FAILS.append(f"cli {name}: exit {ran.returncode}\n{ran.stdout}")
+RAN.append("cli ASK line format")
+ran = run_cli(slot("Output", "- Output: ok", slot("Evals", "- Evals:\n  - Pass: x\n  - Fail: drop a row.")))
+ask_lines = [line for line in ran.stdout.splitlines() if line.startswith("ASK:")]
+if ask_lines != ["ASK: Output: Is 'ok' a real answer for Output?", "ASK: Evals: Is 'x' a real answer for Evals?"]:
+    FAILS.append(f"cli ASK line format: {ask_lines}\n{ran.stdout}")
+RAN.append("cli FAIL lines and ASK lines are distinct")
+ran = run_cli(slot("Goal", "- Goal: TBD", slot("Output", "- Output: ok")))
+if "FAIL no required slot is only a placeholder" not in ran.stdout or "ASK: Output:" not in ran.stdout:
+    FAILS.append(f"cli FAIL lines and ASK lines are distinct:\n{ran.stdout}")
+
 
 if __name__ == "__main__":
     for f in FAILS:

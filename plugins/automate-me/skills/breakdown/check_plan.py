@@ -1,6 +1,11 @@
 """Checks a breakdown plan file: its shape, its limits and the writing rules.
 
 Usage: python3 check_plan.py <plan.json>
+
+outcome, done_when and limits, and each item's spec.outcome, done_when, limits, output and verifier,
+go through outcome's check_brief.classify, so a plan that passes renders prompts that pass check_brief.
+A placeholder or template hole fails (exit 1). A value that needs a person prints an ASK line and exits 2
+when nothing fails. Once the person says the value is real, add it to the plan's `confirmed` list and rerun.
 """
 import json
 import os
@@ -8,6 +13,9 @@ import re
 import subprocess
 import sys
 import tempfile
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "outcome", "check"))
+from check_brief import classify, core  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SHARED = os.path.join(HERE, "..", "shared")
@@ -67,21 +75,32 @@ def sentences(text):
 
 
 def check(p):
-    errs, prose = [], []
+    """Returns (errors, prose, words, asks)."""
+    errs, prose, asks = [], [], []
     kinds = harness_kinds()
+    confirmed = {core(str(v)) for v in p.get("confirmed", [])}
 
     def need(cond, msg):
         if not cond:
             errs.append(msg)
 
+    def real(value, where):
+        verdict = classify(str(value)) if value else "pass"
+        need(verdict != "fail", f"{where} is a placeholder or holds a template hole")
+        need("\n" not in str(value or ""), f"{where} spans lines; the prompt needs it on one line")
+        if verdict == "ask" and core(str(value)) not in confirmed:
+            asks.append(f"ASK: {where}: Is '{value}' a real answer for {where}?")
+
     def one(text, where):
         need(len(sentences(text)) == 1, f"{where}: {len(sentences(text))} sentences, limit 1")
 
     need(p.get("title"), "title is missing")
+    need(not p.get("title") or classify(str(p["title"])) != "fail", "title is a placeholder or holds a template hole")
     need(p.get("ask", {}).get("quote"), "ask.quote is missing; quote the request as written")
     for k in ("outcome", "done_when", "limits"):
         need(p.get("outcome", {}).get(k), f"outcome.{k} is missing")
         prose.append(p.get("outcome", {}).get(k, ""))
+        real(p.get("outcome", {}).get(k), f"outcome.{k}")
     k = len(sentences(p.get("big_picture", "")))
     need(1 <= k <= 3, f"big_picture has {k} sentences, limit 3")
     prose.append(p.get("big_picture", ""))
@@ -106,10 +125,8 @@ def check(p):
         need(s.get("context"), f"{w}: spec.context is empty; list the only files and outputs the agent gets")
         for f in ("outcome", "done_when", "limits", "output", "harness", "verifier"):
             need(s.get(f), f"{w}: spec.{f} is missing")
-        if s.get("output"):
-            sys.path.insert(0, os.path.join(HERE, "..", "outcome", "check"))
-            from check_brief import is_placeholder
-            need(not is_placeholder(str(s.get("output")), "Output"), f"{w}: spec.output is a placeholder")
+        for f in ("outcome", "done_when", "limits", "output", "verifier"):
+            real(s.get(f), f"{w} spec.{f}")
         one(s.get("outcome", ""), f"{w} spec.outcome")
         need(s.get("harness") in kinds, f"{w}: harness {s.get('harness')!r} is not a kind in shared/harness-kinds.md")
         lp = s.get("loop", {})
@@ -138,12 +155,12 @@ def check(p):
     for term, definition in legend.items():
         need(re.search(r"(?<![\w-])" + re.escape(term.lower()) + r"(?:s|es|d|ed|ing)?(?![\w-])", body), f"legend term '{term}' is never used")
         prose.append(definition)
-    return errs, [x for x in prose if x] + gap_text, words
+    return errs, [x for x in prose if x] + gap_text, words, asks
 
 
 def main(path):
     p = json.load(open(path, encoding="utf-8"))
-    errs, prose, words = check(p)
+    errs, prose, words, asks = check(p)
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
         f.write("\n".join(prose))
     out = subprocess.run([sys.executable, os.path.join(SHARED, "check_writing.py"), f.name], capture_output=True, text=True)
@@ -154,8 +171,12 @@ def main(path):
         for ln in out.stdout.strip().splitlines():
             hit = re.search(r"line (\d+)", ln)
             print(ln + (f"\n    > {prose[int(hit.group(1)) - 1]}" if hit and int(hit.group(1)) <= len(prose) else ""))
+    for a in asks:
+        print(a)
     if errs or out.returncode:
         return 1
+    if asks:
+        return 2
     print(f"PASS plan: {len(p['items'])} items, {words} words of {MAX_WORDS}, writing clean")
     return 0
 

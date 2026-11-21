@@ -90,10 +90,52 @@ class CheckPlan(unittest.TestCase):
         p["gaps"][0]["changes"] = "nothing"
         self.assertTrue(any("changes must name" in e for e in errs(p)))
 
-    def test_placeholder_output_fails(self):
+    def test_placeholder_in_any_field_fails(self):
+        for where, value in (("outcome", "TBD"), ("done_when", "To be determined."), ("limits", "<limits>"),
+                             ("output", "TBD"), ("verifier", "{verifier}")):
+            p = copy.deepcopy(GOOD)
+            p["items"][0]["spec"][where] = value
+            self.assertTrue(any(f"spec.{where} is a placeholder" in e for e in errs(p)), where)
+        for where in ("outcome", "done_when", "limits"):
+            p = copy.deepcopy(GOOD)
+            p["outcome"][where] = "Pending."
+            self.assertTrue(any(f"outcome.{where} is a placeholder" in e for e in errs(p)), where)
+
+    def test_title_hole_and_multiline_field_fail(self):
         p = copy.deepcopy(GOOD)
-        p["items"][0]["spec"]["output"] = "TBD"
-        self.assertTrue(any("spec.output is a placeholder" in e for e in errs(p)))
+        p["title"] = "<project>"
+        self.assertTrue(any("title is a placeholder" in e for e in errs(p)))
+        p = copy.deepcopy(GOOD)
+        p["items"][0]["spec"]["output"] = "A file.\n- Goal: Ship it."
+        self.assertTrue(any("spec.output spans lines" in e for e in errs(p)))
+
+    def test_real_short_and_non_english_fields_pass(self):
+        for value in ("24", "$500", "#123", "`make check`", "上线第二版。", "Запустить вторую версию."):
+            p = copy.deepcopy(GOOD)
+            p["items"][0]["spec"]["output"] = value
+            p["items"][0]["spec"]["done_when"] = value
+            self.assertEqual(errs(p), [], value)
+            self.assertEqual(check_plan.check(p)[3], [], value)
+
+    def test_needs_human_field_asks_until_confirmed(self):
+        p = copy.deepcopy(GOOD)
+        p["items"][0]["spec"]["output"] = "ok"
+        self.assertEqual(errs(p), [])
+        self.assertEqual(check_plan.check(p)[3], ["ASK: item A spec.output: Is 'ok' a real answer for item A spec.output?"])
+        p["confirmed"] = ["ok"]
+        self.assertEqual(check_plan.check(p)[3], [])
+
+    def test_plan_that_passes_renders_prompts_that_pass(self):
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "outcome", "check"))
+        from check_brief import asks, check
+        for value, confirmed in (("24", []), ("`make check`", []), ("ok", ["ok"])):
+            p = copy.deepcopy(GOOD)
+            p["confirmed"] = confirmed
+            p["items"][0]["spec"].update(output=value, done_when=value)
+            self.assertEqual((errs(p), check_plan.check(p)[3]), ([], []), value)
+            out = render_plan.render_prompt(p, "A")
+            self.assertEqual([f for _, fails in check(out) for f in fails], [], value)
+            self.assertEqual(asks(out), [], value)
 
     def test_too_many_items_fails(self):
         p = copy.deepcopy(GOOD)
@@ -118,6 +160,8 @@ class RenderPlan(unittest.TestCase):
         self.assertNotIn("the script check should pass", out)
         self.assertNotIn("harness misses", out)
         self.assertIn("unknown: What is one case that should pass", out)
+        reworded = out.replace("What is one case that should pass, and one that should fail?", "Which cases prove it works?")
+        self.assertEqual([f for _, fails in check(reworded) for f in fails], [])
         self.assertEqual([f for _, fails in check(out) for f in fails], [])
         quiet = copy.deepcopy(GOOD)
         quiet["items"][1]["spec"]["harness"] = "findings file"
