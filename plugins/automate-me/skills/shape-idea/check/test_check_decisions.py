@@ -140,6 +140,37 @@ rest = swap(HANDOFF, "").replace("# Decisions: water habit\n\n", "", 1)
 expect("sections out of order", "# Decisions: water habit\n\n" + HANDOFF + "\n" + rest, {ORDER})
 expect("lone none in Open is empty", swap("- Do you want a reminder?", "- none"), set())
 expect("a non-slot line is optional", swap("- the one habit is drinking water\n", ""), set())
+PLACE = "slot values are not placeholders"
+for token in ("TBD", "TODO", "n/a", "...", "<the want...>"):
+    expect(f"placeholder slot values fail {token}",
+           swap("- goal: a tiny habit tracker on my phone", f"- goal: {token}"), {PLACE})
+expect("placeholder slot values fail ?",
+       swap("- goal: a tiny habit tracker on my phone", "- goal: ?"),
+       {PLACE, "slot values are not empty"})
+expect("decided value ending in a question fails",
+       swap("- goal: a tiny habit tracker on my phone", "- goal: a tiny habit tracker?"), {PLACE})
+open_tbd = swap("- output: the current streak on the phone\n", "")
+open_tbd = swap("- Do you want a reminder?", "- output: TBD?", open_tbd)
+open_tbd = swap("- stop: done", "- stop: turn-cap", open_tbd)
+open_tbd = swap("- turns: 1", "- turns: 10", open_tbd)
+expect("open placeholder slot fails", open_tbd, {PLACE})
+expect("question mark in a url or code",
+       swap("- Do you want a reminder?",
+            "- see https://example.com/a?b=1 and the `flag?` bit?"), set())
+expect("empty tools line is rejected",
+       swap("- the one habit is drinking water", "- the one habit is drinking water\n- tools:"),
+       {"tools, agents, and evals lines are usable"})
+expect("tools agents evals lines pass when usable",
+       swap("- the one habit is drinking water",
+            "- the one habit is drinking water\n- tools: a paper notebook\n- agents: one person writes it\n- evals: a saved link should pass, and a blank link should fail"),
+       set())
+NESTED = """- the one habit is drinking water
+````
+~~~
+- Use blue paper.
+~~~
+````"""
+expect("nested fence stays hidden", swap("- the one habit is drinking water", NESTED), set())
 
 
 def write(text):

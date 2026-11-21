@@ -9,7 +9,6 @@
 - Constraints:
   - no payments, and nobody orders through the bot
   - Report only. Do not run or post until the user says to.
-  - out of scope: dietary tags later, not sure
 - Tools:
   - unknown: Which tool must the run use, and what, if anything, must be written first?
 - Agents and roles:
@@ -23,14 +22,14 @@
   - dietary tags later, not sure
   - the office snack drawer is empty again
 - Unknowns:
+  - unknown: What will you decide with the result?
   - unknown: Which tool must the run use, and what, if anything, must be written first?
   - unknown: Who does the work, and does anyone else check it?
   - unknown: What is one case that should pass, and one that should fail?
-  - unknown: What will you decide with the result?
   - unknown: should the poll close after 20 minutes?
 
 ## Questions
 
-1. Which tool must the run use, and what, if anything, must be written first?
-2. Who does the work, and does anyone else check it?
-3. What is one case that should pass, and one that should fail?
+1. What will you decide with the result?
+2. Which tool must the run use, and what, if anything, must be written first?
+3. Who does the work, and does anyone else check it?

@@ -21,10 +21,10 @@
 - Parking lot:
   - a native app later
 - Unknowns:
+  - unknown: What will you decide with the result?
   - unknown: Which tool must the run use, and what, if anything, must be written first?
   - unknown: Who does the work, and does anyone else check it?
   - unknown: What is one case that should pass, and one that should fail?
-  - unknown: What will you decide with the result?
   - unknown: what comes back, a list or a page?
   - unknown: who else may add a link?
   - unknown: should a link expire?
@@ -35,6 +35,6 @@
 
 ## Questions
 
-1. Which tool must the run use, and what, if anything, must be written first?
-2. Who does the work, and does anyone else check it?
-3. What is one case that should pass, and one that should fail?
+1. What will you decide with the result?
+2. Which tool must the run use, and what, if anything, must be written first?
+3. Who does the work, and does anyone else check it?

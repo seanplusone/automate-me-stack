@@ -170,18 +170,37 @@ outcome/
 From `outcome/`:
 
 ```
+set -euo pipefail
 python3 check/test_check_brief.py
 python3 check/test_score_case.py
 for c in cases/*/; do
-  [ "$(basename "$c")" = missing-evals ] && continue
+  base=$(basename "$c")
+  if [ "$base" = missing-evals ]; then
+    continue
+  fi
+  if [ "$base" = from-decisions ]; then
+    for d in "$c"*/decisions.md; do
+      tmp=$(mktemp)
+      python3 check/map_decisions.py "$d" > "$tmp"
+      python3 check/check_brief.py "$tmp"
+      rm -f "$tmp"
+    done
+    continue
+  fi
   for b in "$c"runs/*/brief.md; do
-    python3 check/check_brief.py "$b" | tail -1
-    python3 check/score_case.py "$c"key.md "$b" | tail -1
+    python3 check/check_brief.py "$b"
   done
+  python3 check/score_case.py "$c"key.md "$c"runs/run-1/brief.md
 done
 ```
 
-Every scored `run-1` passes both. `apartment-search/runs/run-2` passes the shape check and fails the score, which is the point of it. `missing-evals` has no key. Its brief fails `check_brief.py` on the missing Evals slot, and that is the point of it. Skip it in the loop above. Check it on its own:
+Every `run-1` passes both checks. The loop checks the shape of every other brief under `runs/`, and it scores `run-1` only. `from-decisions` has a `decisions.md` and no `runs/` or key. The loop maps each file and runs `check_brief.py` on the result. `set -e` stops the loop when any command fails. `apartment-search/runs/run-2` passes the shape check and fails the score, which is the point of it, so score it on its own:
+
+```
+python3 check/score_case.py cases/apartment-search/key.md cases/apartment-search/runs/run-2/brief.md
+```
+
+`missing-evals` has no key. Its brief fails `check_brief.py` on the missing Evals slot, and that is the point of it. Skip it in the loop above. Check it on its own:
 
 ```
 python3 check/check_brief.py cases/missing-evals/runs/run-1/brief.md

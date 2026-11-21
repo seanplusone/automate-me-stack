@@ -11,11 +11,12 @@ Status: new. Four synthetic scored cases. Each `run-1` was written by a fresh mo
 `check/check_decisions.py` checks a finished file's shape:
 
 - `## Decided`, `## Open`, `## Parked`, and `## Handoff` are present once, in that order;
-- every Open item ends with `?` (a lone `none` means the section is empty);
-- Open has at most 5 items;
+- every Open item ends with `?` (a lone `none` means the section is empty). A `?` inside a URL or inline code does not count, and the line still has to end with `?`;
 - `stop` is `done`, `turn-cap`, or `open-cap`, once;
-- `turns` is one whole number from 0 through 10;
 - each of goal, done, output, verify, and constraints starts one Decided line or one Open line, with a value, and not both;
+- a slot value is not template text (`<...>`), TBD, TODO, n/a, `?`, or `...`. A Decided value that ends in `?` fails. The same placeholder list as the brief check;
+- text inside a ``` or ~~~ fence, of any length, including a nested fence, is not a decision. An unclosed fence fails;
+- a Decided `tools:`, `agents:`, or `evals:` line needs a real value. `evals:` also needs a pass case and a fail case. The five slots stay the only required ones;
 - `stop: done` requires all five Decided and none of them Open;
 - `stop: open-cap` is only after turn 1, and only with more than 5 Open lines that are not slots;
 - `stop: turn-cap` requires `turns: 10`;
@@ -33,8 +34,8 @@ Neither script checks the flow in `SKILL.md`. These parts are instructions only,
 - the one-sentence or two-sentence restate, the single question, and the single pushback;
 - that a pushback is spoken, and written down only after the user decides;
 - that numbers and names stay in the user's words;
-- that `writing: pass` is true, because the shape check does not run the writing script;
-- that a slot sits in Decided or Open, not in both (the check passes either way);
+- that `writing: pass` is written only after the writing check passes. The shape check runs the writing script, and a pass line does not override a failure;
+- that a slot sits in Decided or Open, not in both. The check fails when a slot is in both;
 - that `/unslop` is skipped when pstack is absent, and is never required;
 - that the stop ends the chat, and that nothing is built, run, or posted;
 - that the user, not this skill, starts outcome.
