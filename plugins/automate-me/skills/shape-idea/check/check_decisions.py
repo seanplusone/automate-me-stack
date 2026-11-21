@@ -3,6 +3,7 @@
 Usage: python3 check/check_decisions.py <decisions.md>
 
 Sections are `## Decided`, `## Open`, `## Parked`, and `## Handoff`, in that order, each once.
+An optional `## Confirmed` section may follow Handoff (see Asks below).
 An item is one top-level bullet (`- ` or `* `). A later physical line under a section is an item
 that ran past one line. A section whose only item is `none` has no items. Handoff holds:
 
@@ -27,23 +28,45 @@ a unicode digit such as `²` fail, and they do not crash the check.
 The checker runs the shared writing check on the file. A `writing: pass` line does not
 override a writing failure.
 
-Fails when:
+Values are judged by outcome's check_brief: classify() says pass, fail or ask. Its fixed list is
+deliberately narrow. A phrase off that list passes here and is left to the ask or the read-back.
+
+Fails (exit 1) when:
 - the file has no `# Decisions` title;
-- a section is missing or repeated, or the four sections are out of order;
-- an Open item does not end with one `?` outside of a URL or inline code;
-- a slot value is template text (`<...>`), a placeholder (TBD, TODO, n/a, none, `...`, `?`), or a Decided value that ends in `?`;
-- a Decided `tools:`, `agents:`, or `evals:` line is empty, a placeholder, a question, repeated, or an `evals:` line with no pass case and no fail case;
-- a slot is missing from both Decided and Open, is repeated, is in both, or has an empty value;
+- a section is missing or repeated, or the sections are out of order;
+- a code fence sits under Decided, because its text would not reach the brief;
+- an Open item does not end with one `?`, or is only a placeholder such as `?` or `TBD?`.
+  A `?` inside inline code, a URL, or double quotes does not count;
+- any item holds a template hole such as `<channel>`, outside inline code;
+- a Decided line that is not a slot, or a Parked line, is only a placeholder such as `TBD` or `later, perhaps`;
+- a slot value classifies as fail (a placeholder or a template hole), or a Decided value ends in `?`;
+- a Decided value is not ready for its brief slot. Bold, code marks and `stated:` are ignored here.
+  It starts with `unknown` (move it to Open as a question), is only a trap word, starts with a brief
+  tag outside its home (`investigate:` Done, `out of scope:` Constraints, `how:` Agents and roles),
+  or is a goal that starts with `default`;
+- a Decided `tools:`, `agents:`, `evals:`, or `decide:` line is empty, fails, is a question, is not
+  ready as above, or is repeated. An `evals:` line needs a pass case and a fail case whose bodies
+  are ready and do not fail (check_brief's eval_cases: `pass: <case>; fail: <case>` or
+  `<case> should pass, <case> should fail`);
+- a slot is missing from both Decided and Open, is repeated, is in both, or has an empty value.
+  A slot written as `**goal:**` or `1. goal:` gets its own message;
 - stop is missing, repeated, or not one of done, turn-cap, open-cap;
 - stop does not match the file (done, open-cap, or turn-cap rules above);
 - turns is missing, repeated, or not a whole number from 1 through 10;
 - any item runs past one line;
-- Handoff has no `next: /automate-me:outcome` line;
-- Handoff has no single `writing: pass` line;
+- Handoff has no `next: /automate-me:outcome` line, or no single `writing: pass` line;
+- a Confirmed line is not `<Slot>: <value>` with a brief slot label;
 - the shared writing check fails.
 
-Prints a PASS or FAIL line per check and exits 1 on any FAIL.
-Exit 0 when every check passed. Exit 2 on a usage error.
+Asks (exit 2, when nothing fails) for each Decided value that check_brief would ask about, placed
+in the brief slot the mapper puts it in (a line that is not a slot lands in Done). It prints
+`ASK: <slot>: Is '<value>' a real answer for <slot>?`. This is the break point: stop, ask the
+person that yes/no question, and record the answer. A yes goes under `## Confirmed` at the end of
+the file as `- <Slot>: <value>`, and the mapper copies it into the brief. A no replaces the value,
+or moves the slot to Open as a question. A confirmation never lifts a fail.
+
+Prints a PASS or FAIL line per check, then the ASK lines, then `PASS|FAIL|ASK decisions: <path>`.
+Exit 0 pass, 1 fail, 2 ask, 3 usage. A UTF-8 BOM is ignored.
 """
 import contextlib
 import io
@@ -56,10 +79,11 @@ sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath
 from check_writing import check_writing  # noqa: E402
 
 sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "outcome", "check")))
-from check_brief import is_fail, is_pass, is_placeholder  # noqa: E402
+from check_brief import asks as brief_asks, check as check_brief, classify, eval_cases, judge  # noqa: E402
+from check_brief import parse as parse_brief  # noqa: E402
 
 SECTIONS = ["Decided", "Open", "Parked", "Handoff"]
-HEAD = re.compile(r"^##\s+(Decided|Open|Parked|Handoff)\s*$", re.I)
+HEAD = re.compile(r"^##\s+(Decided|Open|Parked|Handoff|Confirmed)\s*$", re.I)
 BULLET = re.compile(r"^[-*]\s+(.*)$")
 STOPS = {"done", "turn-cap", "open-cap"}
 NEXT = "next: /automate-me:outcome"
@@ -70,19 +94,29 @@ SLOTS = ["goal", "done", "output", "verify", "constraints"]
 # A slot label may have spaces before the colon, and the colon may be full-width.
 # `Output : value` and `output： value` are the output slot. `goalpost:` is not goal.
 SLOT_HEAD = re.compile(r"^(goal|done|output|verify|constraints)\s*[:\uff1a]\s*(.*)$", re.I)
+OUT_OF_SCOPE = re.compile(r"^out of scope\s*:", re.I)
 ASCII_DIGITS = re.compile(r"^[0-9]+$")
 # A fence is ``` or ~~~, three or more, with optional info. A closer matches the
 # innermost fence's character and length and has no info. A different length or
 # the other character opens a nested fence. Text inside any of them is hidden.
 FENCE_LINE = re.compile(r"^(\s*)(`{3,}|~{3,})(.*)$")
 HANDOFF_FIELD = re.compile(r"^(next|stop|turns|writing|map)\s*[:\uff1a]\s*(.*)$", re.I)
-EXTRA_HEAD = re.compile(r"^(tools|agents|evals)\s*[:\uff1a]\s*(.*)$", re.I)
-TEMPLATE = re.compile(r"<[^>\n]*>")
-URL_OR_CODE = re.compile(r"`[^`]*`|https?://\S+")
+EXTRA_HEAD = re.compile(r"^(tools|agents|evals|decide)\s*[:\uff1a]\s*(.*)$", re.I)
+URL_OR_CODE = re.compile(r"`[^`]*`|https?://\S+|\"[^\"\n]*\"|\u201c[^\u201d\n]*\u201d")
+LOOSE_SLOT = re.compile(r"^(?:\d+[.)]\s*)?[*_]+\s*(goal|done|output|verify|constraints)\s*[*_]*\s*[:\uff1a]"
+                        r"|^\d+[.)]\s*(goal|done|output|verify|constraints)\s*[:\uff1a]", re.I)
+BRIEF_SLOT = {"goal": "Goal", "done": "Done", "output": "Output", "verify": "Verification",
+              "constraints": "Constraints", "tools": "Tools", "agents": "Agents and roles", "evals": "Evals",
+              "decide": "Goal"}
+# A brief tag and the one brief slot where it may lead an item.
+TAG_LEAD = re.compile(r"^(investigate|out of scope|how)\s*:", re.I)
+TAG_HOME = {"investigate": "Done", "out of scope": "Constraints", "how": "Agents and roles"}
+DEFAULT_LEAD = re.compile(r"^default\b", re.I)
+UNKNOWN_LEAD = re.compile(r"^unknown\b", re.I)
 
 
 def canon(name):
-    return next(s for s in SECTIONS if s.lower() == name.lower())
+    return next(s for s in SECTIONS + ["Confirmed"] if s.lower() == name.lower())
 
 
 def is_none(item):
@@ -97,15 +131,17 @@ def real_items(items):
 
 
 def split_fences(text):
-    """Returns (visible, hidden, unclosed). Fence markers themselves are dropped.
+    """Returns (visible, hidden, unclosed, fenced). Fence markers themselves are dropped.
 
     ``` and ~~~ both count, at any length of 3 or more. A fence inside a fence
     is nested: it hides its own text and does not close the outer fence unless
     it is the same character, the same length, and has no info string.
     Headings and slots inside a fence are hidden, so they do not count as structure.
     Hidden prose is still returned so the writing check can see it.
+    fenced lists the section each outer fence opened in, or None before the first section.
     """
-    visible, hidden, stack = [], [], []
+    visible, hidden, stack, fenced = [], [], [], []
+    section = None
     for line in text.splitlines():
         match = FENCE_LINE.match(line)
         if match:
@@ -114,28 +150,57 @@ def split_fences(text):
             if stack and char == stack[-1][0] and length == stack[-1][1] and info == "":
                 stack.pop()
             else:
+                if not stack:
+                    fenced.append(section)
                 stack.append((char, length))
             continue
+        if not stack:
+            head = HEAD.match(line.strip())
+            if head:
+                section = canon(head.group(1))
         (hidden if stack else visible).append(line)
-    return "\n".join(visible), "\n".join(hidden), bool(stack)
+    return "\n".join(visible), "\n".join(hidden), bool(stack), fenced
 
 
-def placeholder_value(value):
-    """True when the value is template text or on check_brief's placeholder list.
+def unready(value, slot):
+    """Why a Decided value is not ready for brief slot `slot`, or None.
 
-    The list is check_brief.PLACEHOLDER, applied with is_placeholder, so both
-    checkers reject the same tokens. A trailing ? is stripped once, so an Open
-    `TBD?` is still a placeholder.
+    Bold, code marks and a leading `stated:` do not hide anything. An unknown stays a question,
+    so it belongs in Open. A bare trap word names no signal. A leading brief tag outside its
+    home slot, or a leading `default` in Goal beside the decide question, would fail the brief.
     """
-    text = (value or "").strip()
-    if not text:
-        return False
-    if TEMPLATE.search(text):
-        return True
-    if is_placeholder(text, "Goal"):
-        return True
-    core = text[:-1].rstrip() if text.endswith("?") else text
-    return core != text and is_placeholder(core, "Goal")
+    text = re.sub(r"^stated\s*:\s*", "", re.sub(r"\*\*|__|`", "", value or "").strip(), flags=re.I)
+    tag = TAG_LEAD.match(text)
+    if UNKNOWN_LEAD.match(text):
+        return "is unknown; move it to Open as a question"
+    if is_trap(text):
+        return "names no visible signal; say what you will see"
+    if tag and TAG_HOME[tag.group(1).lower()] != slot:
+        return f"starts with {tag.group(0)!r}, a brief tag that belongs in {TAG_HOME[tag.group(1).lower()]}; reword it"
+    if slot == "Goal" and DEFAULT_LEAD.match(text):
+        return "starts with 'default', which the brief reads as a default beside the decide question; reword it"
+    return None
+
+
+def brief_item(text, slot):
+    """A line that is not a slot, as the mapper writes it in brief slot `slot` (Done or Parking lot).
+
+    When its first words would trip a brief tag, `stated:` goes in front. The words stay.
+    """
+    raw = text.strip()
+    tag = TAG_LEAD.match(raw)
+    if (tag and TAG_HOME[tag.group(1).lower()] != slot) or UNKNOWN_LEAD.match(raw) or DEFAULT_LEAD.match(raw) or is_trap(raw):
+        return f"stated: {raw}"
+    return raw
+
+
+def is_trap(text):
+    """True when check_brief's check() reads `text` in a slot as only trap words."""
+    return bool(dict(check_brief(f"- Goal: {text}\n"))["no bare trap adjective"])
+
+
+def has_hole(item):
+    return judge(item)[1] == "hole"
 
 
 def extra_of(item):
@@ -146,9 +211,10 @@ def extra_of(item):
     return match.group(1).lower(), match.group(2).strip()
 
 
-def question_body(item):
-    """The line with inline code and URLs removed, so a ? inside them does not count."""
-    return URL_OR_CODE.sub("", item)
+def is_question(item):
+    """The item ends with ? and has no other ? outside inline code, a URL, or a quote."""
+    text = item.strip()
+    return text.endswith("?") and "?" not in URL_OR_CODE.sub("", text[:-1])
 
 
 def parse(text):
@@ -229,7 +295,7 @@ def prose_fails(text):
 
 
 def check(text):
-    visible, hidden, unclosed = split_fences(text)
+    visible, hidden, unclosed, fenced = split_fences(text.lstrip("\ufeff"))
     sections, counts, positions, extras = parse(visible)
     results = []
 
@@ -237,9 +303,14 @@ def check(text):
         results.append((name, fails))
 
     add("code fence is closed", [] if not unclosed else ["a code fence is opened and never closed"])
+    add("no code fence under Decided",
+        ["a code fence under Decided is not read, so its text would be lost. Put that text on the item's own line"
+         for section in fenced if section == "Decided"])
     add("file has a Decisions title", [] if TITLE.search(visible) else ["missing a `# Decisions` title"])
 
     present = []
+    if counts.get("Confirmed", 0) > 1:
+        present.append(f"section Confirmed appears {counts['Confirmed']} times")
     for name in SECTIONS:
         n = counts.get(name, 0)
         if n == 0:
@@ -249,21 +320,33 @@ def check(text):
     add("sections present once", present)
 
     order = []
-    if all(counts.get(name) == 1 for name in SECTIONS) and positions != SECTIONS:
-        order.append("sections are " + ", ".join(positions) + "; use Decided, Open, Parked, Handoff")
+    if all(counts.get(name) == 1 for name in SECTIONS) and positions not in (SECTIONS, SECTIONS + ["Confirmed"]):
+        order.append("sections are " + ", ".join(positions) + "; use Decided, Open, Parked, Handoff, then Confirmed if any")
     add("sections in order", order)
 
     decided = real_items(sections.get("Decided", []))
     opens = real_items(sections.get("Open", []))
     q_fails = []
     for item in opens:
-        body = question_body(item)
-        if not item.endswith("?") or body.count("?") != 1:
+        if not is_question(item):
             q_fails.append(f"open item needs one question at the end: {item!r}")
+        elif not slot_of(item) and classify(item) == "fail":
+            q_fails.append(f"open item is a placeholder, not a question: {item!r}")
     add("every open item ends with a question", q_fails)
-    add("every slot is decided or open",
-        [f"missing slot: {slot}. Add a Decided `{slot}:` line or an Open `{slot}: ...?` item"
-         for slot in SLOTS if not has_slot(decided, slot) and not has_slot(opens, slot)])
+    loose = {}
+    for line in decided + opens + [text for name, text in extras if name in ("Decided", "Open")]:
+        match = LOOSE_SLOT.match(line)
+        if match:
+            loose.setdefault((match.group(1) or match.group(2)).lower(), line)
+    missing = []
+    for slot in SLOTS:
+        if has_slot(decided, slot) or has_slot(opens, slot):
+            continue
+        if slot in loose:
+            missing.append(f"slot {slot} is written as {loose[slot]!r}. Write `- {slot}: ...` with no bold or number")
+        else:
+            missing.append(f"missing slot: {slot}. Add a Decided `{slot}:` line or an Open `{slot}: ...?` item")
+    add("every slot is decided or open", missing)
 
     dup_fails = []
     both_fails = []
@@ -289,13 +372,17 @@ def check(text):
     for slot in SLOTS:
         for item in (row for row in decided if slot_of(row) == slot):
             value = slot_value(item) or ""
-            if placeholder_value(value):
+            if not value:
+                continue
+            if classify(value) == "fail":
                 ph_fails.append(f"slot {slot} is a placeholder: {value!r}")
             elif value.strip().endswith("?"):
                 ph_fails.append(f"slot {slot} is a question, not a decision: {value!r}")
+            elif unready(value, BRIEF_SLOT[slot]):
+                ph_fails.append(f"slot {slot} {unready(value, BRIEF_SLOT[slot])}: {value!r}")
         for item in (row for row in opens if slot_of(row) == slot):
             value = slot_value(item) or ""
-            if placeholder_value(value):
+            if value and classify(value) == "fail":
                 ph_fails.append(f"slot {slot} is a placeholder: {value!r}")
     add("slot values are not placeholders", ph_fails)
 
@@ -309,12 +396,28 @@ def check(text):
         if name in seen_extra:
             extra_fails.append(f"{name}: is on more than one Decided line")
         seen_extra[name] = value
-        if not value or placeholder_value(value) or value.endswith("?"):
+        if not value or classify(value) == "fail" or value.endswith("?"):
             extra_fails.append(f"{name}: needs a real value, not a placeholder or a question")
             continue
-        if name == "evals" and not (is_pass(value) and is_fail(value)):
-            extra_fails.append("evals: needs a pass case and a fail case, in the user's words")
-    add("tools, agents, and evals lines are usable", extra_fails)
+        cases = eval_cases(value) if name == "evals" else []
+        why = next(filter(None, (unready(part, BRIEF_SLOT[name]) for part in [value] + [b for _, b in cases])), None)
+        if why:
+            extra_fails.append(f"{name}: {why}: {value!r}")
+            continue
+        kinds = {kind for kind, body in cases if classify(body) != "fail"}
+        if name == "evals" and kinds != {"pass", "fail"}:
+            extra_fails.append("evals: needs a pass case and a fail case, in the user's words."
+                               " Write `pass: <case>; fail: <case>` or `<case> should pass, <case> should fail`")
+    add("tools, agents, evals, and decide lines are usable", extra_fails)
+
+    add("no placeholder line",
+        [f"{name}: {item!r} is a placeholder; say what it is or remove it" for name in ("Decided", "Parked")
+         for item in real_items(sections.get(name, []))
+         if not slot_of(item) and not extra_of(item) and judge(item) == ("fail", "placeholder")])
+    add("no template hole",
+        [f"{name}: {item!r} holds a template hole; fill it" for name in ("Decided", "Open", "Parked")
+         for item in real_items(sections.get(name, []))
+         if not slot_of(item) and not extra_of(item) and has_hole(item)])
 
     handoff = sections.get("Handoff", [])
     handoff_ready = counts.get("Handoff") == 1
@@ -403,6 +506,10 @@ def check(text):
         next_fails.append(f"Handoff next is {nexts!r}; write one `{NEXT}` line")
     add("handoff names outcome", next_fails)
 
+    confirmed_fails = [f"Confirmed line {item!r} is not `<Slot>: <value>` with a brief slot such as Output"
+                       for item in sections.get("Confirmed", []) if not parse_brief("## Confirmed\n- " + item)[3]]
+    add("confirmed lines name a brief slot", confirmed_fails)
+
     maps = fields["map"]
     map_fails = []
     if handoff_ready and len(maps) != 1:
@@ -419,25 +526,64 @@ def check(text):
     return results
 
 
-def main(path):
+def landing(item):
+    """(brief slot, value) for one Decided line, as the mapper writes it."""
+    slot = slot_of(item)
+    if slot:
+        return BRIEF_SLOT[slot], slot_value(item)
+    extra = extra_of(item)
+    if extra:
+        return BRIEF_SLOT[extra[0]], f"decide: {extra[1]}" if extra[0] == "decide" else extra[1]
+    if OUT_OF_SCOPE.match(item.strip()):
+        return "Constraints", item.strip()
+    return "Done", brief_item(item, "Done")
+
+
+def asks(text):
+    """(slot, value) for each Decided value that check_brief would ask a person about.
+
+    Each Decided line is placed in its brief slot, with the Confirmed lines, and check_brief.asks
+    judges them, so both checks ask the same question about the same value.
+    """
+    visible = split_fences(text.lstrip("\ufeff"))[0]
+    sections = parse(visible)[0]
+    lines = [f"- {slot}: {value}" for slot, value in map(landing, real_items(sections.get("Decided", []))) if value]
+    lines += ["## Confirmed"] + [f"- {item}" for item in sections.get("Confirmed", [])]
+    return brief_asks("\n".join(lines))
+
+
+def read(path):
+    """The file's text without a BOM, or None when it is not UTF-8."""
     try:
-        text = open(path, encoding="utf-8").read()
+        return open(path, encoding="utf-8-sig").read()
     except UnicodeDecodeError:
-        print("FAIL file is not UTF-8")
-        print(f"FAIL decisions: {path}")
-        return 1
-    failed = False
+        return None
+
+
+def report(text, path):
+    """(exit code, printed lines). 0 pass, 1 fail, 2 ask."""
+    if text is None:
+        return 1, ["FAIL file is not UTF-8", f"FAIL decisions: {path}"]
+    lines, failed = [], False
     for name, fails in check(text):
-        print(f"{'FAIL' if fails else 'PASS'} {name}")
-        for fail in fails:
-            print(f"  {fail}")
+        lines.append(f"{'FAIL' if fails else 'PASS'} {name}")
+        lines += [f"  {fail}" for fail in fails]
         failed = failed or bool(fails)
-    print(f"{'FAIL' if failed else 'PASS'} decisions: {path}")
-    return 1 if failed else 0
+    asked = [] if failed else asks(text)
+    lines += [f"ASK: {slot}: Is '{value}' a real answer for {slot}?" for slot, value in asked]
+    verdict = "FAIL" if failed else "ASK" if asked else "PASS"
+    lines.append(f"{verdict} decisions: {path}")
+    return {"FAIL": 1, "ASK": 2, "PASS": 0}[verdict], lines
+
+
+def main(path):
+    code, lines = report(read(path), path)
+    print("\n".join(lines))
+    return code
 
 
 if __name__ == "__main__":
     if len(sys.argv) != 2 or sys.argv[1] in ("-h", "--help"):
         print(__doc__.strip())
-        sys.exit(0 if len(sys.argv) == 2 else 2)
+        sys.exit(0 if len(sys.argv) == 2 else 3)
     sys.exit(main(sys.argv[1]))

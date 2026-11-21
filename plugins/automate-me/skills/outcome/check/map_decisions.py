@@ -3,18 +3,14 @@
 Usage: python3 check/map_decisions.py <decisions.md>
 
 This is the literal mapping in ../SKILL.md, "A decisions file".
-The script runs check_decisions first. A file that fails that check exits 1
-and prints those failures. It does not print a brief.
+The script runs check_decisions first. A file that fails that check exits 1,
+and a file with a value to confirm exits 2 with its ASK lines. Neither prints a brief.
 
 Shape-idea records goal, done, output, constraints, and verify.
 Tools, Agents and roles, and Evals are not asked there. They are written
 as unknown questions, unless a Decided line already names that slot.
 Outcome asks them. It does not invent a tool, a role, or a pass and fail case.
 write first is part of the Tools question until the user answers.
-
-A placeholder slot is left as the user's placeholder. The decide question,
-"Report only", and the evidence sentence are not added beside it, so the
-brief check still flags that slot.
 """
 import os
 import re
@@ -22,18 +18,20 @@ import sys
 
 sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "shape-idea", "check")))
 from check_decisions import (  # noqa: E402
-    check as check_decisions,
+    OUT_OF_SCOPE,
+    brief_item,
     extra_of,
     parse,
-    placeholder_value,
+    read,
     real_items,
+    report,
     slot_of,
     slot_value,
     split_fences,
 )
 
 sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "check")))
-from check_brief import is_bare_trap  # noqa: E402
+from check_brief import classify  # noqa: E402
 
 EVIDENCE = "Every claim names its run, file:line or photo, or says guess."
 REPORT = "Report only. Do not run or post until the user says to."
@@ -41,27 +39,15 @@ TOOLS = "Which tool must the run use, and what, if anything, must be written fir
 AGENTS = "Who does the work, and does anyone else check it?"
 EVALS = "What is one case that should pass, and one that should fail?"
 DECIDE = "What will you decide with the result?"
-DECISION_WORD = re.compile(r"\b(decide|decides|decision)\b", re.I)
-HEDGE = re.compile(r"\b(maybe|not sure)\b", re.I)
+HEDGE = re.compile(r"\b(maybe|not sure|i think)\b", re.I)
 NOT_NOW = re.compile(r"\bnot now\b", re.I)
-NO_LATER = re.compile(r"\bno later\b", re.I)
+NO_LATER = re.compile(r"\bnot? later\b", re.I)
 LATER = re.compile(r"\blater\b", re.I)
-TAG_START = re.compile(r"^(investigate|out of scope|how)\s*:", re.I)
-UNKNOWN_START = re.compile(r"^unknown\b", re.I)
-DEFAULT_START = re.compile(r"^default\b", re.I)
-# Where a leading tag is legal. Anywhere else, prefix the line so the tag
-# is no longer the first words. The user's words stay after the prefix.
-TAG_HOME = {
-    "Done": {"investigate"},
-    "Constraints": {"out of scope"},
-    "Agents and roles": {"how"},
-}
-
-
+QUOTED = re.compile(r"\"[^\"\n]*\"|\u201c[^\u201d\n]*\u201d")
 def items(text):
-    visible, _, _ = split_fences(text)
-    sections, _, _, _ = parse(visible)
-    return {name: real_items(sections.get(name, [])) for name in ("Decided", "Open", "Parked")}
+    visible = split_fences(text.lstrip("\ufeff"))[0]
+    sections = parse(visible)[0]
+    return {name: real_items(sections.get(name, [])) for name in ("Decided", "Open", "Parked", "Confirmed")}
 
 
 def slot_lines(rows, slot):
@@ -81,64 +67,45 @@ def unknown(text):
     return f"unknown: {question_of(text)}"
 
 
-def names_decision(rows):
-    """A Decided line already names the decision when it says decide or decision."""
-    return any(DECISION_WORD.search(row) and not row.rstrip().endswith("?") for row in rows)
-
-
 def standalone_later(row):
-    """Not now, or later on its own. Not a question, a hedge, or 'no later than'."""
-    text = row.strip()
-    if text.endswith("?") or HEDGE.search(text):
+    """Not now, or later on its own. Not a question, a hedged later, 'no later than', or a quoted later."""
+    text = QUOTED.sub("", row.strip())
+    if row.strip().endswith("?"):
         return False
     if NOT_NOW.search(text):
         return True
-    return bool(LATER.search(NO_LATER.sub("", text)))
-
-
-def safe_item(text, slot):
-    """Prefix a line whose first words would trip a brief tag. Keep the words."""
-    raw = text.strip()
-    home = TAG_HOME.get(slot, set())
-    tag = TAG_START.match(raw)
-    if tag and tag.group(1).lower() not in home:
-        return f"stated: {raw}"
-    if UNKNOWN_START.match(raw) or DEFAULT_START.match(raw) or is_bare_trap(raw):
-        return f"stated: {raw}"
-    return raw
+    return not HEDGE.search(text) and bool(LATER.search(NO_LATER.sub("", text))) and classify(row) == "pass"
 
 
 def slot_text(decided, opens, slot, fallback):
-    """Return (text, is_unknown, is_placeholder)."""
+    """Return (text, is_unknown)."""
     firm = slot_lines(decided, slot)
-    if firm and slot_value(firm[0]):
-        value = slot_value(firm[0])
-        return value, False, placeholder_value(value) or value.strip().endswith("?")
+    if firm:
+        return slot_value(firm[0]), False
     pending = slot_lines(opens, slot)
-    if pending:
-        return unknown(pending[0]), True, False
-    return unknown(fallback), True, False
+    return unknown(pending[0] if pending else fallback), True
 
 
 def map_text(text):
     found = items(text)
     decided, opens, parked = found["Decided"], found["Open"], found["Parked"]
-    extras = {}
-    other = []
+    extras, scoped, other = {}, [], []
     for row in decided:
         if slot_of(row):
             continue
         got = extra_of(row)
         if got:
             extras[got[0]] = got[1]
-            continue
-        other.append(row)
-    goal, goal_unknown, goal_ph = slot_text(decided, opens, "goal", "What is the want?")
-    done, done_unknown, done_ph = slot_text(decided, opens, "done", "What does finished look like?")
-    output, output_unknown, _ = slot_text(decided, opens, "output", "What comes back?")
-    verify, verify_unknown, verify_ph = slot_text(decided, opens, "verify", "How will you check it?")
-    limits, limits_unknown, limits_ph = slot_text(decided, opens, "constraints", "What must the run not do?")
-    add_decision = not names_decision(decided)
+        elif OUT_OF_SCOPE.match(row.strip()):
+            scoped.append(row.strip())
+        else:
+            other.append(row)
+    goal, goal_unknown = slot_text(decided, opens, "goal", "What is the want?")
+    done, done_unknown = slot_text(decided, opens, "done", "What does finished look like?")
+    output, output_unknown = slot_text(decided, opens, "output", "What comes back?")
+    verify, verify_unknown = slot_text(decided, opens, "verify", "How will you check it?")
+    limits, limits_unknown = slot_text(decided, opens, "constraints", "What must the run not do?")
+    add_decision = "decide" not in extras
     decision = unknown(DECIDE)
     tools = unknown(TOOLS)
     agents = unknown(AGENTS)
@@ -172,50 +139,35 @@ def map_text(text):
         if row.strip().endswith("?"):
             ordered.append(unknown(row))
     lines = ["# Brief: from decisions", ""]
-    goal_text = goal if goal_unknown or goal_ph else safe_item(goal, "Goal")
-    lines.append(f"- Goal: {goal_text}")
-    if add_decision and not goal_ph:
-        lines.append(f"  - {decision}")
+    lines.append(f"- Goal: {goal}")
+    lines.append(f"  - {decision}" if add_decision else f"  - decide: {extras['decide']}")
     lines.append("- Done:")
-    done_text = done if done_unknown or done_ph else safe_item(done, "Done")
-    lines.append(f"  - {done_text}")
-    if not done_ph:
-        for row in other:
-            lines.append(f"  - {safe_item(row, 'Done')}")
-    output_text = output if output_unknown else safe_item(output, "Output")
-    lines.append(f"- Output: {output_text}")
+    lines.append(f"  - {done}")
+    for row in other:
+        lines.append(f"  - {brief_item(row, 'Done')}")
+    lines.append(f"- Output: {output}")
     lines.append("- Constraints:")
-    limits_text = limits if limits_unknown or limits_ph else safe_item(limits, "Constraints")
-    lines.append(f"  - {limits_text}")
-    if not limits_ph:
-        lines.append(f"  - {REPORT}")
-        for row in parked:
-            if standalone_later(row):
-                lines.append(f"  - out of scope: {row.strip()}")
-    if "tools" in extras:
-        lines.append(f"- Tools: {safe_item(extras['tools'], 'Tools')}")
-    else:
-        lines.append("- Tools:")
-        lines.append(f"  - {tools}")
-    if "agents" in extras:
-        lines.append(f"- Agents and roles: {safe_item(extras['agents'], 'Agents and roles')}")
-    else:
-        lines.append("- Agents and roles:")
-        lines.append(f"  - {agents}")
-    if "evals" in extras:
-        lines.append(f"- Evals: {safe_item(extras['evals'], 'Evals')}")
-    else:
-        lines.append("- Evals:")
-        lines.append(f"  - {evals}")
+    lines.append(f"  - {limits}")
+    lines.append(f"  - {REPORT}")
+    for row in scoped:
+        lines.append(f"  - {row}")
+    for row in parked:
+        if standalone_later(row):
+            lines.append(f"  - out of scope: {row.strip()}")
+    for slot, name, question in (("Tools", "tools", tools), ("Agents and roles", "agents", agents),
+                                 ("Evals", "evals", evals)):
+        if name in extras:
+            lines.append(f"- {slot}: {extras[name]}")
+        else:
+            lines.append(f"- {slot}:")
+            lines.append(f"  - {question}")
     lines.append("- Verification:")
-    verify_text = verify if verify_unknown or verify_ph else safe_item(verify, "Verification")
-    lines.append(f"  - {verify_text}")
-    if not verify_ph:
-        lines.append(f"  - {EVIDENCE}")
+    lines.append(f"  - {verify}")
+    lines.append(f"  - {EVIDENCE}")
     if parked:
         lines.append("- Parking lot:")
         for row in parked:
-            lines.append(f"  - {safe_item(row, 'Parking lot')}")
+            lines.append(f"  - {brief_item(row, 'Parking lot')}")
     if ordered:
         lines.append("- Unknowns:")
         for item in ordered:
@@ -225,40 +177,23 @@ def map_text(text):
         lines.append("")
         for number, item in enumerate(ordered[:3], 1):
             lines.append(f"{number}. {question_of(item)}")
-    lines.append("")
-    return "\n".join(lines)
-
-
-def failures(text):
-    """The check_decisions report. Empty when the file passes."""
-    lines = []
-    failed = False
-    for name, fails in check_decisions(text):
-        lines.append(f"{'FAIL' if fails else 'PASS'} {name}")
-        for fail in fails:
-            lines.append(f"  {fail}")
-        failed = failed or bool(fails)
-    return failed, "\n".join(lines)
+    if found["Confirmed"]:
+        lines += ["", "## Confirmed", ""] + [f"- {row}" for row in found["Confirmed"]]
+    return "\n".join(lines) + "\n"
 
 
 def main(path):
-    try:
-        text = open(path, encoding="utf-8").read()
-    except UnicodeDecodeError:
-        print("FAIL file is not UTF-8")
-        print(f"FAIL decisions: {path}")
-        return 1
-    failed, report = failures(text)
-    if failed:
-        print(report)
-        print(f"FAIL decisions: {path}")
-        return 1
-    print(map_text(text))
+    text = read(path)
+    code, lines = report(text, path)
+    if code:
+        print("\n".join(lines))
+        return code
+    print(map_text(text), end="")
     return 0
 
 
 if __name__ == "__main__":
     if len(sys.argv) != 2 or sys.argv[1] in ("-h", "--help"):
         print(__doc__.strip())
-        sys.exit(0 if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help") else 2)
+        sys.exit(0 if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help") else 3)
     sys.exit(main(sys.argv[1]))

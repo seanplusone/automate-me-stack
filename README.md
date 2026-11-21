@@ -119,7 +119,7 @@ Everything lives under `plugins/automate-me/skills/`:
 
 ## Checks
 
-Every check prints PASS or FAIL and exits 1 on FAIL. `outcome`'s `check_brief.py` also exits 2 when a value needs the person to confirm it. Run `sh setup.sh` once after cloning (it makes the `write-edd` practice repo its own git repo), then from `plugins/automate-me/skills/`:
+Every check prints PASS or FAIL and exits 1 on FAIL. `outcome`'s `check_brief.py` and `shape-idea`'s `check_decisions.py` also exit 2 when a value needs the person to confirm it. Run `sh setup.sh` once after cloning (it makes the `write-edd` practice repo its own git repo), then from `plugins/automate-me/skills/`:
 
 ```
 python3 shared/check_shared.py

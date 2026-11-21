@@ -7,7 +7,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from check_decisions import check, main  # noqa: E402
+from check_decisions import asks, check, main  # noqa: E402
 
 FAILS = []
 RAN = []
@@ -37,7 +37,7 @@ GOOD = """# Decisions: water habit
 - stop: done
 - turns: 1
 - writing: pass
-- map: goal goes to Goal. output goes to Output. verify goes to Verify. constraints and done go to Must-haves. Open goes to Unknowns. Parked goes to the Parking lot.
+- map: goal goes to Goal. done goes to Done. output goes to Output. constraints goes to Constraints. verify goes to Verification. Tools, Agents and roles, and Evals stay unknown.
 """
 
 HANDOFF = """## Handoff
@@ -46,7 +46,7 @@ HANDOFF = """## Handoff
 - stop: done
 - turns: 1
 - writing: pass
-- map: goal goes to Goal. output goes to Output. verify goes to Verify. constraints and done go to Must-haves. Open goes to Unknowns. Parked goes to the Parking lot.
+- map: goal goes to Goal. done goes to Done. output goes to Output. constraints goes to Constraints. verify goes to Verification. Tools, Agents and roles, and Evals stay unknown.
 """
 
 PRESENT = "sections present once"
@@ -159,7 +159,7 @@ expect("question mark in a url or code",
             "- see https://example.com/a?b=1 and the `flag?` bit?"), set())
 expect("empty tools line is rejected",
        swap("- the one habit is drinking water", "- the one habit is drinking water\n- tools:"),
-       {"tools, agents, and evals lines are usable"})
+       {"tools, agents, evals, and decide lines are usable"})
 expect("tools agents evals lines pass when usable",
        swap("- the one habit is drinking water",
             "- the one habit is drinking water\n- tools: a paper notebook\n- agents: one person writes it\n- evals: a saved link should pass, and a blank link should fail"),
@@ -170,7 +170,92 @@ NESTED = """- the one habit is drinking water
 - Use blue paper.
 ~~~
 ````"""
-expect("nested fence stays hidden", swap("- the one habit is drinking water", NESTED), set())
+expect("a fence under Decided fails, so its text is not lost",
+       swap("- the one habit is drinking water", NESTED), {"no code fence under Decided"})
+expect("a fence under an output slot fails",
+       swap("- output: the current streak on the phone",
+            "- output: a CSV with these columns:\n```\nday,done,streak\n```"), {"no code fence under Decided"})
+expect("nested fence elsewhere stays hidden",
+       swap("- share streaks with friends", "- share streaks with friends\n" + NESTED.split("\n", 1)[1]), set())
+
+EXTRA = "tools, agents, evals, and decide lines are usable"
+HABIT = "- the one habit is drinking water"
+
+
+def added(line):
+    return swap(HABIT, f"{HABIT}\n{line}")
+
+
+for label in ("pass: mark today and the streak goes up; fail: miss a day and it still grows",
+              "Pass: mark today and the streak goes up; Fail: miss a day and it still grows",
+              "marking today should pass, and a missed day that keeps the streak should fail"):
+    expect(f"evals line passes: {label[:20]}", added(f"- evals: {label}"), set())
+expect("evals with a TBD fail case fails", added("- evals: marking today should pass. TBD should fail."), {EXTRA})
+expect("evals with only a pass case fails", added("- evals: pass: mark today"), {EXTRA})
+expect("tools write first none fails", added("- tools: write first: none"), {EXTRA})
+
+
+def reason(text, check_name):
+    return " ".join(fail for name, fails in check(text) if name == check_name for fail in fails)
+
+
+for label, text, check_name in (
+        ("output: unknown", swap("- output: the current streak on the phone", "- output: unknown"), PLACE),
+        ("tools: unknown: X or Y", added("- tools: unknown: waiting to pick Python or Node"), EXTRA),
+        ("agents: unknown yet", added("- agents: unknown yet"), EXTRA)):
+    expect(f"unknown is not ready: {label}", text, {check_name})
+    RAN.append(f"unknown message: {label}")
+    if "move it to Open as a question" not in reason(text, check_name):
+        FAILS.append(f"unknown message: {label}: {reason(text, check_name)}")
+for label, line in (("verify: it looks good", "- verify: it looks good"), ("done: clean", "- done: clean")):
+    slot = line[2:line.index(":")]
+    old = next(row for row in GOOD.splitlines() if row.startswith(f"- {slot}:"))
+    expect(f"trap word slot fails: {label}", swap(old, line), {PLACE})
+for value in ("to be decided", "same as above", "fill in later"):
+    expect(f"placeholder phrase fails: {value}",
+           swap("- output: the current streak on the phone", f"- output: {value}"), {PLACE})
+expect("a phrase off the fixed list passes to the read-back",
+       swap("- output: the current streak on the phone", "- output: not sure yet"), set())
+expect("an autolink is not template text",
+       swap("- verify: mark today once and read the streak",
+            "- verify: compare with <https://example.org/streak>"), set())
+expect("angle brackets in code are not template text",
+       swap("- output: the current streak on the phone", "- output: a CSV with `<day>` and `<streak>` columns"), set())
+expect("an Open question may end in a URL",
+       swap("- Do you want a reminder?", "- should it sync with https://example.org/sync?"), set())
+expect("an Open question may quote a question",
+       swap("- Do you want a reminder?", '- should the button say "Done?" or "Mark"?'), set())
+expect("two questions in one Open item still fail",
+       swap("- Do you want a reminder?", "- Do you want a reminder? Or a badge?"), {QUESTION})
+for label, line in (("bold", "- **goal:** a tiny habit tracker on my phone"),
+                    ("numbered", "1. goal: a tiny habit tracker on my phone")):
+    text = missing_slot("- goal: a tiny habit tracker on my phone\n").replace("## Open", f"{line}\n\n## Open")
+    RAN.append(f"{label} slot names the fix")
+    if "no bold or number" not in reason(text, SLOTS):
+        FAILS.append(f"{label} slot names the fix: {reason(text, SLOTS)}")
+
+# A value check_brief would ask about is a yes/no question for the person, not a ready line.
+OK_OUT = swap("- output: the current streak on the phone", "- output: ok")
+RAN.append("ask lists the value")
+if asks(OK_OUT) != [("Output", "ok")] or failed(OK_OUT):
+    FAILS.append(f"ask lists the value: {asks(OK_OUT)} {failed(OK_OUT)}")
+RAN.append("ask on an evals case body")
+if asks(added("- evals: pass: ok; fail: a missed day keeps the streak")) != [("Evals", "ok")]:
+    FAILS.append("ask on an evals case body")
+RAN.append("ask on another Decided line, which lands in Done")
+if asks(swap(HABIT, "- maybe")) != [("Done", "maybe")]:
+    FAILS.append(f"ask on another Decided line: {asks(swap(HABIT, '- maybe'))}")
+CONFIRMED = OK_OUT + "\n## Confirmed\n\n- Output: ok\n"
+expect("a Confirmed section after Handoff passes", CONFIRMED, set())
+RAN.append("a confirmation lifts the ask")
+if asks(CONFIRMED):
+    FAILS.append(f"a confirmation lifts the ask: {asks(CONFIRMED)}")
+expect("a confirmation never lifts a fail",
+       swap("- output: ok", "- output: TBD", CONFIRMED).replace("- Output: ok", "- Output: TBD"), {PLACE})
+expect("a Confirmed line needs a brief slot", CONFIRMED.replace("- Output: ok", "- output ok"),
+       {"confirmed lines name a brief slot"})
+expect("Confirmed before Handoff is out of order",
+       OK_OUT.replace("## Handoff", "## Confirmed\n\n- Output: ok\n\n## Handoff"), {ORDER})
 
 
 def write(text):
@@ -190,6 +275,16 @@ def expect_exit(name, text, code):
 
 expect_exit("exit 0 on a good file", GOOD, 0)
 expect_exit("exit 1 on a bad file", swap(HANDOFF, ""), 1)
+expect_exit("exit 2 on a value to confirm", OK_OUT, 2)
+expect_exit("exit 0 once confirmed", CONFIRMED, 0)
+expect_exit("exit 1 beats an ask", swap(HANDOFF, "", OK_OUT), 1)
+expect_exit("a UTF-8 BOM is not text", "\ufeff" + GOOD, 0)
+RAN.append("ask line format")
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    main(write(OK_OUT))
+if "ASK: Output: Is 'ok' a real answer for Output?" not in buf.getvalue() or "ASK decisions:" not in buf.getvalue():
+    FAILS.append(f"ask line format: {buf.getvalue()}")
 
 SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "check_decisions.py")
 
@@ -201,7 +296,7 @@ def expect_code(name, args, code):
         FAILS.append(f"{name}: exit {got.returncode}, wanted {code}")
 
 
-expect_code("usage exits 2", [], 2)
+expect_code("usage exits 3", [], 3)
 expect_code("help exits 0", ["--help"], 0)
 
 if __name__ == "__main__":

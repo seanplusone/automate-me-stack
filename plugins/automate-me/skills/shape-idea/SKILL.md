@@ -60,6 +60,10 @@ Five slots are required: goal, done, output, verify, and constraints. Each one i
 
 A hedge is "maybe", "I think", or "not sure". It is not a decision. If a wrong guess would change the shape, it goes to Open. "Later" goes to Parked, even when it is hedged.
 
+"Unknown" is not a decision either. A slot, or a `tools:`, `agents:` or `evals:` line, that the user calls unknown goes to Open as a question. The check rejects a Decided value that starts with `unknown`.
+
+A Decided `evals:` line names one case that should pass and one that should fail, as `evals: pass: <case>; fail: <case>` or `evals: <case> should pass, <case> should fail`. A Decided `decide:` line says what the user will decide with the result. It goes to Goal in place of outcome's decide question. A Decided `out of scope:` line is a firm exclusion.
+
 A self-correction replaces the line it fixes. "Actually X" or "no wait, X" keeps only the new line.
 
 The file uses these sections, in this order. Copy the labels as they stand.
@@ -135,6 +139,8 @@ Outcome reads the sections like this. This skill does not ask Tools, Agents and 
 |---|---|
 | The `goal:` line | Goal |
 | The `done:` line | Done |
+| A decided `out of scope:` line | Constraints |
+| A decided `decide:` line | Goal, in place of the decide question |
 | Other Decided lines | Done |
 | A decided `output:` line | Output |
 | An open slot | That slot as `unknown:`, and again under Unknowns |
@@ -145,10 +151,15 @@ Outcome reads the sections like this. This skill does not ask Tools, Agents and 
 | The `verify:` line | Verification |
 | A decided `tools:`, `agents:`, or `evals:` line | That slot, in the user's words |
 | Tools, Agents and roles, and Evals when unset | Unknowns |
+| The Confirmed section | The brief's Confirmed block |
 
 The read-back asks at most 3 questions, in this order: an open goal or done question, then the decide question, then Tools, then Agents and roles, then Evals. Unasked ones stay in Unknowns.
 
-Run `python3 "$SKILL_DIR"/check/check_decisions.py <decisions.md>` after you write Handoff. Fix what it flags before you show the file. The checks are listed in `README.md`. A code fence does not hide a slot. `writing: pass` does not override a writing failure.
+Run `python3 "$SKILL_DIR"/check/check_decisions.py <decisions.md>` after you write Handoff. Exit 1 means fix what it flags before you show the file. The checks are listed in `README.md`. A code fence does not hide a slot, and a fence under Decided fails, because its text would not reach the brief. `writing: pass` does not override a writing failure.
+
+Exit 2 is a break point. Each `ASK: <slot>: Is '<value>' a real answer for <slot>?` line is a value outcome's brief check cannot judge, such as `ok` or `maybe`. Stop and ask the user that yes/no question, one line each. Do not guess the answer. On a yes, add the line under a `## Confirmed` section at the end of the file, as `- <Slot>: <value>`, and run the check again. On a no, replace the value with the user's answer, or move the slot to Open as a question. The handoff is ready only on exit 0.
+
+The placeholder list is outcome's, and it is deliberately narrow: TBD, TODO, n/a, none, "to be decided", "same as above", and a few more, plus template holes such as `<goal>`. A phrase off the list, such as "Por determinar", passes the check. A phrase of only hedge words, such as "not sure yet", is an ASK. The ask and outcome's read-back catch the rest.
 
 The reply follows the [writing rules](../shared/writing-rules.md). Inside `decisions.md`, keep the user's numbers and names, and rewrite any line the writing check flags.
 
