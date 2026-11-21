@@ -1,0 +1,13 @@
+{
+  "description": "Block oversized full-file reads and point to a targeted or bulk read.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Bash",
+        "hooks": [
+          { "type": "command", "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/check_read_size_hook.py" }
+        ]
+      }
+    ]
+  }
+}

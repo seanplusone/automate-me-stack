@@ -113,16 +113,21 @@ Everything lives under `plugins/automate-me/skills/`:
   - `skills/design-options`: proposes a design, or judges one, starting from what already exists. `cases/preset-field` and `cases/csv-export` score its judge mode with `check/score_judge.py`.
   - `skills/panel-check`: several reviewers with different lenses, a skeptic, and a blind judge mode for scoring.
   - `playbooks/learn-from-run.md`: turns misses into proposed rules. A person approves each one.
+  - `check_read_size.py`: says whether a read is too big for the main context. Give it a path, with `--offset` and `--limit` for a targeted read, or a shell command with `--command`. It blocks a full read over 350 lines (`--threshold` or `READ_SIZE_THRESHOLD` change it) and `cat`, `head`, `tail` or `less` on such a file, and names a targeted or bulk read instead. It exits 0 to allow, 2 to block with one line on stderr, and 3 on a usage error. It knows nothing about any one agent, so any agent can call it.
   - `check_shared.py`: fails when a `../` path or link does not resolve, when a shared skill names the skill that calls it, or when a script is not called as `"$SKILL_DIR"/<path>`.
+
+`plugins/automate-me/hooks/` holds the Claude Code hooks. `check_read_size_hook.py` is a thin PreToolUse adapter for `Read` and `Bash`. It passes the call to `shared/check_read_size.py` and blocks when the check does. It allows the call when its input is bad. `hooks.json` wires it in.
 
 ## Checks
 
-Every check prints PASS or FAIL and exits 1 on FAIL. Run `sh setup.sh` once after cloning (it makes the `write-edd` practice repo its own git repo), then from `plugins/automate-me/skills/`:
+Every check prints PASS or FAIL and exits 1 on FAIL, except `check_read_size.py`, which stays silent to allow and exits 2 to block. Run `sh setup.sh` once after cloning (it makes the `write-edd` practice repo its own git repo), then from `plugins/automate-me/skills/`:
 
 ```
 python3 shared/check_shared.py
 for t in $(find . -name 'test_*.py'); do (cd "$(dirname "$t")" && python3 "$(basename "$t")" >/dev/null) || echo "FAIL $t"; done
 ```
+
+The hook adapter's test sits outside `skills/`. Run it with `python3 ../hooks/test_check_read_size_hook.py`.
 
 `query-db/check/test_guard.py` needs a local Postgres or a pulled `postgres:16` image and prints SKIP without one. The `verify-web` PR case needs Node with Playwright.
 
