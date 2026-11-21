@@ -98,11 +98,24 @@ class CheckPlan(unittest.TestCase):
 
 class RenderPlan(unittest.TestCase):
     def test_prompt_has_outcome_slots_and_upstream_output(self):
+        import sys
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "outcome", "check"))
+        from check_brief import check
         out = render_plan.render_prompt(GOOD, "B")
-        for slot in ("Never say done", "Review:", "Write first:", "not proof", "RESUME.md", "Goal:", "Done:",
-                     "Output:", "Constraints:", "Tools:", "Agents and roles:", "Evals:", "Verification:",
-                     "Uses the output of:"):
+        for slot in ("Never say done", "Review:", "Waits for:", "not proof", "RESUME.md", "- Goal:", "- Done:",
+                     "- Output: One file.", "- Constraints:", "- Tools:", "- Agents and roles:", "- Evals:",
+                     "- Verification:", "Uses the output of:"):
             self.assertIn(slot, out)
+        self.assertNotIn("The person reads it in the reply.", out)
+        self.assertNotIn("done when", out)
+        self.assertNotIn("Write first:", out)
+        self.assertNotIn("Report only", out)
+        self.assertEqual([f for _, fails in check(out) for f in fails], [])
+        quiet = copy.deepcopy(GOOD)
+        quiet["items"][1]["spec"]["harness"] = "findings file"
+        asked = render_plan.render_prompt(quiet, "B")
+        self.assertIn("Report only", asked)
+        self.assertNotIn("Review:", asked)
 
     def test_page_draws_every_item(self):
         page = render_plan.render(GOOD)
@@ -116,7 +129,8 @@ class RealRules(unittest.TestCase):
     def example(self):
         import json
         import re
-        text = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "references", "plan-shape.md")).read()
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "references", "plan-shape.md")) as handle:
+            text = handle.read()
         return json.loads(re.search(r"```json\n(.*?)```", text, re.S)[1])
 
     def test_doc_example_passes(self):

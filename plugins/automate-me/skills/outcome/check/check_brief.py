@@ -13,10 +13,15 @@ Optional: Kind, Plan first, Taste, Skills, Parking lot, Unknowns.
 Fails when:
 - a required slot is missing, or any slot label appears more than once;
 - a slot has no value and no items;
+- a required slot's items are only placeholders: TBD, TODO, N/A, none, `...`, `-`, `?`,
+  a value wrapped in () or [], or text with no letters. The failure names the slot.
+  `none` is allowed on Skills, Parking lot and Unknowns, and as `write first: none` in Tools;
+- Evals has no pass case or no fail case. A pass case starts with `Pass:` or says
+  `should pass`. A fail case starts with `Fail:` or says `should fail`;
 - Plan first is present and does not start with `yes` or `none needed`;
 - an `investigate:` item sits outside Done, an `out of scope:` item outside Constraints,
   or a `how:` item outside Agents and roles;
-- a slot that holds `unknown:` also offers a default;
+- a slot that holds `unknown:` also has a separate item that starts with `default`;
 - an item that starts with `unknown` is not `unknown: <question>?` (a note may follow the question);
 - the Unknowns slot is present, is not `none`, and holds an item that is not an unknown marker;
 - the Unknowns slot says `none` while another slot holds an unknown marker;
@@ -33,29 +38,48 @@ REQUIRED = ["Goal", "Done", "Output", "Constraints", "Tools", "Agents and roles"
 OPTIONAL = ["Kind", "Plan first", "Taste", "Skills", "Parking lot", "Unknowns"]
 LABELS = REQUIRED + OPTIONAL
 SLOT = re.compile(r"^- (" + "|".join(map(re.escape, LABELS)) + r")(?:\s*\([^)]*\))?:(.*)$", re.I)
-SUB = re.compile(r"^\s+[-*]\s+(.*)$")
+SUB = re.compile(r"^\s+(?:[-*]|\d+\.)\s+(.*)$")
 NUMBERED = re.compile(r"^(\d+)\.\s+(.*)$")
 UNKNOWN_START = re.compile(r"^unknown\b", re.I)
 UNKNOWN_OK = re.compile(r"^unknown:\s*[^?\s][^?]*\?", re.I)
 TRAP = {"modern", "clean", "good", "better", "correct", "valid", "nice"}
 FILLER = {"a", "an", "the", "it", "its", "is", "be", "should", "must", "make", "made", "very", "really", "and",
-          "or", "more", "look", "looks", "feel", "feels", "pretty", "just", "kind", "of", "enough", "to"}
+          "or", "more", "look", "looks", "feel", "feels", "pretty", "just", "kind", "of", "enough", "to", "check"}
 MAX_QUESTIONS = 3
 PLAN_OK = re.compile(r"^(yes\b|none needed\b)", re.I)
 TAGS = {"investigate": ["Done"], "out of scope": ["Constraints"], "how": ["Agents and roles"]}
 TAG = re.compile(r"^(" + "|".join(map(re.escape, TAGS)) + r"):", re.I)
+FENCE = re.compile(r"^(?:```|~~~)")
+PLACEHOLDER = {"tbd", "todo", "n/a", "n.a.", "na", "none", "...", "…", "-", "?"}
+NONE_OK = {"Skills", "Parking lot", "Unknowns"}
+PASS_CASE = re.compile(r"^pass\b|\bshould pass\b", re.I)
+FAIL_CASE = re.compile(r"^fail\b|\bshould fail\b", re.I)
+WRITE_FIRST_NONE = re.compile(r"^write first:\s*none\.?$", re.I)
+WRAPPED = re.compile(r"^(?:\([^()]*\)|\[[^\[\]]*\])$")
+DEFAULT_ITEM = re.compile(r"^default\b", re.I)
 
 
 def canon(label):
-    return next(x for x in LABELS if x.lower() == label.lower())
+    """The canonical label, or None when the text is not one of the known slots."""
+    folded = label.casefold()
+    for name in LABELS:
+        if name.casefold() == folded:
+            return name
+    return None
 
 
 def parse(text):
     """Returns (slots, questions, counts). slots maps a label to its list of items."""
     slots, counts, questions = {}, {}, []
-    current, last_item, in_questions = None, None, False
+    current, last_item, in_questions, fenced = None, None, False, False
     for raw in text.splitlines():
         line = raw.rstrip()
+        if FENCE.match(line.strip()):
+            fenced = not fenced
+            current = None
+            continue
+        if fenced:
+            continue
         if re.match(r"^#+\s", line):
             in_questions = bool(re.match(r"^#+\s+Questions\b", line, re.I))
             current = None
@@ -70,6 +94,8 @@ def parse(text):
         m = SLOT.match(line)
         if m:
             current = canon(m.group(1))
+            if current is None:
+                continue
             counts[current] = counts.get(current, 0) + 1
             slots.setdefault(current, [])
             value = m.group(2).strip()
@@ -101,6 +127,26 @@ def is_none(items):
     return len(items) == 1 and items[0].strip().rstrip(".").lower() == "none"
 
 
+def is_placeholder(item, slot):
+    text = item.strip()
+    if slot == "Tools" and WRITE_FIRST_NONE.match(text):
+        return False
+    if WRAPPED.match(text):
+        return True
+    core = text.rstrip(".").strip()
+    if core.casefold() in PLACEHOLDER:
+        return not (core.casefold() == "none" and slot in NONE_OK)
+    return not any(ch.isalpha() for ch in text)
+
+
+def is_pass(item):
+    return bool(PASS_CASE.search(item))
+
+
+def is_fail(item):
+    return bool(FAIL_CASE.search(item))
+
+
 def check(text):
     slots, questions, counts = parse(text)
     results = []
@@ -111,6 +157,18 @@ def check(text):
     add("every required slot present", [f"missing slot: {s}" for s in REQUIRED if s not in counts])
     add("no slot repeated", [f"slot {s} appears {n} times" for s, n in counts.items() if n > 1])
     add("no empty slot", [f"slot {s} is empty" for s, items in slots.items() if not items])
+    add("no required slot is only a placeholder",
+        [f"slot {s} is only a placeholder" for s in REQUIRED if s in slots and slots[s]
+         and all(is_placeholder(i, s) for i in slots[s])])
+
+    evals = slots.get("Evals", [])
+    eval_fails = []
+    if evals and not all(is_placeholder(i, "Evals") for i in evals):
+        if not any(is_pass(i) for i in evals):
+            eval_fails.append("Evals has no pass case")
+        if not any(is_fail(i) for i in evals):
+            eval_fails.append("Evals has no fail case")
+    add("Evals has a pass and a fail", eval_fails)
 
     bad_unknown = [f"{s}: {i!r} is not 'unknown: <question>?'" for s, items in slots.items() for i in items
                    if UNKNOWN_START.match(i) and not UNKNOWN_OK.match(i)]
@@ -150,7 +208,7 @@ def check(text):
 
     add("no default beside an unknown",
         [f"{s} offers a default beside an unknown; leave the unknown on its own" for s, items in slots.items()
-         if any(re.search(r"\bunknown:", i, re.I) for i in items) and any(re.search(r"\bdefault", i, re.I) for i in items)])
+         if any(UNKNOWN_START.match(i) for i in items) and any(DEFAULT_ITEM.match(i.strip()) for i in items)])
 
     add("no bare trap adjective", [f"{s}: {i!r} names no visible signal" for s, items in slots.items()
                                    for i in items if is_bare_trap(i)])
@@ -159,7 +217,9 @@ def check(text):
 
 def main(path):
     failed = False
-    for name, fails in check(open(path).read()):
+    with open(path) as handle:
+        text = handle.read()
+    for name, fails in check(text):
         print(f"{'FAIL' if fails else 'PASS'} {name}")
         for f in fails:
             print(f"  {f}")

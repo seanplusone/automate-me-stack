@@ -1,6 +1,8 @@
 """Run: python3 check/test_check_brief.py"""
 import os
+import subprocess
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from check_brief import check  # noqa: E402
@@ -22,7 +24,9 @@ GOOD = """# Brief: t
 - Constraints: Stop after one peek. Report only.
 - Tools: A browser that opens photos. Write first: none.
 - Agents and roles: One agent searches. A second person checks the list.
-- Evals: A listing with 3 beds and a photo is kept. A listing with no photo is dropped.
+- Evals:
+  - Pass: a listing with 3 beds and a photo is kept.
+  - Fail: a listing with no photo is dropped.
 - Verification: Every claim names its photo, or says guess.
 - Skills: none.
 - Parking lot: none.
@@ -42,7 +46,9 @@ MIN = """# Brief: t
 - Constraints: Stop after one peek.
 - Tools: A browser. Write first: none.
 - Agents and roles: One agent searches.
-- Evals: Keep a 3 bed listing. Drop a listing with no photo.
+- Evals:
+  - Pass: keep a 3 bed listing.
+  - Fail: drop a listing with no photo.
 - Verification: Every claim names its photo, or says guess.
 """
 
@@ -70,7 +76,11 @@ UNK, LIST, QS, TRAP = ("every unknown has a question", "Unknowns list matches th
 
 expect("good brief passes", GOOD, set())
 expect("required slots alone pass", MIN, set())
-expect("missing Evals", swap("- Evals: A listing with 3 beds and a photo is kept. A listing with no photo is dropped.\n", ""), {PRESENT})
+EVALS = """- Evals:
+  - Pass: keep a 3 bed listing.
+  - Fail: drop a listing with no photo.
+"""
+expect("missing Evals", MIN.replace(EVALS, ""), {PRESENT})
 for label, line in (
     ("Goal", "- Goal: Find 10 listings.\n"),
     ("Done", "- Done: 3 bed. Proof is the listing.\n"),
@@ -78,13 +88,14 @@ for label, line in (
     ("Constraints", "- Constraints: Stop after one peek.\n"),
     ("Tools", "- Tools: A browser. Write first: none.\n"),
     ("Agents and roles", "- Agents and roles: One agent searches.\n"),
-    ("Evals", "- Evals: Keep a 3 bed listing. Drop a listing with no photo.\n"),
+    ("Evals", EVALS),
     ("Verification", "- Verification: Every claim names its photo, or says guess.\n"),
 ):
     expect(f"missing {label}", MIN.replace(line, ""), {PRESENT})
 
 CASE = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cases", "missing-evals", "runs", "run-1", "brief.md"))
-case_text = open(CASE).read()
+with open(CASE) as handle:
+    case_text = handle.read()
 expect("missing-evals case fails the shape check", case_text, {PRESENT})
 RAN.append("missing-evals case names only Evals")
 details = [f for _, fails in check(case_text) for f in fails]
@@ -109,7 +120,10 @@ expect("out of scope in Taste fails", swap("- Taste: Modern, flag don't filter. 
 expect("how in Agents and roles", swap("- Agents and roles: One agent searches. A second person checks the list.",
                                         "- Agents and roles:\n  - One agent searches.\n  - how: in parallel, one agent per source."), set())
 expect("how in Verification fails", swap("- Verification: Every claim names its photo, or says guess.", "- Verification:\n  - Every claim names its photo, or says guess.\n  - how: in parallel."), {TAGS})
-expect("default beside an unknown", swap("- Output: 10 rows with link and price, as a list in the reply.", "- Output: unknown: Which fields? Default offered: link and price."), {DEFAULT})
+expect("default beside an unknown", swap("- Output: 10 rows with link and price, as a list in the reply.",
+                                        "- Output:\n  - unknown: Which fields?\n  - default: link and price."), {DEFAULT})
+expect("default inside an unknown question passes", swap("- Output: 10 rows with link and price, as a list in the reply.",
+                                                          "- Output: unknown: Should the default be price?"), set())
 expect("default word in a slot with no unknown is fine", swap("- Output: 10 rows with link and price, as a list in the reply.", "- Output: 10 rows; the default sort is price."), set())
 expect("label case does not matter", swap("- Parking lot:", "- parking lot:"), set())
 expect("bare unknown", swap("- unknown: Tour or apply?", "- unknown"), {UNK})
@@ -131,6 +145,39 @@ expect("bare adjective", swap("- Taste: Modern, flag don't filter. Signal is the
 expect("two bare adjectives with filler", swap("- Taste: Modern, flag don't filter. Signal is the kitchen photo.", "- Taste: it should be clean and modern"), {TRAP})
 expect("adjective in a sub-item", swap("  - 3 bed. Proof is the listing.", "  - 3 bed. Proof is the listing.\n  - Correct."), {TRAP})
 expect("adjective with a signal passes", swap("- Taste: Modern, flag don't filter. Signal is the kitchen photo.", "- Taste: modern kitchen in the photos"), set())
+expect("check is filler, so a bare correct fails", swap("- Taste: Modern, flag don't filter. Signal is the kitchen photo.", "- Taste: Check it is correct."), {TRAP})
+
+PLACE = "no required slot is only a placeholder"
+EVALS_BOTH = "Evals has a pass and a fail"
+REQUIRED = ["Goal", "Done", "Output", "Constraints", "Tools", "Agents and roles", "Evals", "Verification"]
+TBD = "# Brief: t\n" + "".join(f"- {s}: TBD\n" for s in REQUIRED)
+RAN.append("every slot TBD names each required slot")
+tbd_msgs = [f for _, fails in check(TBD) for f in fails]
+if not all(any(s in msg and "placeholder" in msg for msg in tbd_msgs) for s in REQUIRED):
+    FAILS.append(f"every slot TBD names each required slot: {tbd_msgs}")
+
+for ph in ("TBD", "TODO", "N/A", "...", "-", "?", "(later)", "[later]", "123", "none"):
+    RAN.append(f"Evals placeholder {ph}")
+    msgs = [f for _, fails in check(MIN.replace(EVALS, f"- Evals: {ph}\n")) for f in fails]
+    if not any("Evals" in msg and "placeholder" in msg for msg in msgs):
+        FAILS.append(f"Evals placeholder {ph}: {msgs}")
+
+expect("pass case only", MIN.replace(EVALS, "- Evals:\n  - Pass: keep a 3 bed listing.\n"), {EVALS_BOTH})
+expect("should pass and should fail", MIN.replace(EVALS, "- Evals: One row should pass, and one row should fail.\n"), set())
+expect("numbered evals", MIN.replace(EVALS, "- Evals:\n  1. Pass: keep a listing.\n  2. Fail: drop a listing.\n"), set())
+expect("evals inside a fence", MIN.replace(EVALS, "```\n- Evals:\n  - Pass: keep a listing.\n  - Fail: drop a listing.\n```\n"), {PRESENT})
+expect("evals inside a tilde fence", MIN.replace(EVALS, "~~~\n- Evals:\n  - Pass: keep a listing.\n  - Fail: drop a listing.\n~~~\n"), {PRESENT})
+expect("write first none is allowed", MIN.replace("- Tools: A browser. Write first: none.\n", "- Tools: write first: none.\n"), set())
+
+RAN.append("dotless i label fails without a traceback")
+dotless = GOOD.replace("- Verification:", "- Ver\u0131fication:")
+path = os.path.join(tempfile.mkdtemp(), "brief.md")
+with open(path, "w") as handle:
+    handle.write(dotless)
+script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "check_brief.py")
+ran = subprocess.run([sys.executable, script, path], capture_output=True, text=True)
+if ran.returncode != 1 or "Traceback" in ran.stderr or "Traceback" in ran.stdout or "Verification" not in ran.stdout:
+    FAILS.append(f"dotless i label fails without a traceback: exit {ran.returncode}\n{ran.stdout}\n{ran.stderr}")
 
 if __name__ == "__main__":
     for f in FAILS:

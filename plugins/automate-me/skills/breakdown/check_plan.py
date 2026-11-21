@@ -25,7 +25,8 @@ ID = re.compile(r"^[A-Z]$")
 
 
 def harness_kinds():
-    text = open(os.path.join(SHARED, "harness-kinds.md"), encoding="utf-8").read()
+    with open(os.path.join(SHARED, "harness-kinds.md"), encoding="utf-8") as handle:
+        text = handle.read()
     return set(re.findall(r"^\| `([^`]+)` \|", text, re.M))
 
 

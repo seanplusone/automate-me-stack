@@ -46,7 +46,7 @@ Every skill is named verb first and loads as `/automate-me:<name>`.
 | Write something an engineer will read | `write-for-engineer` |
 | Turn a colleague's ask into claims, proposals, fix options and tests before running anything | `decode-ask` |
 | Load a set of working rules for this session | `working-rules` |
-| Turn a rough idea or a spoken ramble into a brief with goal, done, output, constraints, tools, agents, evals and verification | `outcome` |
+| Turn a rough idea or a spoken ramble into a brief with goal, done, output, constraints, tools, Agents and roles, evals and verification | `outcome` |
 | Check and tighten a draft prompt before an agent runs it | `brief-check` |
 | Break an idea into small items an agent can build and prove, on one page | `breakdown` |
 
