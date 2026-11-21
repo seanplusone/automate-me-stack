@@ -1,0 +1,3 @@
+$ python3 trim_tabs_test.py   (at head)
+PASS trim strips tabs and newlines: got 'hi'
+exit 0

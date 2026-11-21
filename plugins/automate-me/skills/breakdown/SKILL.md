@@ -33,7 +33,7 @@ The user names one item or one decision, as in "more on B" or "why is C after B?
 
 ## Hand off
 
-`python3 "$SKILL_DIR"/render_plan.py --prompt B <plan.json>` prints item B as an agent prompt with the brief-check slots filled. The user starts each run, or tells you to. Run items in `after` order. Each run ends by updating `RESUME.md`, so a new session picks up from the file, not the chat. An item starts only when every item it waits for has passed its verifier. The agent that did the work never calls it done or correct. It reports what it ran and the output, and only the verifier closes the item.
+`python3 "$SKILL_DIR"/render_plan.py --prompt B <plan.json>` prints item B as an agent prompt with the brief-check slots filled. The user starts each run, or tells you to. Run items in `after` order. Each run ends by updating `RESUME.md` in the shape of `../shared/resume-shape.md` and passing `python3 "$SKILL_DIR"/../shared/check_resume.py RESUME.md`, so a new session picks up from the file, not the chat. An item starts only when every item it waits for has passed its verifier. The agent that did the work never calls it done or correct. It reports what it ran and the output, and only the verifier closes the item.
 
 ## Enforced by
 
