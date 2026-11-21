@@ -71,7 +71,7 @@ def named(parts):
 
 
 def score(key_path, decisions_path):
-    visible, _, _ = split_fences(open(decisions_path).read())
+    visible = split_fences(open(decisions_path, encoding="utf-8-sig").read())[0]
     sections, _, _, _ = parse(visible)
     items = read_key(key_path)
     if not items:

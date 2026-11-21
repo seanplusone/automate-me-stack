@@ -9,7 +9,7 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from check_brief import check  # noqa: E402
-from map_decisions import main, map_text  # noqa: E402
+from map_decisions import DECIDE, EVALS, main, map_text  # noqa: E402
 
 sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "shape-idea", "check")))
 from check_decisions import check as check_decisions  # noqa: E402
@@ -92,7 +92,7 @@ for name in ("done", "capped"):
     brief = map_text(open(src).read())
     want = open(brief_path).read()
     bad = failed(brief)
-    if brief.rstrip("\n") != want.rstrip("\n"):
+    if brief != want:
         FAILS.append(f"committed briefs match the mapper: {name} differs")
         print(f"FAIL committed briefs match the mapper: {name}")
     elif bad:
@@ -123,29 +123,15 @@ for src in sorted(__import__("pathlib").Path(SHAPE).glob("*/runs/run-1/decisions
         print(f"PASS case {name}")
     check_honest(name, brief)
 
-# 1. A placeholder stays the only item in Goal, Constraints, and Verification.
-tbd = decisions(BASE.replace("- goal: a tiny habit tracker on my phone", "- goal: TBD")
-                .replace("- verify: mark today once and read the streak", "- verify: TBD")
-                .replace("- constraints: no accounts, it's only me", "- constraints: TBD"))
-tbd_brief = map_text(tbd)
-tbd_detail = " ".join(item for _, items in check(tbd_brief) for item in items)
-goal = tbd_brief.split("- Done:", 1)[0]
-limits = tbd_brief.split("- Constraints:", 1)[1].split("- Tools:", 1)[0]
-verify = tbd_brief.split("- Verification:", 1)[1].split("- Unknowns:", 1)[0]
-hidden = []
-for slot in ("Goal", "Constraints", "Verification"):
-    if f"slot {slot} is only a placeholder" not in tbd_detail:
-        hidden.append(f"brief did not flag {slot}: {tbd_detail}")
-if "What will you decide" in goal or "Report only" in limits or "Every claim names" in verify:
-    hidden.append("mapper text hid a placeholder")
+# 1. A placeholder slot stops the mapper before any brief is written.
+tbd = decisions(BASE.replace("- goal: a tiny habit tracker on my phone", "- goal: TBD"))
 code, out = run_main(tbd)
-if code != 1 or "slot values are not placeholders" not in out or "# Brief" in out:
-    hidden.append(f"main did not stop: exit {code}")
-print(f"{'PASS' if not hidden else 'FAIL'} mapped placeholders stay visible")
-FAILS.extend(f"mapped placeholders stay visible: {item}" for item in hidden)
+tbd_bad = [] if code == 1 and "slot values are not placeholders" in out and "# Brief" not in out else [f"exit {code}"]
+print(f"{'PASS' if not tbd_bad else 'FAIL'} a placeholder slot stops the mapper")
+FAILS.extend(f"a placeholder slot stops the mapper: {item}" for item in tbd_bad)
 
 # 2. Nested fences, including ~~~, are not decisions.
-nested = decisions(BASE + """
+nested = decisions(BASE, parked="""- none
 ````
 ~~~
 - Use blue paper.
@@ -189,7 +175,7 @@ later = decisions(
 - a native app later
 - no later than Friday
 - ship it later?
-- maybe later
+- maybe a web app later
 - dietary tags later, not sure""",
 )
 later_brief = map_text(later)
@@ -201,7 +187,7 @@ if failed(later_brief):
 for line in ("ship the poster not now", "a native app later"):
     if f"out of scope: {line}" not in later_limits or line not in later_park:
         later_bad.append(f"dropped {line}")
-for line in ("no later than Friday", "ship it later?", "maybe later", "dietary tags later, not sure"):
+for line in ("no later than Friday", "ship it later?", "maybe a web app later", "dietary tags later, not sure"):
     if f"out of scope: {line}" in later_brief:
         later_bad.append(f"scoped {line}")
 if "unknown: ship it later?" not in later_brief or "ship it later?" not in later_park:
@@ -228,8 +214,8 @@ for label, text in bad_files.items():
 print(f"{'PASS' if not bad_notes else 'FAIL'} bad file exits 1 before mapping")
 FAILS.extend(f"bad file exits 1 before mapping: {item}" for item in bad_notes)
 
-# 7. The decide question is added only when no Decided line names it.
-named = decisions(BASE + "\n- decision: the paper color")
+# 7. The decide question is added unless a Decided `decide:` line answers it.
+named = decisions(BASE + "\n- decide: which paper color to buy")
 named_brief = map_text(named)
 if "What will you decide" in named_brief or failed(named_brief):
     FAILS.append(f"decide unknown only when unnamed: {failed(named_brief)}")
@@ -240,6 +226,11 @@ unnamed = map_text(decisions(BASE))
 if "What will you decide with the result?" not in unnamed:
     FAILS.append("decide unknown only when unnamed: missing when no line names it")
     print("FAIL decide unknown only when unnamed: missing")
+for line in ("my partner and I decide together which habit counts", "the app does not decide anything for me",
+             "decision: the paper color"):
+    if "What will you decide with the result?" not in map_text(decisions(BASE + f"\n- {line}")):
+        FAILS.append(f"decide unknown only when unnamed: {line!r} dropped it")
+        print(f"FAIL decide unknown only when unnamed: {line!r}")
 
 # 8. tools, agents, and evals fill their slots.
 filled = decisions(BASE + """
@@ -326,6 +317,141 @@ if 'python3 "$SKILL_DIR"/../shape-idea/check/check_decisions.py' not in outcome_
     doc_bad.append("check_decisions first")
 print(f"{'PASS' if not doc_bad else 'FAIL'} docs match the checks")
 FAILS.extend(f"docs match the checks: {item}" for item in doc_bad)
+
+# 13. Each repro (round 2 and the round-3 review) runs the chain on the habit-tracker case: check_decisions, then the mapper,
+# then check_brief. dec is check_decisions' exit; brief is check_brief's exit on the mapped brief.
+HABIT = os.path.join(SHAPE, "habit-tracker", "runs", "run-1", "decisions.md")
+HABIT_TEXT = open(HABIT).read()
+SCRIPTS = {"dec": os.path.join(SKILLS, "shape-idea", "check", "check_decisions.py"),
+           "map": os.path.join(HERE, "map_decisions.py"), "brief": os.path.join(HERE, "check_brief.py")}
+
+
+def line_of(prefix):
+    return next(row for row in HABIT_TEXT.splitlines() if row.startswith(prefix))
+
+
+def edit(*pairs):
+    text = HABIT_TEXT
+    for prefix, new in pairs:
+        if prefix is None:
+            text = new + text
+            continue
+        old = line_of(prefix)
+        text = text.replace(old, new.replace("&", old), 1)
+    return text
+
+
+def chain(text):
+    folder = tempfile.mkdtemp()
+    path = os.path.join(folder, "decisions.md")
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(text)
+    dec = subprocess.run([sys.executable, SCRIPTS["dec"], path], capture_output=True, text=True)
+    mapped = subprocess.run([sys.executable, SCRIPTS["map"], path], capture_output=True, text=True)
+    brief_path = os.path.join(folder, "brief.md")
+    open(brief_path, "w").write(mapped.stdout)
+    brief = subprocess.run([sys.executable, SCRIPTS["brief"], brief_path], capture_output=True, text=True)
+    return dec, mapped, brief
+
+
+def block(brief, start, end):
+    return brief.split(start, 1)[1].split(end, 1)[0] if start in brief else ""
+
+
+ADD = "- constraints"
+OUT = "- output:"
+REPROS = [
+    # (name, text, dec exit, brief exit or None when no brief, test on (dec stdout, brief text))
+    ("unknown_out", edit((OUT, "- output: unknown")), 1, None,
+     lambda d, b: "move it to Open as a question" in d),
+    ("notsure_out", edit((OUT, "- output: not sure yet")), 2, None, lambda d, b: "ASK: Output: Is 'not sure yet'" in d),
+    ("tbd_phrase", edit((OUT, "- output: to be decided"), ("- verify:", "- verify: see notes")), 1, None,
+     lambda d, b: "placeholder: 'to be decided'" in d),
+    ("trap_verify", edit(("- verify:", "- verify: it looks good")), 1, None, lambda d, b: "no visible signal" in d),
+    ("trap_done", edit(("- done:", "- done: clean")), 1, None, lambda d, b: "no visible signal" in d),
+    ("tools_unknown", edit((ADD, "&\n- tools: unknown: waiting to pick Python or Node")), 1, None,
+     lambda d, b: "move it to Open as a question" in d),
+    ("agents_unknown", edit((ADD, "&\n- agents: unknown yet")), 1, None,
+     lambda d, b: "move it to Open as a question" in d),
+    ("evals_colon", edit((ADD, "&\n- evals: pass: mark today and the streak goes up; fail: miss a day and it still grows")),
+     0, 0, lambda d, b: "- Evals: pass: mark today" in b and EVALS not in b),
+    ("evals_labels", edit((ADD, "&\n- evals: Pass: mark today and the streak goes up; Fail: miss a day and it still grows")),
+     0, 0, lambda d, b: "- Evals: Pass: mark today" in b),
+    ("evals_should", edit((ADD, "&\n- evals: marking today should pass, and a missed day that keeps the streak should fail")),
+     0, 0, lambda d, b: EVALS not in b),
+    ("decide_vote", edit(("- the one habit", "- my partner and I decide together which habit counts")), 0, 0,
+     lambda d, b: DECIDE in block(b, "- Goal:", "- Done:")),
+    ("decide_neg", edit(("- the one habit", "- the app does not decide anything for me")), 0, 0,
+     lambda d, b: DECIDE in block(b, "- Goal:", "- Done:")),
+    ("notlater", edit(("- I should probably", "- send the reminder not later than 9pm")), 0, 0,
+     lambda d, b: "out of scope: send" not in b and "send the reminder" in block(b, "- Parking lot:", "- Unknowns:")),
+    ("ithink", edit(("- I should probably", "- I think reminders later")), 0, 0,
+     lambda d, b: "out of scope: I think" not in b and "I think reminders later" in b),
+    ("quoted_later", edit(("- I should probably", '- the snooze button says "Remind me later"')), 0, 0,
+     lambda d, b: "out of scope: the snooze" not in b and "Remind me later" in b),
+    ("not_now", HABIT_TEXT, 0, 0,
+     lambda d, b: "out of scope: maybe later a way to share streaks" in block(b, "- Constraints:", "- Tools:")),
+    ("decided_oos", edit(("- the one habit", "- out of scope: syncing to a watch")), 0, 0,
+     lambda d, b: "  - out of scope: syncing to a watch" in block(b, "- Constraints:", "- Tools:")
+     and "watch" not in block(b, "- Done:", "- Output:")),
+    ("fenced_csv", edit((OUT, "- output: a CSV with these columns:\n```\nday,done,streak\n```")), 1, None,
+     lambda d, b: "code fence under Decided" in d),
+    ("autolink", edit(("- verify:", "- verify: compare with <https://example.org/streak>")), 0, 0,
+     lambda d, b: "<https://example.org/streak>" in b),
+    ("angle_cols", edit((OUT, "- output: a CSV with `<day>` and `<streak>` columns")), 0, 0,
+     lambda d, b: "`<day>`" in b),
+    ("paren", edit((OUT, "- output: (CSV)")), 0, 0, lambda d, b: "- Output: (CSV)" in b),
+    ("open_quote", edit(("- what should I call", '- should the button say "Done?" or "Mark"?')), 0, 0,
+     lambda d, b: '"Done?"' in b),
+    ("open_url", edit(("- what should I call", "- should it sync with https://example.org/sync?")), 0, 0,
+     lambda d, b: "unknown: should it sync with https://example.org/sync?" in b),
+    ("bom", "\ufeff" + HABIT_TEXT, 0, 0, lambda d, b: b.startswith("# Brief")),
+    ("writefirst", edit((ADD, "&\n- tools: write first: none")), 1, None, lambda d, b: "tools: needs a real value" in d),
+    ("evals_tbdfail", edit((ADD, "&\n- evals: marking today should pass. TBD should fail.")), 1, None,
+     lambda d, b: "evals: needs a pass case and a fail case" in d),
+    ("ask_output", edit((OUT, "- output: ok")), 2, None,
+     lambda d, b: "ASK: Output: Is 'ok' a real answer for Output?" in d),
+    # Independent review (codex), round 3.
+    ("bold_unknown", edit((OUT, "- output: **unknown**")), 1, None, lambda d, b: "move it to Open" in d),
+    ("stated_trap", edit(("- verify:", "- verify: stated: clean")), 1, None, lambda d, b: "no visible signal" in d),
+    ("decide_unknown", edit(("- the one habit", "- decide: unknown")), 1, None, lambda d, b: "move it to Open" in d),
+    ("decide_line", edit(("- the one habit", "- decide: which habit to keep")), 0, 0,
+     lambda d, b: "  - decide: which habit to keep" in block(b, "- Goal:", "- Done:") and DECIDE not in b),
+    ("evals_unknown_case", edit((ADD, "&\n- evals: pass: unknown; fail: clean")), 1, None,
+     lambda d, b: "move it to Open" in d),
+    ("slot_tag", edit((OUT, "- output: investigate: count the votes")), 1, None,
+     lambda d, b: "belongs in Done" in d),
+    ("slot_tag_home", edit(("- done:", "- done: investigate: why a streak breaks")), 0, 0,
+     lambda d, b: "  - investigate: why a streak breaks" in block(b, "- Done:", "- Output:")),
+    ("goal_default", edit(("- goal:", "- goal: default to a poll in the chat")), 1, None,
+     lambda d, b: "starts with 'default'" in d),
+    ("parked_hedge", edit(("- I should probably", "- later, perhaps")), 1, None,
+     lambda d, b: "'later, perhaps' is a placeholder" in d),
+    ("open_hole", edit(("- what should I call", "- should the bot use <channel>?")), 1, None,
+     lambda d, b: "template hole" in d),
+    ("parked_hole", edit(("- I should probably", "- ask about <channel> later")), 1, None,
+     lambda d, b: "template hole" in d),
+    ("open_bare_q", edit(("- what should I call", "- ?")), 1, None, lambda d, b: "placeholder, not a question" in d),
+    ("how_ok", edit(("- the one habit", "- how: ok")), 0, 0, lambda d, b: "  - stated: how: ok" in b),
+    ("done_ok", edit(("- the one habit", "- ok")), 2, None, lambda d, b: "ASK: Done: Is 'ok' a real answer for Done?" in d),
+    ("parked_tag", edit(("- I should probably", "- investigate: the old app")), 0, 0,
+     lambda d, b: "  - stated: investigate: the old app" in block(b, "- Parking lot:", "- Unknowns:")),
+    ("ask_confirmed", edit((OUT, "- output: ok")) + "\n## Confirmed\n\n- Output: ok\n", 0, 0,
+     lambda d, b: b.rstrip().endswith("## Confirmed\n\n- Output: ok")),
+]
+repro_bad = []
+for name, text, want_dec, want_brief, ok in REPROS:
+    dec, mapped, brief = chain(text)
+    got_brief = brief.returncode if mapped.returncode == 0 else None
+    if mapped.returncode == 0 and "# Brief" not in mapped.stdout:
+        got_brief = "empty"
+    if mapped.returncode != 0 and (mapped.returncode != dec.returncode or "# Brief" in mapped.stdout):
+        repro_bad.append(f"{name}: mapper exit {mapped.returncode} printed a brief or disagreed with dec")
+    if (dec.returncode, got_brief) != (want_dec, want_brief) or not ok(dec.stdout, mapped.stdout):
+        repro_bad.append(f"{name}: dec={dec.returncode} brief={got_brief}, wanted {want_dec}/{want_brief}"
+                         f"\n{dec.stdout[-400:]}\n{brief.stdout[-400:]}")
+print(f"{'PASS' if not repro_bad else 'FAIL'} repros, {len(REPROS) - len(repro_bad)}/{len(REPROS)}")
+FAILS.extend(f"round-2 repro {item}" for item in repro_bad)
 
 if __name__ == "__main__":
     print(f"{'PASS' if not FAILS else 'FAIL'} map briefs")

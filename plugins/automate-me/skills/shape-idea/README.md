@@ -11,12 +11,15 @@ Status: new. Four synthetic scored cases. Each `run-1` was written by a fresh mo
 `check/check_decisions.py` checks a finished file's shape:
 
 - `## Decided`, `## Open`, `## Parked`, and `## Handoff` are present once, in that order;
-- every Open item ends with `?` (a lone `none` means the section is empty). A `?` inside a URL or inline code does not count, and the line still has to end with `?`;
+- every Open item ends with `?` (a lone `none` means the section is empty). A `?` inside a URL, inline code, or double quotes does not count, and the line still has to end with `?`. An Open item that is only `?` or `TBD?` fails;
+- no item holds a template hole such as `<channel>`, outside inline code;
+- no Decided line that is not a slot, and no Parked line, is only a placeholder such as `TBD` or `later, perhaps`;
 - `stop` is `done`, `turn-cap`, or `open-cap`, once;
 - each of goal, done, output, verify, and constraints starts one Decided line or one Open line, with a value, and not both;
-- a slot value is not template text (`<...>`), TBD, TODO, n/a, `?`, or `...`. A Decided value that ends in `?` fails. The same placeholder list as the brief check;
-- text inside a ``` or ~~~ fence, of any length, including a nested fence, is not a decision. An unclosed fence fails;
-- a Decided `tools:`, `agents:`, or `evals:` line needs a real value. `evals:` also needs a pass case and a fail case. The five slots stay the only required ones;
+- a slot value does not fail outcome's brief check. It has no template hole such as `<goal>`. It is not only TBD, TODO, n/a, `?`, `...`, "to be decided", or another item on that fixed list. A hole inside inline code and an autolink such as `<https://example.org>` are fine. A Decided value that ends in `?` fails;
+- a Decided slot value does not start with `unknown`. Move it to Open as a question. It is not only a trap word such as "clean" or "it looks good". Bold and `stated:` do not hide either one. It does not start with a brief tag that belongs in another slot, such as `output: investigate: ...`, and a goal does not start with `default`;
+- text inside a ``` or ~~~ fence, of any length, including a nested fence, is not a decision. A fence under Decided fails, because its text would be lost. An unclosed fence fails;
+- a Decided `tools:`, `agents:`, `evals:`, or `decide:` line needs a real value, under the same rules. `evals:` also needs a pass case and a fail case, as `pass: <case>; fail: <case>` or `<case> should pass, <case> should fail`. Each case must be ready too. The five slots stay the only required ones;
 - `stop: done` requires all five Decided and none of them Open;
 - `stop: open-cap` is only after turn 1, and only with more than 5 Open lines that are not slots;
 - `stop: turn-cap` requires `turns: 10`;
@@ -25,7 +28,11 @@ Status: new. Four synthetic scored cases. Each `run-1` was written by a fresh mo
 - no item runs past one line;
 - Handoff has `next: /automate-me:outcome` and a single `writing: pass` line.
 
-Exit 0 when every check passed. Exit 1 when any check failed. Exit 2 on a usage error.
+Exit 0 when every check passed. Exit 1 when any check failed. Exit 2 when nothing failed but a value needs the person. Exit 3 on a usage error.
+
+Exit 2 is a break point. The check prints one `ASK: <slot>: Is '<value>' a real answer for <slot>?` line for each Decided value that outcome's brief check would ask about, such as `output: ok`. The skill stops, asks the person that yes/no question, and records the answer. A yes goes under an optional `## Confirmed` section after Handoff, as `- <Slot>: <value>`. The mapper copies that section into the brief, so the brief check does not ask again. A no replaces the value. A confirmation never lifts a failure.
+
+The placeholder list is outcome's, and it is deliberately narrow. A phrase off the list, such as "not sure yet" or "see notes", passes. The ask and outcome's read-back catch the rest.
 
 `check/score_case.py` scores the file against a case key. Terms match loosely, one item at a time. Exit 0 on a full match. Exit 1 on a miss. Exit 2 on a usage error.
 
@@ -72,7 +79,7 @@ Neither script checks the flow in `SKILL.md`. These parts are instructions only,
 - map: goal goes to Goal. done goes to Done. output goes to Output. constraints goes to Constraints. verify goes to Verification. Tools, Agents and roles, and Evals stay unknown.
 ```
 
-Outcome reads `goal:` as Goal, `done:` as Done, `output:` as Output, `constraints:` as Constraints, and `verify:` as Verification. Tools, Agents and roles, and Evals stay unknown until the user answers. Open is Unknowns. Parked is the Parking lot. A slot that is still open is an unknown, not a filled slot.
+Outcome reads `goal:` as Goal, `done:` as Done, `output:` as Output, `constraints:` as Constraints, and `verify:` as Verification. Tools, Agents and roles, and Evals stay unknown until the user answers. Open is Unknowns. Parked is the Parking lot. A slot that is still open is an unknown, not a filled slot. A Decided `out of scope:` line goes to Constraints. A Decided `decide:` line goes to Goal, in place of the decide question. A Confirmed section goes to the brief's Confirmed block.
 
 ## Key format
 
@@ -110,19 +117,22 @@ Nothing here needs pstack. If it is installed, `/in-your-own-words` and `/sharpe
 From `shape-idea/`:
 
 ```
+set -euo pipefail
 python3 check/test_check_decisions.py
 python3 check/test_score_case.py
 python3 check/test_judge.py
 python3 check/test_break.py
 for c in cases/*/; do
-  python3 check/check_decisions.py "$c"runs/run-1/decisions.md | tail -1
-  python3 check/score_case.py "$c"key.md "$c"runs/run-1/decisions.md | tail -1
+  python3 check/check_decisions.py "$c"runs/run-1/decisions.md
+  python3 check/score_case.py "$c"key.md "$c"runs/run-1/decisions.md
 done
 python3 ../shared/check_writing.py SKILL.md
 for c in cases/*/; do
-  python3 ../shared/check_writing.py "$c"runs/run-1/decisions.md | tail -1
+  python3 ../shared/check_writing.py "$c"runs/run-1/decisions.md
 done
 ```
+
+`set -e` stops the loop at the first command that fails.
 
 Every `run-1` passes the shape check and the keyword score. The meaning judge is separate:
 

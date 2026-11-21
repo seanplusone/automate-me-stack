@@ -39,7 +39,7 @@ def pool_for(sections, kind, ident):
 def pairs(key_path, decisions_path):
     """Each key item with the first unused line that holds its terms, if any."""
     from score_case import missing
-    visible, _, _ = split_fences(open(decisions_path).read())
+    visible = split_fences(open(decisions_path, encoding="utf-8-sig").read())[0]
     sections, _, _, _ = parse(visible)
     rows, used, cache = [], {}, {}
     for kind, parts in read_key(key_path):

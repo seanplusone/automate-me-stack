@@ -13,12 +13,14 @@ Voice is only how the text arrives. The skill works on the transcript, typos and
 
 ## A decisions file
 
-If the user brings a `decisions.md` from [shape-idea](../shape-idea/SKILL.md), run `python3 "$SKILL_DIR"/../shape-idea/check/check_decisions.py` on that file first. If it fails, stop and show the failures. Do not map a file the check rejects. Then map it. Do not sort it as a ramble. Shape-idea does not ask which tool to use, who does the work, or which two cases prove it. Those three stay `unknown:` until the user answers, unless a Decided line already names that slot. Do not invent them. Run `python3 "$SKILL_DIR"/check/check_brief.py` on the brief.
+If the user brings a `decisions.md` from [shape-idea](../shape-idea/SKILL.md), run `python3 "$SKILL_DIR"/../shape-idea/check/check_decisions.py` on that file first. If it fails (exit 1), stop and show the failures. Do not map a file the check rejects. Exit 2 is a break point. Stop, ask the user each `ASK:` line as a yes/no question, and record the answer in the decisions file. A yes is a `- <Slot>: <value>` line under `## Confirmed` at its end. A no is a new value. Run the check again. Map only on exit 0. Do not sort it as a ramble. Shape-idea does not ask which tool to use, who does the work, or which two cases prove it. Those three stay `unknown:` until the user answers, unless a Decided line already names that slot. Do not invent them. Run `python3 "$SKILL_DIR"/check/check_brief.py` on the brief.
 
 | In the decisions file | In the brief |
 |---|---|
 | The `goal:` line | Goal |
 | The `done:` line | Done |
+| A decided `out of scope:` line | Constraints |
+| A decided `decide:` line | Goal, in place of the decide question |
 | Other Decided lines | Done |
 | A decided `output:` line | Output |
 | An open slot | That slot as `unknown:`, and again under Unknowns |
@@ -29,12 +31,13 @@ If the user brings a `decisions.md` from [shape-idea](../shape-idea/SKILL.md), r
 | The `verify:` line | Verification, plus the evidence sentence |
 | A decided `tools:`, `agents:`, or `evals:` line | That slot, in the user's words |
 | Tools, Agents and roles, and Evals when unset | Unknowns |
+| The Confirmed section | The brief's `## Confirmed` block |
 
-`out of scope:` is only for a Parked statement that says not now, or later on its own. It is not for "no later than", a line that ends in `?`, or a line hedged with maybe or not sure. A parked question stays a question.
+A Parked line becomes `out of scope:` when it says not now, or says later on its own. A later inside double quotes does not count. It is not for "no later than" or "not later than", a line that ends in `?`, or a later hedged with maybe, I think, or not sure. It is also not for a line the brief check would not pass as written. A parked question stays a question.
 
-Goal also gets `unknown: What will you decide with the result?` only when no Decided line already says decide or decision. Tools is `unknown: Which tool must the run use, and what, if anything, must be written first?`. Agents and roles is `unknown: Who does the work, and does anyone else check it?`. Evals is `unknown: What is one case that should pass, and one that should fail?`. A decided `tools:`, `agents:`, or `evals:` line fills that slot instead. After the user answers, rewrite each slot in their words. A `write first:` line appears only then.
+Goal also gets `unknown: What will you decide with the result?` unless a Decided line starts with `decide:`. That line goes under Goal instead. Tools is `unknown: Which tool must the run use, and what, if anything, must be written first?`. Agents and roles is `unknown: Who does the work, and does anyone else check it?`. Evals is `unknown: What is one case that should pass, and one that should fail?`. A decided `tools:`, `agents:`, or `evals:` line fills that slot instead. After the user answers, rewrite each slot in their words. A `write first:` line appears only then.
 
-Do not add the decide question, "Report only", or the evidence sentence beside a placeholder. A placeholder slot stays a placeholder so the brief check still flags it. A line whose first words would trip a brief tag is prefixed with `stated:` so the words stay and the tag does not.
+Some lines start with words that would trip a brief tag. When such a line is a Decided line that is not a slot, or a Parked line, it is prefixed with `stated:`. The words stay and the tag does not. A slot value is never prefixed. The decisions check has already rejected one that is unknown or only a trap word.
 
 The read-back asks at most 3 questions, in this order: an open goal or done question, then the decide question, then Tools, then Agents and roles, then Evals. Unasked ones stay in Unknowns. Constraints also says report only, and not to run or post, because shape-idea never does. The same traps apply.
 
