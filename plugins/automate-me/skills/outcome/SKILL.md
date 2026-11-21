@@ -165,6 +165,20 @@ Run `python3 "$SKILL_DIR"/check/check_brief.py <brief.md>`. It has three outcome
 
 The rule is deliberately narrow. check_brief FAILs only what is unambiguous. When in doubt it ASKs (exit 2, one ASK line each), and the agent stops and asks the person. Asking is cheap, and a wrong FAIL blocks a real brief. The read-back catches the rest.
 
+### Limits
+
+The check is a review aid, not a gate on meaning. It reads wording, so it misses some cases:
+- Evals labels in other words, such as `Should pass:` or `Must pass:`, can fail.
+- Outline-style Evals, with the case on a nested line under `Pass:`, can fail.
+- A short verification command that holds a vague word, such as `make clean`, can be flagged as vague.
+- A checklist item such as `[x] TBD` can pass.
+- A placeholder with text after it, such as `TBD by Friday`, can pass.
+
+The read-back and the ASK outcome are the backstop.
+There are too few real examples to judge wording reliably, so when the check is unsure it asks the person (ASK) rather than deciding.
+Save each confirmed answer as a new test case.
+As cases build up, more calls can move from asking to automatic, but only after they hold on fresh briefs.
+
 Run `python3 "$SKILL_DIR"/../shared/check_writing.py <brief.md>` and rewrite the lines it flags.
 
 ## 4. Read back

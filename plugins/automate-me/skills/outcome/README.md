@@ -27,6 +27,20 @@ It exits 0 (PASS), 1 (FAIL), 2 (ASK) or 3 (usage). A usage error is bad argument
 
 The rule is deliberately narrow. check_brief FAILs only what is unambiguous. When in doubt it ASKs (exit 2, one ASK line each), and the agent stops and asks the person. Asking is cheap, and a wrong FAIL blocks a real brief. The read-back catches the rest. A placeholder outside the list, such as `Por determinar.`, passes.
 
+### Limits
+
+The check is a review aid, not a gate on meaning. It reads wording, so it misses some cases:
+- Evals labels in other words, such as `Should pass:` or `Must pass:`, can fail.
+- Outline-style Evals, with the case on a nested line under `Pass:`, can fail.
+- A short verification command that holds a vague word, such as `make clean`, can be flagged as vague.
+- A checklist item such as `[x] TBD` can pass.
+- A placeholder with text after it, such as `TBD by Friday`, can pass.
+
+The read-back and the ASK outcome are the backstop.
+There are too few real examples to judge wording reliably, so when the check is unsure it asks the person (ASK) rather than deciding.
+Save each confirmed answer as a new test case.
+As cases build up, more calls can move from asking to automatic, but only after they hold on fresh briefs.
+
 Other skills import `classify(value)` (`"pass"`, `"fail"` or `"ask"`), `judge(value)` (the outcome and why), `is_placeholder`, `eval_cases`, `case_is_real`, `check`, `asks` and `ask_lines` from `check/check_brief.py`. `breakdown/check_plan.py` judges every plan field that lands in a prompt, then runs `check` on each rendered prompt.
 
 `check/score_case.py` scores a brief against a case key: facts in the speaker's words, slot terms, gaps asked rather than guessed, guesses that must not appear, and Parking lot items.

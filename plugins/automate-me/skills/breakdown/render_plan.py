@@ -4,7 +4,7 @@ Usage: python3 render_plan.py <plan.json> > page.html          (the artifact pag
        python3 render_plan.py --text <plan.json> > page.txt    (plain text, for the cold read)
        python3 render_plan.py --prompt B <plan.json>           (item B as an agent prompt)
 
-Exit 3 with one line on a usage error: missing arguments, an unreadable plan, or an unknown item id.
+Exit 3 with one line on a usage error: missing arguments, an unreadable or malformed plan, or an unknown item id.
 """
 import html
 import json
@@ -246,14 +246,16 @@ def main(argv):
         return usage(f"cannot read {args[-1]}: {err}")
     if not isinstance(p, dict):
         return usage(f"{args[-1]} is not a JSON object")
-    if mode == "--prompt":
-        if args[0] not in {it.get("id") for it in p.get("items", [])}:
-            return usage(f"no item {args[0]} in {args[-1]}")
-        print(render_prompt(p, args[0]), end="")
-    elif mode == "--text":
-        print(render_text(p), end="")
-    else:
-        print(render(p))
+    try:
+        if mode == "--prompt":
+            if args[0] not in {it.get("id") for it in p.get("items", [])}:
+                return usage(f"no item {args[0]} in {args[-1]}")
+            out = render_prompt(p, args[0])
+        else:
+            out = render_text(p) if mode == "--text" else render(p) + "\n"
+    except (AttributeError, KeyError, TypeError, ValueError) as err:
+        return usage(f"malformed plan {args[-1]}: {type(err).__name__} {err}. Run check_plan.py on it")
+    print(out, end="")
     return 0
 
 
