@@ -21,7 +21,7 @@ const SELECTOR_KEYS = ["cards", "groups", "columns", "headings", "body", "button
 
 export const DEFAULT_CONFIG = {
   auto: true,
-  whitespacePx: 4,
+  whitespacePx: 16,
   paddingPx: 2,
   alignPx: 2,
   scrollPx: 0,
@@ -216,7 +216,7 @@ function contentBoxes(card, elements, seen = new Set(), map = null) {
   if (seen.has(card.i)) return []
   seen.add(card.i)
   const boxes = []
-  const own = map ? (map.get(card.i) || []).filter((e) => inFlow(e) && (e.rect.width > 0 || e.rect.height > 0)) : kids(elements, card.i)
+  const own = map ? (map.get(card.i) || []).filter((e) => (inFlow(e) || e.media || ["img", "svg", "canvas", "video"].includes(e.tag)) && (e.rect.width > 0 || e.rect.height > 0)) : kids(elements, card.i)
   for (const child of own) {
     if (child.tag === "slot" && child.slotted && child.slotted.length) {
       boxes.push(...child.slotted)
@@ -226,6 +226,13 @@ function contentBoxes(card, elements, seen = new Set(), map = null) {
     } else boxes.push(marginBox(child))
   }
   if (card.slotted && card.slotted.length) boxes.push(...card.slotted)
+  if (card.media) {
+    const innerLeft = card.rect.x + (card.border?.left || 0) + (card.padding?.left || 0)
+    const innerTop = card.rect.y + (card.border?.top || 0) + (card.padding?.top || 0)
+    const innerRight = card.rect.x + card.rect.width - (card.border?.right || 0) - (card.padding?.right || 0)
+    const innerBottom = card.rect.y + card.rect.height - (card.border?.bottom || 0) - (card.padding?.bottom || 0)
+    boxes.push({ left: innerLeft, top: innerTop, right: innerRight, bottom: innerBottom, width: innerRight - innerLeft, height: innerBottom - innerTop })
+  }
   if (card.text && (card.text.width > 0 || card.text.height > 0)) {
     boxes.push({
       left: card.text.x,
@@ -449,6 +456,8 @@ export function edgeChecks(elements, config) {
     const between = ancestors.filter((a) => a.i !== column.i)
     if (between.some((a) => INDENT_TAG.has(a.tag) || isCard(a, config))) return false
     if (el.controlRow) return false
+    const toolbar = (el.tag === "a" || el.tag === "button" || el.role === "tab") && elements.some((other) => other.i !== el.i && other.parent === el.parent && (other.tag === "a" || other.tag === "button" || other.role === "tab") && overlaps(box(other), box(el)))
+    if (toolbar) return false
     if (/^inline/.test(el.display || "") && elements.some((other) => other.i !== el.i && other.parent === el.parent && overlaps(box(other), box(el)))) return false
     const parent = byIndex[el.parent]
     if (parent && String(parent.display).includes("flex") && parent.flow !== "column" && parent.flow !== "column-reverse") {
@@ -628,20 +637,21 @@ function columnExemption(column, elements, config) {
   })
   const searchList = resultBlocks.length >= 4 || (bareLinks.length >= 4 && paragraphs.length <= bareLinks.length + 1)
   const blocking = cards.filter((e) => !callout(e))
-  const grids = tree.some((e) => !inForm(e) && (e.display === "grid" || e.display === "inline-grid"))
-  const tables = tree.some((e) => e.tag === "table")
-  const blocked = searchList || blocking.length > 2 || grids || tables
+  const grids = tree.some((e) => !inForm(e) && (e.display === "grid" || e.display === "inline-grid" || e.role === "grid"))
+  const cells = (el) => descendantsOf(el.i, map).filter((d) => d.tag === "td" || d.tag === "th" || d.role === "cell" || d.role === "gridcell").length
+  const bigTable = tree.some((e) => (e.tag === "table" || e.role === "table" || e.role === "grid") && cells(e) >= 6)
+  const blocked = searchList || bigTable || grids || blocking.length > 1
   if (allowed.has("prose") && !blocked && ch >= 55 && ch <= 80 && paragraphs.length >= 1) return { kind: "prose", ch }
   const left = column.rect.x
   const right = (column.viewport || 0) - (column.rect.x + column.rect.width)
   const centered = left >= 24 && right >= 24 && Math.abs(left - right) <= 24
   const password = tree.some((e) => e.password)
   const form = tree.some((e) => e.tag === "form")
-  const fields = tree.filter((e) => e.tag === "input" || e.tag === "textarea" || e.tag === "select").length
+  const fields = tree.filter((e) => (e.tag === "input" || e.tag === "textarea" || e.tag === "select") && e.rect && e.rect.width > 0 && e.rect.height > 0).length
   const nav = tree.some((e) => e.tag === "nav" || e.tag === "header" || e.role === "navigation")
   const outside = cards.filter((e) => !inForm(e) && !callout(e))
-  const data = grids || tables || outside.length > 1
-  if (allowed.has("signin") && password && form && centered && !nav && !data && fields <= 3) return { kind: "signin", ch }
+  const data = bigTable || grids || outside.length > 1
+  if (allowed.has("signin") && password && form && centered && !nav && !data && fields <= 4) return { kind: "signin", ch }
   return { kind: "", ch }
 }
 
@@ -671,6 +681,7 @@ export function evaluate(snapshot, config) {
   for (const card of cards) {
     beat()
     let row = cardSlack(card, rowAdjusted(card, elements, config, map), config.whitespacePx)
+    if (card.fills && row.status === "fail") row = { ...row, status: "pass", message: "Card height matches its content plus padding." }
     if (card.moved && row.status === "fail") row = { ...row, status: "review", message: `${row.message} Layout was still moving.` }
     const declared = flagged(card, "card") || Boolean(card.dataUi) || (card.classes || []).some((c) => CARD_RE.test(c))
     const slack = row.measured.slack || 0

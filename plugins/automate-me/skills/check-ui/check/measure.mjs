@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, writeSync, existsSync, realpathSync, mkdirSync, mkdtempSync } from "node:fs"
+import { readFileSync, writeFileSync, writeSync, existsSync, realpathSync, mkdirSync, mkdtempSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { pathToFileURL, fileURLToPath } from "node:url"
@@ -111,35 +111,32 @@ function resolveTarget(input) {
   return pathToFileURL(abs).href
 }
 
+async function markMotion(page) {
+  const sample = () => page.evaluate(() => [...document.querySelectorAll("body *")].slice(0, 120).map((el) => {
+    const r = el.getBoundingClientRect()
+    return [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)]
+  }))
+  const before = await sample()
+  await new Promise((resolve) => setTimeout(resolve, 250))
+  const after = await sample()
+  const moved = []
+  for (let i = 0; i < before.length; i++) {
+    const a = before[i]
+    const b = after[i]
+    if (!a || !b) continue
+    if (Math.abs(a[0] - b[0]) > 1 || Math.abs(a[1] - b[1]) > 1 || Math.abs(a[2] - b[2]) > 1 || Math.abs(a[3] - b[3]) > 1) moved.push(i)
+  }
+  if (moved.length) {
+    await page.evaluate((indexes) => {
+      const nodes = [...document.querySelectorAll("body *")].slice(0, 120)
+      indexes.forEach((index) => { if (nodes[index]) nodes[index].dataset.moved = "1" })
+    }, moved)
+  }
+}
+
 async function collect(opts) {
   const selectors = opts.selectors || {}
   const deadline = opts.deadline || 0
-  const moved = new Set()
-  if (document.body) {
-    const sample = [...document.body.querySelectorAll("*")].slice(0, 120)
-    const before = sample.map((el) => {
-      const r = el.getBoundingClientRect()
-      return [el, r.x, r.y, r.width, r.height]
-    })
-    const pause = Math.min(300, Math.max(0, (deadline || Date.now() + 300) - Date.now()))
-    if (pause > 40) {
-      await new Promise((resolve) => {
-        const start = performance.now()
-        let done = false
-        const finish = () => { if (!done) { done = true; resolve() } }
-        const step = () => {
-          if (performance.now() - start >= pause) finish()
-          else requestAnimationFrame(step)
-        }
-        requestAnimationFrame(step)
-        setTimeout(finish, pause + 50)
-      })
-    }
-    for (const [el, x, y, w, h] of before) {
-      const r = el.getBoundingClientRect()
-      if (Math.abs(r.x - x) > 1 || Math.abs(r.y - y) > 1 || Math.abs(r.width - w) > 1 || Math.abs(r.height - h) > 1) moved.add(el)
-    }
-  }
   const errors = []
   const hits = { cards: 0, groups: 0, columns: 0, headings: 0, body: 0, buttons: 0, containers: 0 }
   const iframes = []
@@ -245,10 +242,17 @@ async function collect(opts) {
     })
     const blocked = new Set(["html", "body", "header", "nav", "footer", "pre", "code", "td", "th", "tr", "table", "button", "input", "textarea", "select", "option", "label", "iframe"])
     const textLen = (el.innerText || "").trim().length
-    const radius = parseFloat(style.borderRadius) || 0
-    const avatar = rect.width >= 16 && rect.width <= 64 && Math.abs(rect.width - rect.height) <= 6 && radius >= rect.width * 0.4
+    const radiusRaw = (style.borderRadius || "0").split(" ")[0]
+    const radius = radiusRaw.endsWith("%") ? (parseFloat(radiusRaw) / 100) * Math.min(rect.width, rect.height) : (parseFloat(radiusRaw) || 0)
+    const round = radius >= Math.min(rect.width, rect.height) * 0.4
+    const avatar = round && rect.width <= 96 && rect.height <= 96 && textLen > 0 && textLen <= 3 && Math.abs(rect.width - rect.height) <= 8
     const oneLine = el.querySelectorAll("h1,h2,h3,p,ul,ol,table").length === 0
-    const controlBox = rect.height > 0 && rect.height <= 48 && rect.width > 0 && rect.width <= 280 && oneLine && textLen > 0 && textLen < 40
+    const roleName = el.getAttribute("role") || ""
+    const interactive = tag === "a" || tag === "button" || ["button", "tab", "switch", "menuitem"].includes(roleName)
+    const controlBox = interactive && oneLine && textLen < 80 && rect.height > 0 && rect.height <= 80
+    const visibleW = Math.min(rect.right, window.innerWidth) - Math.max(rect.left, 0)
+    const offscreen = rect.width > 0 && visibleW < Math.min(24, rect.width * 0.25) || rect.bottom < 0 || style.visibility === "hidden" || style.opacity === "0"
+    const hasImage = (style.backgroundImage || "").includes("url(")
     const sidebar = tag === "aside" && rect.height > window.innerHeight * 0.55 && rect.width < window.innerWidth * 0.45
     const inlineOnly = style.display === "inline"
     const parentLayout = parentStyle && (parentStyle.display.includes("flex") || parentStyle.display.includes("grid"))
@@ -273,7 +277,9 @@ async function collect(opts) {
     let guess = ""
     const strong = hasBorder || hasShadow || (hasBg && (hasPad || rect.height >= 48))
     const weak = outline > 0 || beforeOn || (image !== "none" && !hasBg) || (hasPad && childBorder)
-    if (!blocked.has(tag) && !fills && !inlineOnly && !controlBox && !avatar && !sidebar && textLen > 0 && (strong || weak)) {
+    const stickyCol = (style.position === "sticky" || style.position === "fixed") && rect.height > 160 && el.parentElement && [...el.parentElement.children].some((sib) => sib !== el && sib.getBoundingClientRect().height >= rect.height - 8)
+    const hiddenCard = (offscreen || stickyCol) && (hasBorder || hasBg || hasShadow)
+    if (!blocked.has(tag) && !inlineOnly && !controlBox && !avatar && !sidebar && !hiddenCard && textLen > 0 && (strong || weak)) {
       cardLike = true
       guess = strong ? "high" : "low"
     }
@@ -298,7 +304,9 @@ async function collect(opts) {
       stretched,
       cardLike,
       guess,
-      moved: moved.has(el),
+      media: ["img", "svg", "canvas", "video", "picture"].includes(tag) || hasImage,
+      fills,
+      moved: el.dataset.moved === "1",
       strict: Boolean(el.id && false),
       minHeight: parseFloat(style.minHeight) || 0,
       hero: fullBleed || (band && minH >= 160 && hasBg && rect.top < 280 && !hasBorder),
@@ -346,7 +354,15 @@ async function collect(opts) {
   const shown = [...(document.body ? document.body.children : [])].filter((el) => !/^(SCRIPT|STYLE)$/.test(el.tagName))
   const onlyPre = shown.length === 1 && shown[0].tagName === "PRE"
   const preText = onlyPre ? shown[0].innerText.trim() : ""
-  const statusHeading = [...document.querySelectorAll("h1,h2")].some((h) => /^(?:(?:erreur|error|fehler|http)\s+)?\d{3}(?:\s+(?:not found|error|erreur|introuvable|unavailable|service unavailable|internal server error|bad gateway))?$/i.test((h.innerText || "").trim()))
+  function walkHeads(node, out = []) {
+    if (!node) return out
+    if (node.nodeType === 1 && /^H[1-3]$/.test(node.tagName || "")) out.push((node.innerText || "").trim())
+    if (node.shadowRoot) walkHeads(node.shadowRoot, out)
+    for (const child of node.children || []) walkHeads(child, out)
+    return out
+  }
+  const headList = walkHeads(document.body)
+  const statusHeading = headList.some((text) => /^(?:(?:erreur|error|fehler|error|http|servicio)\s*[—-]?\s*)?\d{3}(?:\s*[—-]?\s*(?:not found|error|erreur|introuvable|unavailable|service unavailable|internal server error|bad gateway|servicio no disponible))?$/i.test(text))
   const statusNode = document.querySelector("[role='status'], [role='progressbar']")
   const statusText = statusNode ? (statusNode.innerText || "").trim() : ""
   const busy = Boolean(document.querySelector("[aria-busy='true']")) && raw.length < 120 || (statusText.length > 0 && raw.length < 120 && statusText.length >= Math.max(1, raw.length) * 0.7)
@@ -357,7 +373,6 @@ async function collect(opts) {
     const bg = s.backgroundColor && s.backgroundColor !== "transparent" && s.backgroundColor !== "rgba(0, 0, 0, 0)"
     return bg && r.height >= 8 && r.height <= 48 && r.width >= 40
   })
-  const skeleton = bars.length >= 3 && raw.length < 40
   const emptyRoot = shown.length === 1 && !raw && shown[0].children.length === 0
   function hasControl(node) {
     if (!node) return false
@@ -384,15 +399,23 @@ async function collect(opts) {
   const heads = [...document.querySelectorAll("h1,h2,h3")].map((h) => (h.innerText || "").trim()).join(" ")
   const blob = `${heads} ${raw}`.toLowerCase()
   const paras = document.querySelectorAll("p").length
-  const errorish = raw.length < 500 && paras < 5 && /something went wrong|try again|could not load|unable to|page not found|introuvable|nicht verf|nicht gefunden|erreur|fehler|cargando|読み込み|エラー|\bloading\b/.test(blob)
+  const errorish = raw.length < 500 && paras < 5 && /something went wrong|try again|could not load|unable to|page not found|introuvable|nicht verf|nicht gefunden|erreur|fehler|cargando|読み込み|エラー|sali[oó] mal|no pudimos|reintentar|n[aã]o encontrada|oops|\bloading\b|no results yet|nothing here/.test(blob)
+  const mainBox = (document.querySelector("main") || document.body).getBoundingClientRect()
+  const centeredPane = mainBox.width < window.innerWidth * 0.72 && mainBox.left > 48 && window.innerWidth - mainBox.right > 48
+  const actions = document.querySelectorAll("button, a[href]").length
+  const fields = document.querySelectorAll("input, textarea, select").length
+  const sparse = raw.length < 320 && headList.length <= 2 && paras <= 2 && fields === 0 && actions > 0 && actions <= 2
+  const loneMessage = centeredPane && sparse && !document.querySelector("table, [role='table']") && document.querySelectorAll("main div, main section, main article").length < 2
+  const skeleton = bars.length >= 3 && raw.length < 180 && fields === 0
   const spinner = [...document.querySelectorAll("div,span")].some((el) => {
     const s = getComputedStyle(el)
     const r = el.getBoundingClientRect()
     const spin = s.animationName && s.animationName !== "none"
     return spin && r.width >= 12 && r.width <= 80 && Math.abs(r.width - r.height) <= 8 && raw.length < 220
   })
-  const root = document.querySelector("#root, #app")
-  const shell = Boolean(root) && !(root.innerText || "").trim() && root.children.length === 0 && raw.length < 80
+  const root = document.querySelector("#root, #app, #main-app, [id$='root'], [id$='app']")
+  const shell = Boolean(root) && !(root.innerText || "").trim() && raw.length < 120 && document.querySelectorAll("h1, p").length === 0
+  const onlyFrame = document.querySelectorAll("iframe").length > 0 && document.querySelectorAll("h1, p, button, article").length === 0
   return {
     viewportWidth: window.innerWidth,
     scrollWidth: Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0),
@@ -403,9 +426,9 @@ async function collect(opts) {
     bodyBox: document.body ? (() => { const r = document.body.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: Math.min(r.height, 800) } })() : { x: 0, y: 0, width: 320, height: 180 },
     text: raw.slice(0, 240),
     thin,
-    errorish,
+    errorish: errorish || loneMessage,
     spinner,
-    shell,
+    shell: shell || onlyFrame,
     busy,
     skeleton,
     emptyRoot,
@@ -491,46 +514,90 @@ async function shoot(page, rules, width, dir, remaining, stamp) {
   if (!dir) return true
   mkdirSync(dir, { recursive: true })
   let n = 0
+  let missed = false
   for (const rule of rules) {
-    if (remaining && remaining() < 150) return false
+    if (remaining && remaining() < 80) return false
     if (rule.status !== "review") continue
-    const box = rule.measured || {}
-    if (!(box.width > 1) || !(box.height > 1)) continue
     const file = path.join(dir, `${stamp}-${width}-${n}.png`)
     n += 1
     try {
-      const placed = await page.evaluate(({ x, y, w, h }) => {
-        const nodes = [...document.querySelectorAll("body *")]
-        const el = nodes.find((node) => {
-          const r = node.getBoundingClientRect()
-          return Math.abs(r.x - x) < 3 && Math.abs(r.y - y) < 3 && Math.abs(r.width - w) < 6 && Math.abs(r.height - h) < 6
-        })
-        if (el) el.scrollIntoView({ block: "center", inline: "center" })
-        window.scrollBy(-16, -16)
-        let r = el ? el.getBoundingClientRect() : { x, y: y - window.scrollY, width: w, height: h }
-        if (el && (r.x < 0 || r.y < 0 || r.right > window.innerWidth - 2 || r.bottom > window.innerHeight - 2)) {
-          el.style.setProperty("position", "relative", "important")
-          el.style.setProperty("left", "8px", "important")
-          el.style.setProperty("top", "8px", "important")
-          r = el.getBoundingClientRect()
+      await page.evaluate((selector) => {
+        function pick(sel) {
+          if (!sel) return null
+          const parts = sel.split(">>>").map((part) => part.trim()).filter(Boolean)
+          let nodes = [document]
+          for (const part of parts) {
+            const next = []
+            for (const root of nodes) {
+              const scope = root.shadowRoot || root
+              try { scope.querySelectorAll(part).forEach((node) => next.push(node)) } catch (err) { void err }
+            }
+            nodes = next
+            if (!nodes.length) return null
+          }
+          return nodes[0] || null
         }
-        return { x: r.x, y: r.y, width: r.width, height: r.height }
-      }, { x: box.x || 0, y: box.y || 0, w: box.width, h: box.height })
-      const clip = {
-        x: Math.max(0, placed.x || 0),
-        y: Math.max(0, placed.y || 0),
-        width: Math.min(Math.max(2, placed.width || box.width), 1200),
-        height: Math.min(Math.max(2, placed.height || box.height), 800, VIEWPORT_HEIGHT - 2),
+        const el = pick(selector)
+        if (!el) return
+        let node = el
+        while (node) {
+          node.style.setProperty("overflow", "visible", "important")
+          node.style.setProperty("clip-path", "none", "important")
+          node = node.parentElement
+        }
+        el.scrollIntoView({ block: "center", inline: "nearest" })
+        const r = el.getBoundingClientRect()
+        if (r.right < 8 || r.left > window.innerWidth - 8 || r.bottom < 8 || r.top > window.innerHeight - 8) {
+          el.style.setProperty("position", "relative", "important")
+          el.style.setProperty("left", "16px", "important")
+          el.style.setProperty("top", "16px", "important")
+        }
+      }, rule.element || "")
+      const handle = await page.evaluateHandle((selector) => {
+        const parts = (selector || "").split(">>>").map((part) => part.trim()).filter(Boolean)
+        let nodes = [document]
+        for (const part of parts) {
+          const next = []
+          for (const root of nodes) {
+            const scope = root.shadowRoot || root
+            try { scope.querySelectorAll(part).forEach((node) => next.push(node)) } catch (err) { void err }
+          }
+          nodes = next
+        }
+        return nodes[0] || null
+      }, rule.element || "")
+      const element = handle.asElement()
+      if (!element) {
+        missed = true
+        rule.shot = ""
+        continue
       }
-      if (clip.x + clip.width > width) clip.width = Math.max(2, width - clip.x - 1)
-      if (clip.y + clip.height > VIEWPORT_HEIGHT) clip.height = Math.max(2, VIEWPORT_HEIGHT - clip.y - 1)
-      await page.screenshot({ path: file, clip })
-      rule.shot = file
+      const box = await element.boundingBox()
+      if (!box || box.width < 2 || box.height < 2) {
+        await page.screenshot({ path: file, animations: "disabled", timeout: 2000 })
+      } else {
+        await page.screenshot({
+          path: file,
+          animations: "disabled",
+          timeout: 2000,
+          clip: {
+            x: Math.max(0, box.x),
+            y: Math.max(0, box.y),
+            width: Math.max(2, Math.min(box.width, 1200)),
+            height: Math.max(2, Math.min(box.height, 800)),
+          },
+        }).catch(() => page.screenshot({ path: file, animations: "disabled", timeout: 2000 }))
+      }
+      if (!existsSync(file) || statSync(file).size < 32) {
+        missed = true
+        rule.shot = ""
+      } else rule.shot = file
     } catch (e) {
+      missed = true
       rule.shot = ""
     }
   }
-  return true
+  return missed ? "crop" : true
 }
 
 async function measureWidth(browser, target, width, widths, config, remaining, waitFor) {
@@ -591,7 +658,8 @@ async function measureWidth(browser, target, width, widths, config, remaining, w
       }
     }
     if (waitFor) await until(page.waitForSelector(waitFor, { timeout: remaining() }), remaining())
-    const still = await settle(page, Math.min(3000, remaining()), remaining)
+    const still = await settle(page, Math.min(1500, remaining()), remaining)
+    if (remaining() > 800) await markMotion(page)
     const snapshot = await until(page.evaluate(collect, { selectors: config.selectors, deadline: Date.now() + remaining() }), remaining())
     snapshot.moving = !still
     if (snapshot.errors && snapshot.errors.length) stop(`bad selector: ${snapshot.errors[0]}`)
@@ -619,7 +687,13 @@ async function measureWidth(browser, target, width, widths, config, remaining, w
       throw e
     }
     const box = snapshot.bodyBox || { x: 0, y: 0, width: 320, height: 180 }
-    if (snapshot.statusHeading || snapshot.skeleton || snapshot.busy || snapshot.emptyRoot || snapshot.shell || snapshot.spinner || snapshot.errorish || snapshot.thin) {
+    const broken = snapshot.statusHeading || snapshot.skeleton || snapshot.busy || snapshot.emptyRoot || snapshot.shell || snapshot.spinner || snapshot.errorish || snapshot.thin
+    if (broken) {
+      for (let i = 0; i < rules.length; i++) {
+        if (rules[i].id === "G1" && rules[i].status === "fail" && /Main column/.test(rules[i].message)) {
+          rules[i] = { ...rules[i], status: "skip", message: "This page is not a finished screen." }
+        }
+      }
       const message = snapshot.statusHeading
         ? "The main heading is a status code. It needs a look."
         : snapshot.spinner
@@ -645,7 +719,7 @@ async function measureWidth(browser, target, width, widths, config, remaining, w
       fatal = true
       reason = reason || "The document is not HTML."
     }
-    if (snapshot.empty) {
+    if (snapshot.empty && !snapshot.shell && !snapshot.emptyRoot) {
       fatal = true
       reason = reason || "The page has no visible content."
     }
@@ -718,23 +792,34 @@ async function main() {
     const open = []
     const reports = []
     let timedOut = false
+    let cropMiss = false
     for (const width of widths) {
-      if (Date.now() >= deadline) { timedOut = true; break }
+      if (remaining() < 250) { timedOut = true; break }
       const item = await measureWidth(browser, target, width, widths, config, remaining, args.waitFor)
       open.push(item)
-      if (shots) {
-        const ok = await shoot(item.page, item.rules, item.width, shots, remaining, stamp)
-        if (!ok) timedOut = true
+      if (shots && !item.fatal) {
+        const shot = await shoot(item.page, item.rules, item.width, shots, remaining, stamp)
+        if (shot === false) timedOut = true
+        if (shot === "crop") cropMiss = true
       }
       reports.push(item)
       if (timedOut) break
     }
-    if (!reports.length) stop("timed out")
+    if (!reports.length) {
+      reports.push({
+        width: widths[0],
+        rules: [{ id: "G1", status: "skip", element: "", measured: {}, limit: {}, message: "The run timed out." }],
+        warnings: [],
+        fatal: true,
+        reason: "timed out",
+      })
+      timedOut = true
+    }
     const warnings = [...new Set(reports.flatMap((item) => item.warnings || []))]
-    const fatal = timedOut || reports.some((item) => item.fatal)
+    const fatal = timedOut || cropMiss || reports.some((item) => item.fatal)
     const report = buildReport(args.url, reports, {
       fatal,
-      reason: timedOut ? "timed out" : ((reports.find((item) => item.reason) || {}).reason || ""),
+      reason: timedOut ? "timed out" : cropMiss ? "A review row has no crop." : ((reports.find((item) => item.reason) || {}).reason || ""),
       warnings,
       shots,
     })
@@ -748,7 +833,22 @@ async function main() {
     process.exit(code)
   } catch (e) {
     if (browser) await browser.close().catch(() => {})
-    die(e instanceof Stop ? e.message : installHint(e.message || String(e)))
+    const reason = e instanceof Stop ? e.message : installHint(e.message || String(e))
+    const fallback = {
+      page: args.url || "",
+      verdict: "inconclusive",
+      reason,
+      review: [],
+      warnings: [],
+      shots: "",
+      widths: [{ width: 390, rules: [{ id: "G1", status: "skip", element: "", measured: {}, limit: {}, message: reason || "The run timed out." }] }],
+    }
+    const text = `${JSON.stringify(fallback, null, 2)}\n`
+    try { writeAll(1, text) } catch (err) { void err }
+    if (args.out) {
+      try { writeFileSync(args.out, text) } catch (err) { void err }
+    }
+    die(reason)
   }
 }
 

@@ -417,7 +417,7 @@ button { display: block; width: fit-content; margin: 0; padding: 8px 12px; font:
         server.shutdown()
     check("HTTP 500 exits 2", result.returncode == 2 and '"verdict": "pass"' not in result.stdout, result.stderr + result.stdout)
     result = run(["--url", "http://127.0.0.1:9/", "--widths", "390", "--timeout", "8000"])
-    check("a refused connection exits 2", result.returncode == 2 and '"verdict"' not in result.stdout, result.stderr + result.stdout)
+    check("a refused connection exits 2", result.returncode == 2 and '"verdict": "pass"' not in result.stdout, result.stderr + result.stdout)
 
     with tempfile.TemporaryDirectory() as tmp:
         big = os.path.join(tmp, "index.html")

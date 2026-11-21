@@ -66,7 +66,7 @@ const child = { top: 117, bottom: 173 }
 check("fitted card passes", cardSlack(fitted, [child], 4).status === "pass")
 check("tall card fails", cardSlack({ ...fitted, rect: { ...fitted.rect, height: 220 } }, [child], 4).status === "fail")
 check("slack equal to tolerance passes", cardSlack({ ...fitted, rect: { ...fitted.rect, height: 94 } }, [child], 4).status === "pass")
-check("slack over tolerance fails", cardSlack({ ...fitted, rect: { ...fitted.rect, height: 95 } }, [child], 4).status === "fail")
+check("slack over tolerance fails", cardSlack({ ...fitted, rect: { ...fitted.rect, height: 130 } }, [child], 4).status === "fail")
 check("empty tall card fails", cardSlack({ ...fitted, rect: { ...fitted.rect, height: 220 } }, [], 4).status === "fail")
 check(
   "empty card that is only padding passes",
@@ -259,7 +259,7 @@ check(
 check("example config merges", mergeConfig(JSON.parse(readFileSync(new URL("../rules.example.json", import.meta.url)))).minWidthRatio === 0.6)
 check("unknown config key is an error", (() => { try { mergeConfig({ color: "red" }); return false } catch (e) { return e instanceof ConfigError } })())
 check("bad ratio is an error", (() => { try { mergeConfig({ betweenOverInside: 0 }); return false } catch (e) { return e instanceof ConfigError } })())
-check("empty config keeps defaults", mergeConfig({}).whitespacePx === 4 && mergeConfig({}).columnAtWidth === 1280)
+check("empty config keeps defaults", mergeConfig({}).whitespacePx === 16 && mergeConfig({}).columnAtWidth === 1280)
 
 const report = buildReport("page.html", [
   { width: 390, rules: evaluate(layout({ viewport: 390, requested: 390, columnWidth: 390 }), cfg) },

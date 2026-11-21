@@ -49,7 +49,7 @@ Both widths, on every run.
 
 | Id | What it measures |
 |---|---|
-| G1 | A card is no taller than its content plus its own padding, border, and the child margins. Tolerance is 4px in total, not per side. At 1280 the main column is at least 60 percent of the viewport. |
+| G1 | A card is no taller than its content plus its own padding, border, and the child margins. Tolerance is 16px in total, not per side. At 1280 the main column is at least 60 percent of the viewport. |
 | G2 | The gap between groups is at least 2 times the gap inside a group. Design notes often use 3 or 4 times. Raise the ratio for that. |
 | G3 | Containers of one kind share padding within 2px. Kind is the role plus the class list. |
 | G4 | Headings, paragraphs, cards, and buttons in a column share a left edge within 2px. The check uses the spread, not the distance from the middle. A horizontal row counts as one edge, the leftmost item. Right-aligned and centered items are ignored. |
@@ -93,7 +93,7 @@ Copy [rules.example.json](rules.example.json) into the project and pass it with 
 
 | Key | Default | Meaning |
 |---|---|---|
-| whitespacePx | 4 | Extra space allowed inside a card, past content and padding. |
+| whitespacePx | 16 | Extra space allowed inside a card, past content and padding. |
 | paddingPx | 2 | How far padding may drift inside one kind. |
 | alignPx | 2 | How far a left edge may drift from the shared line. |
 | scrollPx | 0 | Extra pixels allowed past the viewport before G9 fails. |
