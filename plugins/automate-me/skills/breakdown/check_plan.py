@@ -106,6 +106,10 @@ def check(p):
         need(s.get("context"), f"{w}: spec.context is empty; list the only files and outputs the agent gets")
         for f in ("outcome", "done_when", "limits", "output", "harness", "verifier"):
             need(s.get(f), f"{w}: spec.{f} is missing")
+        if s.get("output"):
+            sys.path.insert(0, os.path.join(HERE, "..", "outcome", "check"))
+            from check_brief import is_placeholder
+            need(not is_placeholder(str(s.get("output")), "Output"), f"{w}: spec.output is a placeholder")
         one(s.get("outcome", ""), f"{w} spec.outcome")
         need(s.get("harness") in kinds, f"{w}: harness {s.get('harness')!r} is not a kind in shared/harness-kinds.md")
         lp = s.get("loop", {})

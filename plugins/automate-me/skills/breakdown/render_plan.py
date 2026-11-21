@@ -178,12 +178,15 @@ def render_prompt(p, iid):
         f'- Agents and roles: worker {s.get("model")} at {s.get("effort")} effort. The verifier is a fresh agent that did not do the work.',
         *([REVIEW] if changes_code else []),
         "- Evals:",
-        f'  - Pass: the {s["harness"]} should pass.',
-        "  - Fail: one case the harness misses should fail.",
+        "  - unknown: What is one case that should pass, and one that should fail?",
         NOT_PROOF,
         f'- Verification: {s["verifier"]} {EVIDENCE}',
         "At the end: update RESUME.md with the goal, what is done and verified, the next step, key files and gotchas.",
         "Never say done or correct. Report what you ran and its output, and the verifier decides.",
+        "",
+        "## Questions",
+        "",
+        "1. What is one case that should pass, and one that should fail?",
     ]) + "\n"
 
 

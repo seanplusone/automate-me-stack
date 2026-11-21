@@ -13,11 +13,17 @@ Optional: Kind, Plan first, Taste, Skills, Parking lot, Unknowns.
 Fails when:
 - a required slot is missing, or any slot label appears more than once;
 - a slot has no value and no items;
-- a required slot's items are only placeholders: TBD, TODO, N/A, none, `...`, `-`, `?`,
-  a value wrapped in () or [], or text with no letters. The failure names the slot.
-  `none` is allowed on Skills, Parking lot and Unknowns, and as `write first: none` in Tools;
-- Evals has no pass case or no fail case. A pass case starts with `Pass:` or says
-  `should pass`. A fail case starts with `Fail:` or says `should fail`;
+- a required slot's items are only placeholders. Normalize each item first: strip bold and
+  code marks, surrounding punctuation and brackets, and lowercase it. If no real word
+  remains besides a placeholder token (tbd, todo, tbc, n/a, none, placeholder), the slot
+  fails and the failure names it. A template hole such as `<goal here>` or `{{goal}}` is
+  a placeholder. `none` alone is allowed on Skills, Parking lot and Unknowns. Tools and
+  Constraints may say `none: <why>`, and the reason must contain real words. Bare `none`
+  does not. `write first: none` does not name a tool;
+- Evals has no real pass case or no real fail case. The label is the whole word `pass` or
+  `fail` followed by `:`, or the phrase `should pass`, `must pass`, `should fail` or
+  `must fail`. The text of that case must contain a real word. `Fail-safe:` is not a
+  fail case;
 - Plan first is present and does not start with `yes` or `none needed`;
 - an `investigate:` item sits outside Done, an `out of scope:` item outside Constraints,
   or a `how:` item outside Agents and roles;
@@ -49,13 +55,17 @@ MAX_QUESTIONS = 3
 PLAN_OK = re.compile(r"^(yes\b|none needed\b)", re.I)
 TAGS = {"investigate": ["Done"], "out of scope": ["Constraints"], "how": ["Agents and roles"]}
 TAG = re.compile(r"^(" + "|".join(map(re.escape, TAGS)) + r"):", re.I)
-FENCE = re.compile(r"^(?:```|~~~)")
-PLACEHOLDER = {"tbd", "todo", "n/a", "n.a.", "na", "none", "...", "…", "-", "?"}
+FENCE_MARK = re.compile(r"^(```+|~~~+)")
+PLACEHOLDER_WORDS = {"tbd", "todo", "tbc", "n/a", "n.a.", "na", "none", "placeholder"}
+NON_CONTENT = FILLER | {"later", "here", "below", "above"}
 NONE_OK = {"Skills", "Parking lot", "Unknowns"}
-PASS_CASE = re.compile(r"^pass\b|\bshould pass\b", re.I)
-FAIL_CASE = re.compile(r"^fail\b|\bshould fail\b", re.I)
+NONE_REASON = {"Tools", "Constraints"}
+CASE_LABEL = re.compile(r"(?<![\w-])(pass|fail)\s*:", re.I)
+CASE_PHRASE = re.compile(r"\b(?:should|must)\s+(pass|fail)\b", re.I)
+MARKER_WORDS = {"pass", "fail", "should", "must"}
 WRITE_FIRST_NONE = re.compile(r"^write first:\s*none\.?$", re.I)
-WRAPPED = re.compile(r"^(?:\([^()]*\)|\[[^\[\]]*\])$")
+NONE_WHY = re.compile(r"^none:\s*(.*)$", re.I)
+TEMPLATE_HOLE = re.compile(r"^(?:<[^<>\n]+>|\{\{[^{}\n]+\}\})$")
 DEFAULT_ITEM = re.compile(r"^default\b", re.I)
 
 
@@ -71,14 +81,16 @@ def canon(label):
 def parse(text):
     """Returns (slots, questions, counts). slots maps a label to its list of items."""
     slots, counts, questions = {}, {}, []
-    current, last_item, in_questions, fenced = None, None, False, False
+    current, last_item, in_questions, fence = None, None, False, None
     for raw in text.splitlines():
         line = raw.rstrip()
-        if FENCE.match(line.strip()):
-            fenced = not fenced
-            current = None
+        marker = FENCE_MARK.match(line.strip())
+        if fence:
+            if marker and marker.group(1)[0] == fence[0] and len(marker.group(1)) >= fence[1]:
+                fence = None
             continue
-        if fenced:
+        if marker:
+            fence = (marker.group(1)[0], len(marker.group(1)))
             continue
         if re.match(r"^#+\s", line):
             in_questions = bool(re.match(r"^#+\s+Questions\b", line, re.I))
@@ -127,24 +139,73 @@ def is_none(items):
     return len(items) == 1 and items[0].strip().rstrip(".").lower() == "none"
 
 
+def strip_markup(text):
+    text = re.sub(r"\*\*|__", "", text)
+    text = text.replace("`", "")
+    return re.sub(r"\s*/\s*", "/", text).strip()
+
+
+def unwrap(text):
+    prev = None
+    while text != prev:
+        prev = text
+        text = text.strip().strip("\"'*_.,!;?:!")
+        if len(text) >= 2 and (text[0], text[-1]) in {("(", ")"), ("[", "]")}:
+            text = text[1:-1]
+    return text.strip()
+
+
+def content_words(text):
+    raw = unwrap(strip_markup(text)).casefold()
+    words = re.findall(r"[a-z0-9]+(?:/[a-z0-9]+)?", raw)
+    return [w for w in words if w not in NON_CONTENT and w not in PLACEHOLDER_WORDS and any(ch.isalpha() for ch in w)]
+
+
 def is_placeholder(item, slot):
+    """True when the item has no real content for this slot.
+
+    Markup, surrounding punctuation and brackets are stripped first. A template hole
+    (`<...>`, `{{...}}`) is a placeholder. So is text whose only words are placeholder
+    tokens. `none: <why>` is real on Tools and Constraints when the reason has a real word.
+    `write first: none` does not name a tool.
+    """
     text = item.strip()
-    if slot == "Tools" and WRITE_FIRST_NONE.match(text):
-        return False
-    if WRAPPED.match(text):
+    plain = strip_markup(text)
+    if TEMPLATE_HOLE.match(plain.strip().strip("\"'`")):
         return True
-    core = text.rstrip(".").strip()
-    if core.casefold() in PLACEHOLDER:
-        return not (core.casefold() == "none" and slot in NONE_OK)
-    return not any(ch.isalpha() for ch in text)
+    if slot == "Tools" and WRITE_FIRST_NONE.match(unwrap(plain)):
+        return True
+    reason = NONE_WHY.match(unwrap(plain))
+    if reason and slot in NONE_REASON:
+        return not content_words(reason.group(1))
+    if not content_words(plain):
+        core = unwrap(plain).casefold().rstrip(".")
+        return not (core == "none" and slot in NONE_OK)
+    return False
 
 
-def is_pass(item):
-    return bool(PASS_CASE.search(item))
+def eval_cases(item):
+    """Pass and fail cases in one item. A colon label is a whole word plus `:`.
+
+    `should pass` and `must pass` (and the fail forms) count too. The body is empty
+    when nothing real follows the label.
+    """
+    text = strip_markup(item)
+    marks = list(CASE_LABEL.finditer(text))
+    if marks:
+        found = []
+        for i, m in enumerate(marks):
+            end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
+            found.append((m.group(1).lower(), text[m.end():end]))
+        return found
+    found = []
+    for m in CASE_PHRASE.finditer(text):
+        found.append((m.group(1).lower(), text))
+    return found
 
 
-def is_fail(item):
-    return bool(FAIL_CASE.search(item))
+def case_is_real(body):
+    return any(w not in MARKER_WORDS for w in content_words(body))
 
 
 def check(text):
@@ -164,9 +225,10 @@ def check(text):
     evals = slots.get("Evals", [])
     eval_fails = []
     if evals and not all(is_placeholder(i, "Evals") for i in evals):
-        if not any(is_pass(i) for i in evals):
+        kinds = {kind for item in evals for kind, body in eval_cases(item) if case_is_real(body)}
+        if "pass" not in kinds:
             eval_fails.append("Evals has no pass case")
-        if not any(is_fail(i) for i in evals):
+        if "fail" not in kinds:
             eval_fails.append("Evals has no fail case")
     add("Evals has a pass and a fail", eval_fails)
 

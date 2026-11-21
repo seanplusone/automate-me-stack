@@ -90,6 +90,11 @@ class CheckPlan(unittest.TestCase):
         p["gaps"][0]["changes"] = "nothing"
         self.assertTrue(any("changes must name" in e for e in errs(p)))
 
+    def test_placeholder_output_fails(self):
+        p = copy.deepcopy(GOOD)
+        p["items"][0]["spec"]["output"] = "TBD"
+        self.assertTrue(any("spec.output is a placeholder" in e for e in errs(p)))
+
     def test_too_many_items_fails(self):
         p = copy.deepcopy(GOOD)
         p["items"] = [item(c) for c in "ABCDEFGHI"]
@@ -110,6 +115,9 @@ class RenderPlan(unittest.TestCase):
         self.assertNotIn("done when", out)
         self.assertNotIn("Write first:", out)
         self.assertNotIn("Report only", out)
+        self.assertNotIn("the script check should pass", out)
+        self.assertNotIn("harness misses", out)
+        self.assertIn("unknown: What is one case that should pass", out)
         self.assertEqual([f for _, fails in check(out) for f in fails], [])
         quiet = copy.deepcopy(GOOD)
         quiet["items"][1]["spec"]["harness"] = "findings file"

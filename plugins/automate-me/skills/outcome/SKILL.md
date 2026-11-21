@@ -92,7 +92,7 @@ These slots are optional. Write one when the ramble gives you something to put t
 
 Write `yes` for Plan first when the work is big, runs many agents, or costs real time or money. Write `none needed` when it is one pass the user can redo cheaply.
 
-Tools names every tool a check needs, and says to check that the tool works first. It also says what must exist before the run, as `write first: <what>`, or `write first: none`. A source list, a filter list, or an example to run are typical. The plan itself stays in Plan first.
+Tools names every tool a check needs, and says to check that the tool works first. It also says what must be written before the run, as `write first: <what>`, or `write first: none` next to the tool name. `write first: none` by itself does not fill the slot. If there is no tool, write `none: <why>`. A breakdown prompt uses `Waits for:` for the items that must finish first. That is not the `write first:` line. The plan itself stays in Plan first.
 
 Evals name a concrete pass and a concrete fail. An eval is not a restatement of Done with no example.
 
@@ -157,7 +157,7 @@ Then apply brief-check's trap list (Step 2) to the brief, one line per trap foun
 - Vague scope ("the PRD", "the repo") names a link, path or branch, or becomes an unknown.
 - A check that needs a tool (a browser, images, a test run) names it in Tools, including what to write first.
 
-Run `python3 "$SKILL_DIR"/check/check_brief.py <brief.md>` and fix what it flags. It checks the shape. Every required slot is present once and filled. A required slot that is only TBD, TODO, N/A, none, or a blank mark fails, and the line names the slot. `none` may sit on Skills, Parking lot, Unknowns, and as `write first: none` under Tools. Evals names one pass case and one fail case. Plan first, when present, says yes or none needed. Every unknown has a question and no default beside it. Tagged items sit in their slots, there are at most 3 questions, and no slot is only an adjective. Run `python3 "$SKILL_DIR"/../shared/check_writing.py <brief.md>` and rewrite the lines it flags.
+Run `python3 "$SKILL_DIR"/check/check_brief.py <brief.md>` and fix what it flags. It checks the shape. Every required slot is present once and filled. A required slot with no real words fails, and the line names the slot. `none` may sit on Skills, Parking lot and Unknowns. Tools and Constraints may say `none: <why>` when the reason is real. Evals names one pass case and one fail case, each with real text after the label. Plan first, when present, says yes or none needed. Every unknown has a question and no default beside it. Tagged items sit in their slots, there are at most 3 questions, and no slot is only an adjective. Run `python3 "$SKILL_DIR"/../shared/check_writing.py <brief.md>` and rewrite the lines it flags.
 
 ## 4. Read back
 
