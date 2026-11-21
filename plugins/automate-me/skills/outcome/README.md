@@ -11,8 +11,8 @@ Status: new. Four synthetic scored cases, plus `missing-evals`, which fails the 
 `check/check_brief.py` checks a brief's shape:
 
 - every required slot is present once and filled (Goal, Done, Output, Constraints, Tools, Agents and roles, Evals, Verification). Kind, Plan first, Taste, Skills, Parking lot and Unknowns are optional. A note in brackets after a label, as in `- Taste (flag, don't filter):`, is allowed;
-- a required slot whose items are only a placeholder fails, and the failure names the slot. A placeholder is TBD, TODO, N/A, none, `...`, `-`, `?`, a value wrapped in parentheses or brackets, or text with no letters. `none` is allowed on Skills, Parking lot and Unknowns, and as `write first: none` in Tools;
-- Evals names a pass case and a fail case. A pass case starts with `Pass:` or says `should pass`. A fail case starts with `Fail:` or says `should fail`;
+- a required slot whose items have no real words fails, and the failure names the slot. Bold, code marks, and surrounding punctuation and brackets are stripped first. Placeholder tokens are tbd, todo, tbc, n/a, none and placeholder. A template hole such as `<goal here>` or `{{goal}}` counts. `none` alone is allowed on Skills, Parking lot and Unknowns. Tools and Constraints may use `none: <why>` when the reason has a real word. Bare `none` does not. `write first: none` does not name a tool;
+- Evals names a real pass case and a real fail case. The label is the word pass or fail followed by a colon, or the phrase should pass, must pass, should fail or must fail. The case text after that label must have a real word;
 - Plan first, when present, starts with `yes` or `none needed`;
 - an `investigate:` item sits in Done, an `out of scope:` item in Constraints, and a `how:` item in Agents and roles;
 - a slot that holds `unknown:` offers no default beside it;

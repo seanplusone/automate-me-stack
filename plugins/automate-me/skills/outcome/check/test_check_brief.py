@@ -167,7 +167,49 @@ expect("should pass and should fail", MIN.replace(EVALS, "- Evals: One row shoul
 expect("numbered evals", MIN.replace(EVALS, "- Evals:\n  1. Pass: keep a listing.\n  2. Fail: drop a listing.\n"), set())
 expect("evals inside a fence", MIN.replace(EVALS, "```\n- Evals:\n  - Pass: keep a listing.\n  - Fail: drop a listing.\n```\n"), {PRESENT})
 expect("evals inside a tilde fence", MIN.replace(EVALS, "~~~\n- Evals:\n  - Pass: keep a listing.\n  - Fail: drop a listing.\n~~~\n"), {PRESENT})
-expect("write first none is allowed", MIN.replace("- Tools: A browser. Write first: none.\n", "- Tools: write first: none.\n"), set())
+expect("write first none with no tool is a placeholder",
+       MIN.replace("- Tools: A browser. Write first: none.\n", "- Tools: write first: none\n"), {PLACE})
+expect("one line pass and fail", MIN.replace(EVALS, "- Evals: Pass: keep a row. Fail: drop a row.\n"), set())
+expect("bold pass and fail", MIN.replace(EVALS, "- Evals:\n  - **Pass:** keep a row.\n  - **Fail:** drop a row.\n"), set())
+expect("must pass and must fail", MIN.replace(EVALS, "- Evals: One row must pass, and one row must fail.\n"), set())
+expect("real text in parentheses", MIN.replace("- Output: 10 rows in the reply.\n", "- Output: (one PDF of 24 half-sheet cards).\n"), set())
+expect("none with a reason on Tools",
+       MIN.replace("- Tools: A browser. Write first: none.\n", "- Tools: none: the person already has the pages.\n"), set())
+expect("none with a reason on Constraints",
+       MIN.replace("- Constraints: Stop after one peek.\n", "- Constraints: none: this search has no hard stop.\n"), set())
+expect("bare none on Constraints", MIN.replace("- Constraints: Stop after one peek.\n", "- Constraints: none.\n"), {PLACE})
+
+for bad in ("- Evals:\n  - Pass: TBD\n  - Fail: drop a row.\n",
+            "- Evals:\n  - Pass: keep a row.\n  - Fail: TBD\n",
+            "- Evals:\n  - Pass:\n  - Fail: drop a row.\n",
+            "- Evals:\n  - Pass: keep a row.\n  - Fail:\n",
+            "- Evals: It should pass or should fail, TBD.\n",
+            "- Evals:\n  - Pass: keep a row.\n  - Fail-safe: the run stops.\n"):
+    RAN.append(f"bad eval {bad.splitlines()[-1]}")
+    msgs = [m for _, fs in check(MIN.replace(EVALS, bad if bad.endswith("\n") else bad + "\n")) for m in fs]
+    if not any("Evals" in m for m in msgs):
+        FAILS.append(f"bad eval not named: {bad!r} -> {msgs}")
+
+for ph in ("**TBD**", "`TBD`", "TBD!", "TBD:", "N / A", "TBD later", "TBC", "<goal here>", "{{goal}}", "placeholder"):
+    RAN.append(f"required placeholder {ph}")
+    msgs = [m for _, fs in check(MIN.replace("- Goal: Find 10 listings.\n", f"- Goal: {ph}\n")) for m in fs]
+    if not any("Goal" in m and "placeholder" in m for m in msgs):
+        FAILS.append(f"required placeholder {ph}: {msgs}")
+
+after = MIN.replace(
+    "- Evals:\n  - Pass: keep a 3 bed listing.\n  - Fail: drop a listing with no photo.\n",
+    "- Evals:\n````\nignored\n```\nstill inside\n````\n  - Pass: keep a listing.\n  - Fail: drop a listing.\n",
+)
+expect("item after a fence still counts", after, set())
+stolen = MIN.replace(
+    "- Goal: Find 10 listings.\n",
+    "- Goal: Find 10 listings.\n````\n- Goal: stolen\n```\nstill inside\n````\n",
+)
+RAN.append("inner fence does not close a longer fence")
+from check_brief import parse
+slots, _, counts = parse(stolen)
+if slots.get("Goal") != ["Find 10 listings."] or counts.get("Goal") != 1:
+    FAILS.append(f"inner fence does not close a longer fence: {slots.get('Goal')} x{counts.get('Goal')}")
 
 RAN.append("dotless i label fails without a traceback")
 dotless = GOOD.replace("- Verification:", "- Ver\u0131fication:")
