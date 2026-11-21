@@ -28,7 +28,7 @@ The script starts those CLIs in `<checkout>`. The brief is their stdin, not an a
 
 `bwrap` is the reference backend. `--sandbox docker` is a stub. Before a mount, the script walks the cwd and every parent up to the root. The walk follows links and enters dot directories, `.git`, and `node_modules`.
 
-If a `key.md` is reachable and the cwd is not a case with `head` and `base`, the run is refused. A practice run without `bwrap` is refused too.
+If a `key.md` is reachable and the cwd is not a case with `head` and `base`, the run is refused. A directory that cannot be listed is treated the same way. A practice run without `bwrap` is refused too.
 
 The sandbox is a fresh root. `/usr`, `/bin`, `/lib`, and `/etc/alternatives` are read-only, so `awk`, `sed`, `grep`, `find`, `python3`, `python`, and `git` resolve. `/tmp` is a writable empty disk. The CLI package directory is read-only, so a helper next to the real binary is visible.
 
@@ -36,7 +36,7 @@ Network stays on. A real review can reach the public internet and a local servic
 
 `/work` is the checkout when no `key.md` is reachable. When the cwd is a case, `/work` holds only the copied `head` and `base`. The case key is not copied.
 
-Login files are passed in with `bwrap --file` and are not written to the host. Codex gets `auth.json` and `config.toml` with host tables removed: projects, hooks, plugins, mcp servers, notify, and history. Paths that point at host directories are removed too. Claude gets `.credentials.json`, and `.claude.json` under `CLAUDE_CONFIG_DIR` with onboarding and account fields only. `CODEX_HOME` and `CLAUDE_CONFIG_DIR` point at `/home/agent`. API key variables are passed by name and are not printed. Add a backend by teaching `attack_agents.py` a new `--sandbox` name.
+Login files are passed in with `bwrap --file` and are not written to the host. Codex gets `auth.json` and `config.toml` with host tables removed: projects, hooks, plugins, mcp servers, and notify. History keeps its settings, except paths under the home directory or the repo. Claude gets `.credentials.json`, and `.claude.json` under `CLAUDE_CONFIG_DIR` with onboarding and account fields only. `CODEX_HOME` and `CLAUDE_CONFIG_DIR` point at `/home/agent`. API key variables are passed by name and are not printed. Add a backend by teaching `attack_agents.py` a new `--sandbox` name.
 
 ## Brief
 
