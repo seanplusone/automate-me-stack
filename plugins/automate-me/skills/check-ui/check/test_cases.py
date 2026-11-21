@@ -489,6 +489,36 @@ button { display: block; width: fit-content; margin: 0; padding: 8px 12px; font:
         except json.JSONDecodeError:
             xml_report = None
         check("an XML file is not HTML", xml.returncode == 2 and xml_report and xml_report.get("verdict") == "inconclusive" and "not HTML" in (xml_report.get("reason") or ""), xml.stdout[-240:] + xml.stderr[-240:])
+        class Feed(BaseHTTPRequestHandler):
+            def do_GET(self):
+                body = b"<feed><item>One</item></feed>"
+                self.send_response(200)
+                self.send_header("Content-Type", "application/xml")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, fmt, *args):
+                return
+
+        feed_server = ThreadingHTTPServer(("127.0.0.1", 0), Feed)
+        feed_port = feed_server.server_address[1]
+        feed_thread = threading.Thread(target=feed_server.serve_forever, daemon=True)
+        feed_thread.start()
+        started_feed = time.time()
+        try:
+            feed = run(["--url", f"http://127.0.0.1:{feed_port}/feed", "--widths", "1280", "--timeout", "8000"])
+        finally:
+            feed_server.shutdown()
+        try:
+            feed_report = json.loads(feed.stdout)
+        except json.JSONDecodeError:
+            feed_report = None
+        check(
+            "an extensionless XML feed is inconclusive",
+            feed.returncode == 2 and feed_report and "not HTML" in (feed_report.get("reason") or "") and time.time() - started_feed < 6,
+            f"{feed.returncode} {time.time() - started_feed:.1f}s {feed.stderr[-160:]}",
+        )
         huge = os.path.join(tmp, "huge.html")
         with open(huge, "w") as fh:
             fh.write("<!doctype html><main>" + "".join(f"<div>Row {i}</div>" for i in range(20000)) + "</main>")
