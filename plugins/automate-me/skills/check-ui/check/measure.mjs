@@ -262,23 +262,34 @@ async function collect(opts) {
       const others = [...el.parentElement.children].filter((sib) => sib !== el).map((sib) => sib.getBoundingClientRect().height)
       const tallestOther = others.length ? Math.max(...others) : 0
       fills = stretch && tallestOther >= rect.height - 8
+    }
+    if (!fills && rect.height > 400 && el.parentElement) {
+      const matched = [...el.parentElement.children].some((sib) => {
+        if (sib === el) return false
+        const h = sib.getBoundingClientRect().height
+        return h > 400 && Math.abs(h - rect.height) < Math.max(48, rect.height * 0.08)
+      })
+      if (matched) fills = true
+    }
+    if (!fills && el.parentElement && el.parentElement.parentElement) {
       const grand = el.parentElement.parentElement
-      if (!fills && grand) {
-        const gd = getComputedStyle(grand).display
-        if (gd.includes("flex") || gd.includes("grid")) {
-          const row = [...grand.children].filter((sib) => sib !== el.parentElement).map((sib) => sib.getBoundingClientRect().height)
-          const tallestRow = row.length ? Math.max(...row) : 0
-          const parentH = el.parentElement.getBoundingClientRect().height
-          if (Math.abs(rect.height - parentH) <= 4 && tallestRow >= rect.height - 8) fills = true
-        }
+      const gd = getComputedStyle(grand).display
+      if (gd.includes("flex") || gd.includes("grid")) {
+        const row = [...grand.children].filter((sib) => sib !== el.parentElement).map((sib) => sib.getBoundingClientRect().height)
+        const tallestRow = row.length ? Math.max(...row) : 0
+        const parentH = el.parentElement.getBoundingClientRect().height
+        if (Math.abs(rect.height - parentH) <= 4 && tallestRow >= rect.height - 8) fills = true
       }
     }
     let cardLike = false
     let guess = ""
     const strong = hasBorder || hasShadow || (hasBg && (hasPad || rect.height >= 48))
     const weak = outline > 0 || beforeOn || (image !== "none" && !hasBg) || (hasPad && childBorder)
+    const scrim = style.position === "absolute" && el.parentElement && Math.abs(rect.height - el.parentElement.getBoundingClientRect().height) <= 8 && rect.height > 80
+    const wash = style.position === "absolute" && gradient && el.parentElement && [...el.parentElement.children].some((sib) => sib !== el && ["IMG", "SVG", "VIDEO", "CANVAS", "PICTURE"].includes(sib.tagName))
+    const onlyFooter = el.children.length > 0 && [...el.children].every((child) => child.tagName === "FOOTER")
     const stickyCol = (style.position === "sticky" || style.position === "fixed") && rect.height > 160 && el.parentElement && [...el.parentElement.children].some((sib) => sib !== el && sib.getBoundingClientRect().height >= rect.height - 8)
-    const hiddenCard = (offscreen || stickyCol) && (hasBorder || hasBg || hasShadow)
+    const hiddenCard = scrim || wash || onlyFooter || ((offscreen || stickyCol) && (hasBorder || hasBg || hasShadow))
     if (!blocked.has(tag) && !inlineOnly && !controlBox && !avatar && !sidebar && !hiddenCard && textLen > 0 && (strong || weak)) {
       cardLike = true
       guess = strong ? "high" : "low"
@@ -287,7 +298,11 @@ async function collect(opts) {
     const band = tag === "section" || tag === "header" || el.classList.contains("hero")
     if (tag === "section" || tag === "header") firstBand = false
     const fullBleed = hasBg && rect.width >= window.innerWidth - 32 && rect.top < 280 && minH >= 160
-    const stretched = Boolean(parentStyle && (parentStyle.display.includes("flex") || parentStyle.display.includes("grid")) && ((style.alignSelf === "auto" || style.alignSelf === "normal") ? (parentStyle.alignItems === "stretch" || parentStyle.alignItems === "normal") : (style.alignSelf === "stretch" || style.alignSelf === "normal")))
+    const parentColumn = parentStyle && String(parentStyle.flow || "").includes("column")
+    const heightStretch = parentStyle && (parentStyle.display.includes("grid") || (parentStyle.display.includes("flex") && !parentColumn))
+    const alignStretch = (style.alignSelf === "auto" || style.alignSelf === "normal") ? (parentStyle && (parentStyle.alignItems === "stretch" || parentStyle.alignItems === "normal")) : (style.alignSelf === "stretch" || style.alignSelf === "normal")
+    const explicitH = (style.height || "").endsWith("px") && parseFloat(style.height) > 0
+    const stretched = Boolean(heightStretch && alignStretch && !explicitH)
     const i = elements.length
     elements.push({
       i,
@@ -305,6 +320,8 @@ async function collect(opts) {
       cardLike,
       guess,
       media: ["img", "svg", "canvas", "video", "picture"].includes(tag) || hasImage,
+      gradient,
+      clipped: style.overflowX === "hidden" || style.overflowX === "clip" || style.overflowY === "hidden" || style.overflowY === "clip",
       fills,
       moved: el.dataset.moved === "1",
       strict: Boolean(el.id && false),
@@ -335,11 +352,23 @@ async function collect(opts) {
       },
     })
     if (deadline && elements.length % 400 === 0 && Date.now() > deadline) throw new Error("timed out while measuring the page")
-    const passed = { display: style.display, alignItems: style.alignItems, boxHeight: rect.height }
+    const passed = { display: style.display, alignItems: style.alignItems, boxHeight: rect.height, flow: style.flexDirection || "" }
     ;[...el.children].forEach((child, index) => walk(child, i, selector, passed, index + 1))
     if (el.shadowRoot) [...el.shadowRoot.children].forEach((child, index) => walk(child, i, `${selector} >>>`, passed, index + 1))
   }
   walk(document.body, null, "body", null, 1)
+  for (const el of elements) {
+    if (!["pre", "code", "canvas", "video", "picture"].includes(el.tag)) continue
+    let parent = el.parent
+    const seen = new Set()
+    while (parent != null && !seen.has(parent)) {
+      seen.add(parent)
+      const host = elements[parent]
+      if (!host) break
+      host.viewport = true
+      parent = host.parent
+    }
+  }
   function visibleText(node) {
     if (!node) return ""
     let text = ""
@@ -524,7 +553,7 @@ async function shoot(page, rules, width, dir, remaining, stamp) {
       await page.evaluate((selector) => {
         function pick(sel) {
           if (!sel) return null
-          const parts = sel.split(">>>").map((part) => part.trim()).filter(Boolean)
+          const parts = sel.split(">>>").map((part) => part.trim().replace(/^>\s*/, "")).filter(Boolean)
           let nodes = [document]
           for (const part of parts) {
             const next = []
@@ -554,7 +583,7 @@ async function shoot(page, rules, width, dir, remaining, stamp) {
         }
       }, rule.element || "")
       const handle = await page.evaluateHandle((selector) => {
-        const parts = (selector || "").split(">>>").map((part) => part.trim()).filter(Boolean)
+        const parts = (selector || "").split(">>>").map((part) => part.trim().replace(/^>\s*/, "")).filter(Boolean)
         let nodes = [document]
         for (const part of parts) {
           const next = []
