@@ -11,6 +11,8 @@ Status: new. Four synthetic scored cases, plus `missing-evals`, which fails the 
 `check/check_brief.py` checks a brief's shape:
 
 - every required slot is present once and filled (Goal, Done, Output, Constraints, Tools, Agents and roles, Evals, Verification). Kind, Plan first, Taste, Skills, Parking lot and Unknowns are optional. A note in brackets after a label, as in `- Taste (flag, don't filter):`, is allowed;
+- a required slot whose items are only a placeholder fails, and the failure names the slot. A placeholder is TBD, TODO, N/A, none, `...`, `-`, `?`, a value wrapped in parentheses or brackets, or text with no letters. `none` is allowed on Skills, Parking lot and Unknowns, and as `write first: none` in Tools;
+- Evals names a pass case and a fail case. A pass case starts with `Pass:` or says `should pass`. A fail case starts with `Fail:` or says `should fail`;
 - Plan first, when present, starts with `yes` or `none needed`;
 - an `investigate:` item sits in Done, an `out of scope:` item in Constraints, and a `how:` item in Agents and roles;
 - a slot that holds `unknown:` offers no default beside it;

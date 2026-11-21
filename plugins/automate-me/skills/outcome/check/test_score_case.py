@@ -37,7 +37,8 @@ BRIEF = """# Brief: t
 
 def write(name, text):
     path = os.path.join(tempfile.mkdtemp(), name)
-    open(path, "w").write(text)
+    with open(path, "w") as handle:
+        handle.write(text)
     return path
 
 

@@ -159,30 +159,31 @@ def render_text(p):
     return "\n".join(o) + "\n"
 
 
-def lc(t):
-    first = t.split(" ", 1)[0]
-    return t if len(first) > 1 and first.isupper() else t[:1].lower() + t[1:]
-
-
 def render_prompt(p, iid):
     by = {it["id"]: it for it in p["items"]}
     it = by[iid]
     s, lp = it["spec"], it["spec"].get("loop", {})
     before = [f'- {a}. {by[a]["name"]}: {by[a]["spec"]["output"]}' for a in it.get("after", [])]
+    changes_code = s.get("harness") != "findings file"
+    waits = ", ".join(it.get("after", [])) or "none"
+    guard = "Report only." if not changes_code else "Push, post or message nothing unless the limits allow it."
     return "\n".join([
         *([f'Run this only if {it["only_if"]} Otherwise report "not needed" and stop.'] if it.get("only_if") else []),
-        f'Goal: {s["outcome"]} This is item {iid} of "{p["title"]}". The project outcome is: {p["outcome"]["outcome"]}',
+        f'- Goal: {s["outcome"]} This is item {iid} of "{p["title"]}". The project outcome is: {p["outcome"]["outcome"]}',
         *(["Uses the output of:"] + before if before else []),
-        f'Done: done when {lc(s["done_when"])}',
-        f'Output: {s["output"]} The person reads it in the reply.',
-        f'Constraints: {s["limits"]} At most {lp.get("max")} tries. {lp.get("exit_when", "")} Report only. Push, post or message nothing unless the limits allow it.',
-        f'Tools: {", ".join(s.get("tools", [])) or "none named"}. Write first: {", ".join(it.get("after", [])) or "none"}. Read only {", ".join(s.get("context", [])) or "nothing else"}. Ask before reading anything else.',
-        f'Agents and roles: worker {s.get("model")} at {s.get("effort")} effort. The verifier is a fresh agent that did not do the work.',
-        *([REVIEW] if s.get("harness") != "findings file" else []),
-        f'Evals: run the {s["harness"]} until it passes. Then try one case the harness misses. {NOT_PROOF}',
-        f'Verification: {lc(s["verifier"])} {EVIDENCE}',
-        'At the end: update RESUME.md with the goal, what is done and verified, the next step, key files and gotchas.',
-        'Never say done or correct. Report what you ran and its output, and the verifier decides.',
+        f'- Done: {s["done_when"]}',
+        f'- Output: {s["output"]}',
+        f'- Constraints: {s["limits"]} At most {lp.get("max")} tries. {lp.get("exit_when", "")} {guard}',
+        f'- Tools: {", ".join(s.get("tools", [])) or "none named"}. Waits for: {waits}. Read only {", ".join(s.get("context", [])) or "nothing else"}. Ask before reading anything else.',
+        f'- Agents and roles: worker {s.get("model")} at {s.get("effort")} effort. The verifier is a fresh agent that did not do the work.',
+        *([REVIEW] if changes_code else []),
+        "- Evals:",
+        f'  - Pass: the {s["harness"]} should pass.',
+        "  - Fail: one case the harness misses should fail.",
+        NOT_PROOF,
+        f'- Verification: {s["verifier"]} {EVIDENCE}',
+        "At the end: update RESUME.md with the goal, what is done and verified, the next step, key files and gotchas.",
+        "Never say done or correct. Report what you ran and its output, and the verifier decides.",
     ]) + "\n"
 
 
