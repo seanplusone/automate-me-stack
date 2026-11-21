@@ -44,6 +44,14 @@ These need `.claude/project-profile.md`, which `/automate-me:setup` writes. Tick
 | Break an idea into buildable parts | `/automate-me:breakdown <idea>` | One page with at most 8 small items in build order, each with a spec an agent can run. Ask "more on B" or "why is C after B?" to dig into one item. |
 | Design the change | `/automate-me:write-edd` | A draft EDD from the reviewed PRD, with today's code traced, the blast radius, and spikes run or marked blocked. |
 
+## A batch from one template
+
+When one shared prompt will make many outputs, outcome adds three notes to the brief. They apply to any batch, not only pictures. Nothing here needs a particular model or tool.
+
+- Before spending, name the item kinds. Flag a template that fits one kind and bans a cue that sets another kind apart.
+- After the batch exists, someone who did not see the prompt checks the outputs, including a lookalike where items can be confused, in the real use conditions. For a picture, that includes the size on the person's screen. For other output, use the matching real condition.
+- A score tuned on the same items is a review aid, not a pass or fail gate, until it is tried on a fresh held-out set. Do not treat that first score as certain.
+
 ## Good to know
 
 - Three skills start only when you type them: `setup`, `working-rules` and `open-pr`. Claude can reach for the others on its own when they fit.

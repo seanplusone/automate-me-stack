@@ -77,6 +77,9 @@ expect("forbidden guessed", "Forbidden: cap | \\bcap\\b[^.?\\n]{0,25}4300\n", 1,
        brief=BRIEF.replace("- Output: 10 rows.", "- Output: 10 rows under the cap of 4300."))
 expect("forbidden ignores questions", "Forbidden: cap | \\bcap\\b[^.?\\n]{0,25}4300\n", 0, "clear",
        brief=BRIEF.replace("Is 4300 the cap, or 5k?", "Is the cap 4300, or 5k?"))
+expect("(?q) sees a count inside a question",
+       "Forbidden: count | (?q)\\b(?:\\d+|four)\\s+or\\s+(?:\\d+|five)\\b\n", 1, "guessed a fact",
+       brief=BRIEF.replace("Is 4300 the cap, or 5k?", "Is it 4 or 5?"))
 expect("pet does not match carpet (old substring bug)", "Unknown: pets | pet\n", 1, "no unknown or question names: pet",
        brief=BRIEF.replace("Tour or apply?", "Is carpet in the bedrooms fine?"))
 expect("pet matches pets", "Unknown: pets | pet\n", 0, "PASS",
