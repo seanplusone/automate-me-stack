@@ -1,7 +1,14 @@
-"""Scores a drafts file against a case key's findings table.
+"""Scores a review against a case key.
 
-Usage: python3 score_case.py <cases/<name>/key.md> <drafts.md>
+Usage: python3 score_case.py <cases/<name>/key.md> <review.md>
 Exits 1 if any key finding is missed.
+
+A key with a line `Planted: yes` scores an attack file. A finding matches when
+its file matches the key file and its line overlaps the key span, plus or
+minus 2. A null line still needs that file, plus a repro. The judge then
+decides, and only those findings are sent. With no CLI the result is weak.
+It prints SKIP for meaning, checks the location only, and exits 2. Exit 2 is
+not a judged catch. Any other key scores a drafts file, below.
 
 A key row is `| <id> | <pr> | <path prefix> | <line or -> | <finding> | <min sites or -> | <proof> |`.
 A finding is found when the drafts carry a comment in that PR on a path that starts with the
@@ -19,6 +26,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from check_attack import catch_terms, finding_span, parse_attack, path_suffix, planted_bug, where_span  # noqa: E402
 from check_drafts import parse  # noqa: E402
 
 ROW = re.compile(r"^\| (K\d+) \| (\S+#\d+) \| `?([^|`]+?)`? \| (\d+|-) \| [^|]+ \| (\d+|-) \| [^|]* \|$")
@@ -52,7 +60,136 @@ def missing_terms(hits, terms):
     return min(([t for t in terms if absent(t, " ".join(f["comment"]).lower())] for f in hits), key=len)
 
 
-def score(key_path, drafts_path):
+def key_where(path):
+    for line in open(path):
+        match = re.match(r"^Where:\s*`?(.*?)`?\s*$", line.strip())
+        if match and match.group(1):
+            return match.group(1)
+    return ""
+
+
+def matches(finding, want):
+    """The file matches, and the line overlaps the key span. A null line needs a repro."""
+    try:
+        path, start, end = finding_span(finding)
+    except ValueError:
+        return False
+    if not path:
+        return False
+    repro = bool((finding.get("repro") or "").strip())
+    if not want:
+        return start is not None or repro
+    span = where_span(want)
+    if not span or not path_suffix(path, span[0]):
+        return False
+    if start is None:
+        return repro
+    return start <= span[2] + 2 and end >= span[1] - 2
+
+
+def _symbol_only(finding):
+    """A file::symbol suffix names the file and leaves the line to the judge."""
+    if "::" not in str(finding.get("file") or ""):
+        return False
+    try:
+        _path, start, _end = finding_span(finding)
+    except ValueError:
+        return False
+    return start is None
+
+
+def _for_judge(finding, want):
+    if not _symbol_only(finding):
+        return False
+    try:
+        path, _start, _end = finding_span(finding)
+    except ValueError:
+        return False
+    if not path:
+        return False
+    if not want:
+        return True
+    span = where_span(want)
+    return bool(span and path_suffix(path, span[0]))
+
+
+def _broke_rows(doc):
+    """A break with no finding is evidence for the judge, not a location hit."""
+    rows = []
+    for item in doc.get("tried") or []:
+        if item.get("broke") is not True:
+            continue
+        rows.append({
+            "file": "",
+            "line": None,
+            "claim": item.get("observed") or "",
+            "repro": item.get("input") or "",
+            "observed": item.get("observed") or "",
+        })
+    return rows
+
+
+def repro_mentions(finding, want):
+    """An empty file can still name the key file in its repro."""
+    try:
+        path, _start, _end = finding_span(finding)
+    except ValueError:
+        return False
+    repro = (finding.get("repro") or "").strip()
+    if path or not repro:
+        return False
+    if not want:
+        return True
+    span = where_span(want)
+    if not span:
+        return False
+    name = span[0].split("/")[-1].lower()
+    return name in repro.lower()
+
+
+def score_planted(key_path, attack_path, environ=None, runner=None):
+    """The judge decides on matching findings. With no CLI, only the location is checked."""
+    terms = catch_terms(key_path)
+    if not terms:
+        print(f"FAIL no Catch terms in {key_path}")
+        return 1
+    doc = parse_attack(attack_path)
+    if not doc["parsed"]:
+        print("FAIL missed planted bug")
+        return 1
+    want = key_where(key_path)
+    located = [
+        finding for finding in doc["findings"]
+        if matches(finding, want) and not _symbol_only(finding)
+    ]
+    symbols = [finding for finding in doc["findings"] if _for_judge(finding, want)]
+    mentioned = [finding for finding in doc["findings"] if repro_mentions(finding, want)]
+    broke_rows = _broke_rows(doc) if not doc["findings"] else []
+    usable = located + symbols + mentioned + broke_rows
+    if not usable:
+        print("FAIL missed planted bug")
+        return 1
+    from judge_case import find_cli, judge  # noqa: E402
+    if runner is None and find_cli(environ) is None:
+        if not located:
+            print("FAIL missed planted bug")
+            return 1
+        print("SKIP no agent CLI on PATH")
+        print("SKIP meaning")
+        print("WEAK location only")
+        return 2
+    judged = judge(key_path, attack_path, environ=environ, runner=runner, findings=usable)
+    if judged == 0:
+        return 0
+    if judged == 2:
+        return 2
+    print("FAIL missed planted bug")
+    return 1
+
+
+def score(key_path, drafts_path, environ=None, runner=None):
+    if planted_bug(key_path):
+        return score_planted(key_path, drafts_path, environ=environ, runner=runner)
     prs, _ = parse(drafts_path)
     rows = key_rows(key_path)
     terms = key_terms(key_path)
@@ -79,6 +216,12 @@ def score(key_path, drafts_path):
 
 
 if __name__ == "__main__":
-    from cli import usage_or_exit
-    usage_or_exit(__doc__, sys.argv, 2)
-    sys.exit(score(sys.argv[1], sys.argv[2]))
+    try:
+        from cli import usage_or_exit
+        usage_or_exit(__doc__, sys.argv, 2)
+        sys.exit(score(sys.argv[1], sys.argv[2]))
+    except SystemExit:
+        raise
+    except Exception:
+        print((__doc__ or "").strip(), file=sys.stderr)
+        sys.exit(2)

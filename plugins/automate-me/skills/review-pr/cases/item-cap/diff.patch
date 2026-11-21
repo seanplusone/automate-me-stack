@@ -1,0 +1,27 @@
+diff -ruN base/cap.py head/cap.py
+--- base/cap.py	2026-11-20 15:52:32.392969624 +0000
++++ head/cap.py	2026-11-20 15:52:32.668973563 +0000
+@@ -1,3 +1,3 @@
+ def within_cap(count):
+     """True when count is at most 5."""
+-    return count <= 5
++    return count < 5
+diff -ruN base/case_test_cap.py head/case_test_cap.py
+--- base/case_test_cap.py	1970-01-01 00:00:00.000000000 +0000
++++ head/case_test_cap.py	2026-11-20 15:52:32.772975047 +0000
+@@ -0,0 +1,15 @@
++from cap import within_cap
++
++
++def test_under():
++    assert within_cap(4) is True
++
++
++def test_over():
++    assert within_cap(6) is False
++
++
++if __name__ == "__main__":
++    test_under()
++    test_over()
++    print("2 passed")

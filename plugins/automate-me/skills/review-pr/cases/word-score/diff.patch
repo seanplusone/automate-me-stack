@@ -1,0 +1,28 @@
+diff -ruN base/case_test_score_review.py head/case_test_score_review.py
+--- base/case_test_score_review.py	1970-01-01 00:00:00.000000000 +0000
++++ head/case_test_score_review.py	2026-11-20 15:52:31.224952759 +0000
+@@ -0,0 +1,10 @@
++from score_review import passes
++
++
++def test_names_a_bug():
++    assert passes("bug at line 3") is True
++
++
++if __name__ == "__main__":
++    test_names_a_bug()
++    print("1 passed")
+diff -ruN base/score_review.py head/score_review.py
+--- base/score_review.py	2026-11-20 15:52:30.464941597 +0000
++++ head/score_review.py	2026-11-20 15:52:30.860947441 +0000
+@@ -2,7 +2,6 @@
+ 
+ 
+ def passes(review):
+-    """A review passes when it names a file, a line number, and a failed input."""
+-    has_place = re.search(r"\w+\.\w+:\d+", review) is not None
+-    has_input = "input" in review.lower()
+-    return has_place and has_input
++    """A review passes when it names a bug and a line."""
++    words = set(re.findall(r"[a-z0-9]+", review.lower()))
++    return "bug" in words and "line" in words
