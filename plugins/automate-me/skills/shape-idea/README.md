@@ -11,28 +11,28 @@ Status: new. Four synthetic scored cases. Each `run-1` was written by a fresh mo
 `check/check_decisions.py` checks a finished file's shape:
 
 - `## Decided`, `## Open`, `## Parked`, and `## Handoff` are present once, in that order;
-- every Open item ends with `?` (a lone `none` means the section is empty). A `?` inside a URL, inline code, or double quotes does not count, and the line still has to end with `?`. An Open item that is only `?` or `TBD?` fails;
+- every Open item ends with `?` (a lone `none` means the section is empty). A `?` inside a URL, inline code, quotes of any kind, or parens does not count, and the line still has to end with `?`. An Open item that is only `?`, `TBD?` or `unknown: ?` fails;
 - no item holds a template hole such as `<channel>`, outside inline code;
-- no Decided line that is not a slot, and no Parked line, is only a placeholder such as `TBD` or `later, perhaps`;
+- no Decided line that is not a slot, and no Parked line, is only a placeholder such as `TBD` or `later, perhaps`. It is not an unknown, and not only a trap word, under the rules below. A Decided one does not end in `?`. Move a question to Open;
 - `stop` is `done`, `turn-cap`, or `open-cap`, once;
 - each of goal, done, output, verify, and constraints starts one Decided line or one Open line, with a value, and not both;
 - a slot value does not fail outcome's brief check. It has no template hole such as `<goal>`. It is not only TBD, TODO, n/a, `?`, `...`, "to be decided", or another item on that fixed list. A hole inside inline code and an autolink such as `<https://example.org>` are fine. A Decided value that ends in `?` fails;
-- a Decided slot value does not start with `unknown`. Move it to Open as a question. It is not only a trap word such as "clean" or "it looks good". Bold and `stated:` do not hide either one. It does not start with a brief tag that belongs in another slot, such as `output: investigate: ...`, and a goal does not start with `default`;
-- text inside a ``` or ~~~ fence, of any length, including a nested fence, is not a decision. A fence under Decided fails, because its text would be lost. An unclosed fence fails;
-- a Decided `tools:`, `agents:`, `evals:`, or `decide:` line needs a real value, under the same rules. `evals:` also needs a pass case and a fail case, as `pass: <case>; fail: <case>` or `<case> should pass, <case> should fail`. Each case must be ready too. The five slots stay the only required ones;
+- a Decided value is not an unknown: `unknown` alone, `unknown: ...`, or `unknown` with only a hedge after it, such as `unknown yet`. Move it to Open as a question. Prose such as `unknown file types go to Other` is fine. It is not only a trap word such as "clean" or "it looks good". Bold, italics, quotes, parens and `stated:` hide none of these. A slot value does not start with a brief tag that belongs in another slot, such as `output: investigate: ...`. A goal does not start with `default` unless a `decide:` line is Decided, because the brief would put the default beside the decide unknown;
+- text inside a ``` or ~~~ fence, of any length, including a nested fence, is not a decision. A fence under Decided, Open or Parked fails, because its text would be lost. An unclosed fence fails;
+- a Decided `tools:`, `agents:` (or `agents and roles:`), `evals:`, `decide:`, or `write first:` line needs a real value, under the same rules. `evals:` also needs a pass case and a fail case, as `pass: <case>; fail: <case>` or `<case> should pass, <case> should fail`. Every case must be ready, and an extra `pass: TBD` fails as it would in the brief. The five slots stay the only required ones;
 - `stop: done` requires all five Decided and none of them Open;
 - `stop: open-cap` is only after turn 1, and only with more than 5 Open lines that are not slots;
 - `stop: turn-cap` requires `turns: 10`;
 - `turns` is an ASCII whole number from 1 through 10;
 - the shared writing check passes on the file, whether or not the line says `writing: pass`;
 - no item runs past one line;
-- Handoff has `next: /automate-me:outcome` and a single `writing: pass` line.
+- Handoff has `next: /automate-me:outcome`, a single `writing: pass` line, and one `map:` line.
 
-Exit 0 when every check passed. Exit 1 when any check failed. Exit 2 when nothing failed but a value needs the person. Exit 3 on a usage error.
+Exit 0 when every check passed. Exit 1 when any check failed. Exit 2 when nothing failed but a value needs the person. Exit 3 on a usage error: bad arguments, or a path that is missing, a directory, or not UTF-8 text. It prints one line.
 
-Exit 2 is a break point. The check prints one `ASK: <slot>: Is '<value>' a real answer for <slot>?` line for each Decided value that outcome's brief check would ask about, such as `output: ok`. The skill stops, asks the person that yes/no question, and records the answer. A yes goes under an optional `## Confirmed` section after Handoff, as `- <Slot>: <value>`. The mapper copies that section into the brief, so the brief check does not ask again. A no replaces the value. A confirmation never lifts a failure.
+Exit 2 is a break point. The check prints one `ASK: <slot>: Is '<value>' a real answer for <slot>?` line for each Decided value that outcome's brief check would ask about, such as `output: ok` or `decide: maybe`. A prefix such as `stated:` or `how:` does not hide the value. The skill stops, asks the person that yes/no question, and records the answer. A yes goes under an optional `## Confirmed` section after Handoff, as `- <Slot>: <value>`. The mapper copies that section into the brief, so the brief check does not ask again. A no replaces the value. A confirmation never lifts a failure.
 
-The placeholder list is outcome's, and it is deliberately narrow. A phrase off the list, such as "not sure yet" or "see notes", passes. The ask and outcome's read-back catch the rest.
+The placeholder list is outcome's, and it is deliberately narrow. A phrase off the list, such as "see notes", passes. A phrase of only hedge words, such as "not sure yet", is an ASK. The ask and outcome's read-back catch the rest.
 
 `check/score_case.py` scores the file against a case key. Terms match loosely, one item at a time. Exit 0 on a full match. Exit 1 on a miss. Exit 2 on a usage error.
 
@@ -79,7 +79,7 @@ Neither script checks the flow in `SKILL.md`. These parts are instructions only,
 - map: goal goes to Goal. done goes to Done. output goes to Output. constraints goes to Constraints. verify goes to Verification. Tools, Agents and roles, and Evals stay unknown.
 ```
 
-Outcome reads `goal:` as Goal, `done:` as Done, `output:` as Output, `constraints:` as Constraints, and `verify:` as Verification. Tools, Agents and roles, and Evals stay unknown until the user answers. Open is Unknowns. Parked is the Parking lot. A slot that is still open is an unknown, not a filled slot. A Decided `out of scope:` line goes to Constraints. A Decided `decide:` line goes to Goal, in place of the decide question. A Confirmed section goes to the brief's Confirmed block.
+Outcome reads `goal:` as Goal, `done:` as Done, `output:` as Output, `constraints:` as Constraints, and `verify:` as Verification. Tools, Agents and roles, and Evals stay unknown until the user answers, unless a Decided `tools:`, `agents:` or `evals:` line already fills that slot. An Open `tools:`, `agents:`, `evals:` or `decide:` question takes the place of outcome's stock question for that slot. Open is Unknowns. Parked is the Parking lot. A slot that is still open is an unknown, not a filled slot. A Decided `out of scope:` line goes to Constraints. A Decided `decide:` line goes to Goal, in place of the decide question. A Confirmed section goes to the brief's Confirmed block.
 
 ## Key format
 
