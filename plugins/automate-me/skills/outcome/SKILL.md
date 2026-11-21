@@ -94,6 +94,8 @@ Write `yes` for Plan first when the work is big, runs many agents, or costs real
 
 Tools names every tool a check needs, and says to check that the tool works first. It also says what must be written before the run, as `write first: <what>`, or `write first: none` next to the tool name. `write first: none` by itself does not fill the slot. If there is no tool, write `none: <why>`. A breakdown prompt uses `Waits for:` for the items that must finish first. That is not the `write first:` line. The plan itself stays in Plan first.
 
+For Output, ask: "Where will this live, and what shares that space (container, overlays, states)?" An unknown answer is written `unknown: <question>?` and asks the person.
+
 Evals name a concrete pass and a concrete fail. An eval is not a restatement of Done with no example.
 
 Skills: propose skills that fit, from this plugin or the user's own. Examples: review-prd or review-prd-light for a PRD, review-pr for a PR, explain-doc for a long doc, write-edd for a design, decode-ask for a colleague's message. Do not run any of them yet. If the speaker wants what worked saved, say so here too. The Learn section below has the steps.

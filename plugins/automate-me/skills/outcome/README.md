@@ -4,7 +4,7 @@ Part of `automate-me`. Shared writing rules live in `../shared/writing-rules.md`
 
 Turns a rough idea, often a spoken ramble, into a brief an agent can run. It sorts what was said, fills the slots, marks every gap as an unknown with its question, and reads the brief back with at most 3 questions. Nothing runs until the user says yes.
 
-Status: new. Four synthetic scored cases, plus `missing-evals`, which fails the shape check. The `run-*` briefs were written by hand to show the scorer working. One blind run has been scored. A fresh agent read only `SKILL.md` and brief-check's, never a key. Its scores and the key changes it led to are in each case's `runs/score.md`. Blind briefs are kept in `runs/blind/`.
+Status: new. Five synthetic scored cases, plus `missing-evals`, which fails the shape check. The `run-*` briefs were written by hand to show the scorer working. One blind run has been scored. A fresh agent read only `SKILL.md` and brief-check's, never a key. Its scores and the key changes it led to are in each case's `runs/score.md`. Blind briefs are kept in `runs/blind/`.
 
 ## What the checks cover, and what they don't
 
@@ -159,7 +159,8 @@ outcome/
     erd-ramble/                     build: an ERD with two points still open
     prd-review-ramble/              review: a PRD path said with "I think", questions to look up, a tangent
     learn-ramble/                   learn: indexes for a slow query; output is an explanation and a check
-                                    each of the last three: input.md, key.md, runs/run-1/brief.md, runs/score.md
+    badge-ramble/                   build: a badge on a bell icon; output says where it lives and what shares that space
+                                    each of the last four: input.md, key.md, runs/run-1/brief.md, runs/score.md
     missing-evals/                  shape only: a brief with every required slot except Evals
       runs/run-1/brief.md           check_brief.py fails, and the only failure is "missing slot: Evals"
 ```
