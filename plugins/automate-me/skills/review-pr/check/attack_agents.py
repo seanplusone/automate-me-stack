@@ -198,10 +198,13 @@ def _key_ids_under(start):
     return ids
 
 
-def _ancestor_case_ids(start):
-    """Inodes of key.md files on this directory's parents and their case folders."""
+def _cases_key_ids(start):
+    """Inodes of every key.md under a cases tree on this directory or a parent."""
     ids = set()
-    current = os.path.abspath(start)
+    try:
+        current = os.path.realpath(start)
+    except OSError:
+        current = os.path.abspath(start)
     while True:
         ident = _key_inode(os.path.join(current, "key.md"))
         if ident:
@@ -210,17 +213,10 @@ def _ancestor_case_ids(start):
         if os.path.basename(current) == "cases":
             bases.append(current)
         nested = os.path.join(current, "cases")
-        if os.path.isdir(nested):
+        if os.path.isdir(nested) and not os.path.islink(nested):
             bases.append(nested)
         for base in bases:
-            try:
-                names = os.listdir(base)
-            except OSError:
-                continue
-            for name in names:
-                ident = _key_inode(os.path.join(base, name, "key.md"))
-                if ident:
-                    ids.add(ident)
+            ids |= _key_ids_under(base)
         parent = os.path.dirname(current)
         if parent == current:
             break
@@ -256,17 +252,13 @@ def _hardlinked_key(cwd, ids):
     return False
 
 
-def _linked_key(source, key_ids):
-    if not key_ids or os.path.islink(source):
-        return False
-    try:
-        info = os.stat(source)
-    except OSError:
-        return False
-    return (info.st_dev, info.st_ino) in key_ids
-
-
 def _remove_tree(path):
+    if os.path.islink(path):
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        return
     try:
         removed = []
         for dirpath, dirnames, filenames in os.walk(path, topdown=False):
@@ -275,6 +267,13 @@ def _remove_tree(path):
                     os.remove(os.path.join(dirpath, name))
                 except OSError:
                     pass
+            for name in dirnames:
+                child = os.path.join(dirpath, name)
+                if os.path.islink(child):
+                    try:
+                        os.unlink(child)
+                    except OSError:
+                        pass
             removed.append(dirpath)
         for dirpath in removed:
             try:
@@ -285,11 +284,8 @@ def _remove_tree(path):
         shutil.rmtree(path, ignore_errors=True)
 
 
-def _copy_tree(src, dst, root, key_ids=None):
+def _copy_tree(src, dst, root, skipped):
     """Copy a tree. A symlink that points outside the tree is skipped."""
-    if key_ids is None:
-        ident = _key_inode(os.path.join(os.path.dirname(root), "key.md"))
-        key_ids = {ident} if ident else set()
     os.makedirs(dst, exist_ok=True)
     try:
         names = os.listdir(src)
@@ -306,9 +302,14 @@ def _copy_tree(src, dst, root, key_ids=None):
             os.symlink(os.readlink(source), target)
             continue
         if os.path.isdir(source):
-            _copy_tree(source, target, root, key_ids)
+            _copy_tree(source, target, root, skipped)
             continue
-        if _linked_key(source, key_ids):
+        try:
+            info = os.lstat(source)
+        except OSError:
+            continue
+        if stat.S_ISREG(info.st_mode) and info.st_nlink > 1:
+            skipped.append(source)
             continue
         shutil.copy2(source, target, follow_symlinks=False)
 
@@ -326,6 +327,10 @@ def practice_roots(path):
         seen.add(real)
         found.append(real)
 
+    try:
+        path = os.path.realpath(path)
+    except OSError:
+        path = os.path.abspath(path or ".")
     add(_case_root(path))
     start = path if os.path.isdir(path) else os.path.dirname(path or "")
     if os.path.isdir(start):
@@ -347,15 +352,20 @@ def _copyable_cases(path):
 
 def agent_cwd(cwd):
     """(directory, created). Practice trees are copied without their key.md."""
+    try:
+        cwd = os.path.realpath(cwd)
+    except OSError:
+        raise _Refuse("error: the cwd could not be resolved. Refusing to run.")
     cases = _copyable_cases(cwd)
-    ids = _key_ids_under(cwd) | _ancestor_case_ids(cwd)
     if not cases:
+        ids = _key_ids_under(cwd) | _cases_key_ids(cwd)
         if _hardlinked_key(cwd, ids):
             raise _Refuse("error: a hard link to a key.md is inside this directory. Refusing to run.")
         return cwd, False
     temp = tempfile.mkdtemp(prefix="attack-cwd-%s-" % os.getpid())
     single = len(cases) == 1
     copied = False
+    skipped = []
     try:
         for case in cases:
             label = "" if single else os.path.basename(case)
@@ -364,11 +374,13 @@ def agent_cwd(cwd):
                 if not os.path.isdir(src):
                     continue
                 dest = os.path.join(temp, name) if not label else os.path.join(temp, label, name)
-                _copy_tree(src, dest, src, ids)
+                _copy_tree(src, dest, src, skipped)
                 copied = True
     except RecursionError:
         _remove_tree(temp)
         raise _Refuse("error: the case tree is too deep to copy. Refusing to run.")
+    for path in skipped:
+        print("note: skipped hard link %s" % path, file=sys.stderr)
     if not copied:
         shutil.rmtree(temp, ignore_errors=True)
         return None, False
@@ -661,7 +673,10 @@ def _dir_blocks(directory):
 
 def key_reachable(path):
     """True when key.md is under path or a parent, or a directory on the way cannot be read."""
-    path = os.path.abspath(path or ".")
+    try:
+        path = os.path.realpath(path or ".")
+    except OSError:
+        return True
     start = path if os.path.isdir(path) else os.path.dirname(path)
     blocked = []
 
@@ -996,7 +1011,11 @@ def run_all(brief_path, out_dir, search_path=None, runner=None, timeout=DEFAULT_
         print("brief: missing file", file=sys.stderr)
         return 2
     brief = contract_bytes() + b"\n" + brief_body
-    origin = os.path.abspath(cwd if cwd is not None else os.getcwd())
+    try:
+        origin = os.path.realpath(cwd if cwd is not None else os.getcwd())
+    except OSError:
+        print("error: the cwd could not be resolved. Refusing to run.", file=sys.stderr)
+        return 2
     chosen = resolve_sandbox(sandbox)
     if chosen == "bad":
         print((__doc__ or "").strip(), file=sys.stderr)

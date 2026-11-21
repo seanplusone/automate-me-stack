@@ -34,7 +34,7 @@ The sandbox is a fresh root. `/usr`, `/bin`, `/lib`, and `/etc/alternatives` are
 
 Network stays on. A real review can reach the public internet and a local service, such as a Docker API on port 2375. That is accepted because `bwrap` is the boundary, and Codex runs with full access inside it.
 
-`/work` is the checkout when no `key.md` is reachable. When the cwd is a case, `/work` holds only the copied `head` and `base`. The case key is not copied. A hard link to any of those keys is left out of the copy. A hard link to a key.md that is not under this directory, and not a case key beside it, is not detected.
+`/work` is the checkout when no `key.md` is reachable. When the cwd is a case, `/work` holds only the copied `head` and `base`. The case key is not copied. While copying a case, every file with more than one link is left out, and the path is printed. In a directory that is not a case, a hard link to a key anywhere under a `cases` tree is refused. A hard link to a key.md outside those trees is not detected.
 
 Login files are passed in with `bwrap --file` and are not written to the host. Codex gets `auth.json` and `config.toml` with host tables removed: projects, hooks, plugins, mcp servers, and notify. History keeps its settings, except paths under the home directory or the repo. Claude gets `.credentials.json`, and `.claude.json` under `CLAUDE_CONFIG_DIR` with onboarding and account fields only. `CODEX_HOME` and `CLAUDE_CONFIG_DIR` point at `/home/agent`. API key variables are passed by name and are not printed. Add a backend by teaching `attack_agents.py` a new `--sandbox` name.
 
