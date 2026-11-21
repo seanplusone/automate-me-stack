@@ -74,7 +74,7 @@ with tempfile.TemporaryDirectory() as tmp:
     put(repo, "head/trim.py")
     tweaked = commit(repo, "fix: trim, and tweak the old test")
     code, out = run("--test", "trim_test.py", "--parent", parent, "--head", tweaked, "--repo", repo)
-    expect("tweaked old test fails the check", code == 1 and "parent passed" in out, out)
+    expect("tweaked old test fails the check", code == 1 and "not a new test" in out, out)
 
     # Other sides that fail.
     code, out = run("--test", "trim_tabs_test.py", "--parent", parent, "--head", test_only, "--repo", repo)
@@ -84,6 +84,52 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out = run("--test", "trim_tabs_test.py", "--parent", "0123456789abcdef", "--head", head, "--repo", repo)
     expect("an unknown commit fails", code == 1 and "parent commit not found" in out, out)
 
+    # A tightened old test fails on the parent, but it is not a new file.
+    git(repo, "checkout", "-q", "-B", "tightened", parent)
+    Path = __import__("pathlib").Path
+    Path(os.path.join(repo, "trim_test.py")).write_text(open(os.path.join(TRIM, "head/trim_tabs_test.py")).read())
+    put(repo, "head/trim.py")
+    tightened = commit(repo, "fix: change the old test to cover tabs")
+    code, out = run("--test", "trim_test.py", "--parent", parent, "--head", tightened, "--repo", repo)
+    expect("a changed old test is not a new test", code == 1 and "not a new test" in out, out)
+
+    # A command that only names a non-test file must not count a missing test as a parent fail.
+    git(repo, "checkout", "-q", head)
+    open(os.path.join(repo, "marker.txt"), "w").close()
+    marked = commit(repo, "add a marker next to the new test")
+    code, out = run("--test", 'test -f marker.txt && python3 "$(printf trim_tabs_%s.py test)"',
+                    "--parent", parent, "--head", marked, "--repo", repo)
+    expect("a command with no test path is a setup failure", code == 1 and "test missing at head" in out, out)
+
+    # Parent must be an ancestor of head.
+    other = os.path.join(os.path.dirname(repo), "unrelated")
+    os.makedirs(other)
+    git(other, "init", "-q", "-b", "main")
+    put(other, "parent/trim.py")
+    git(other, "add", ".")
+    git(other, "commit", "-q", "-m", "unrelated")
+    unrelated = git(other, "rev-parse", "HEAD")
+    # Graft the unrelated commit into this repo's object store so the SHA resolves.
+    git(repo, "fetch", "-q", other, "HEAD:refs/tmp/unrelated")
+    code, out = run("--test", "trim_tabs_test.py", "--parent", unrelated, "--head", head, "--repo", repo)
+    expect("a parent that is not an ancestor fails", code == 1 and "ancestor" in out, out)
+
+    # Cleanup must not prune a moved sibling worktree.
+    sibling = os.path.join(os.path.dirname(repo), "sibling-wt")
+    moved = os.path.join(os.path.dirname(repo), "moved-wt")
+    git(repo, "worktree", "add", "--detach", sibling, parent)
+    os.rename(sibling, moved)
+    listed_before = git(repo, "worktree", "list", "--porcelain")
+    expect("moved sibling is registered before", sibling in listed_before or "sibling-wt" in listed_before, listed_before)
+    code, out = run("--test", "trim_tabs_test.py", "--parent", parent, "--head", head, "--repo", repo)
+    expect("new repro still passes after sibling exists", code == 0, out)
+    listed_after = git(repo, "worktree", "list", "--porcelain")
+    expect("moved sibling is still registered", "moved-wt" in listed_after or sibling in listed_after, listed_after)
+    subprocess.run(GIT + ["worktree", "remove", "--force", moved], cwd=repo, capture_output=True)
+    subprocess.run(GIT + ["worktree", "prune"], cwd=repo, capture_output=True)
+
+
+    git(repo, "checkout", "-q", tweaked)
     # The user's worktree is left as it was.
     expect("no worktree is left behind", git(repo, "worktree", "list").count("\n") == 0, git(repo, "worktree", "list"))
     expect("the checkout is untouched", git(repo, "status", "--porcelain") == "" and git(repo, "rev-parse", "HEAD") == tweaked,
