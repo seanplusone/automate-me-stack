@@ -77,7 +77,7 @@ def write(text, confirmed=None):
 
 
 def run(script, *args):
-    got = subprocess.run([sys.executable, script, *args], capture_output=True, text=True)
+    got = subprocess.run([sys.executable, script, *args], capture_output=True, text=True, encoding="utf-8")
     return got.returncode, got.stdout, got.stderr
 
 
@@ -279,6 +279,82 @@ for label, text, codes in (
         code, said, err = run(script, write(text))
         if code not in codes or "Traceback" in err + said:
             fail(f"no crash: {label}: {os.path.basename(script)}", f"exit {code}\n{err[-400:]}")
+
+# 9. Under an ASCII locale, non-ASCII text in a value neither crashes nor changes the result.
+ASCII_ENV = dict(os.environ, LC_ALL="C", LANG="C", PYTHONUTF8="0", PYTHONCOERCECLOCALE="0")
+ASCII_ENV.pop("PYTHONIOENCODING", None)
+for label, text, codes in (("non-ASCII output", out("one row labelled 購入"), (0,)),
+                           ("non-ASCII hedge", out("maybe 購入"), (2,))):
+    for script in (CHECK, MAP):
+        RAN.append(f"ascii locale: {label}: {os.path.basename(script)}")
+        got = subprocess.run([sys.executable, script, write(text)], capture_output=True, env=ASCII_ENV)
+        said = got.stdout.decode("utf-8", "replace") + got.stderr.decode("utf-8", "replace")
+        if got.returncode not in codes or "Traceback" in said or "購入" not in said and script == MAP:
+            fail(f"ascii locale: {label}: {os.path.basename(script)}", f"exit {got.returncode}\n{said[-600:]}")
+
+# 10. A placeholder word inside a longer value is checked with the person. A value of only placeholders stays format
+# invalid (section 3).
+for value, word in (("TBD by Friday", "TBD"), ("CSV, to be decided by Friday", "to be decided"),
+                    ("a list of N/A rows, TODO", "N/A")):
+    brief = expect_with_me(f"placeholder inside a value: {value}", out(value), "Output", value)
+    why = next((item[2] for item in items(SAID[-1]) if item[:2] == ("Output", value)), "")
+    if f"'{word}'" not in (why or ""):
+        fail(f"placeholder inside a value names it: {value}", f"Why is {why!r}")
+
+# 11. Text that only looks like a template line is checked with the person, never format invalid. A yes lets it
+# through, and the printed brief passes check_brief. An untouched template slot stays format invalid.
+for label, text, slot, value in (
+        ("literal [Insert card]", out("show the terminal prompt [Insert card] on the receipt"), "Output",
+         "show the terminal prompt [Insert card] on the receipt"),
+        ("literal N/A case", added("- evals: Pass: `N/A`; Fail: an empty receipt"), "Evals",
+         "Pass: `N/A`; Fail: an empty receipt"),
+        ("open [Insert card]", swap("- Do you want a reminder?", "- Should the screen say [Insert card]?"), "Unknowns",
+         "Should the screen say [Insert card]?")):
+    expect_with_me(f"literal text: {label}", text, slot, value)
+for label, text in (("whole [insert] slot", out("[insert the output]")),
+                    ("placeholder case", added("- evals: Pass: TBD; Fail: an empty receipt"))):
+    RAN.append(f"format invalid: {label}")
+    code, said, _ = run(CHECK, write(text))
+    if code != 1:
+        fail(f"format invalid: {label}", f"exit {code}\n{said[-600:]}")
+
+# 12. A yes clears one slot and exact text. Tools and agents with the same text are two items, and a yes for tools
+# leaves agents listed.
+for section, line, value in (("Open", "- Do you want a reminder?", "Use the terminal"),
+                             ("Decided", HABIT, "maybe the terminal")):
+    name = f"a yes clears only its own slot: {section}"
+    RAN.append(name)
+    text = swap(line, f"{line}\n- tools: {value}\n- agents: {value}")
+    code, said, _ = run(CHECK, write(text))
+    SAID.append(said)
+    mine = [item for item in items(said) if item[1] == value]
+    slots = {item[0] for item in mine}
+    tools = next((item[0] for item in mine if item[0] == "Tools"), "Tools")
+    again = items(run(CHECK, write(text, f"- {tools}: {value} | yes\n"))[1])
+    left = [item[0] for item in again if item[1] == value]
+    if code != 2 or len(slots) != 2 or not {"Tools", "Agents and roles"} <= slots or left != ["Agents and roles"]:
+        fail(name, f"exit {code}, first {mine}, after the tools yes {left}\n{said[-600:]}")
+
+# 13. Evals with no pass case and fail case gets its own advice on the first run, even beside a hedge on the same value.
+# A yes cannot clear it, so it never offers "confirm it as is".
+CASES_WHY = "Evals needs one case that should pass and one that should fail."
+CASES_SUGGEST = "Add a pass case and a fail case, for example `pass: …; fail: …`."
+for value in ("maybe a receipt with a date", "a receipt with a date"):
+    name = f"missing evals cases, first run: {value}"
+    RAN.append(name)
+    code, said, _ = run(CHECK, write(added(f"- evals: {value}")))
+    SAID.append(said)
+    mine = [item for item in items(said) if item[:2] == ("Evals", value)]
+    if code != 2 or [item[2:] for item in mine] != [(CASES_WHY, CASES_SUGGEST)]:
+        fail(name, f"exit {code}, items {mine}\n{said[-600:]}")
+
+# 14. No Why names an internal tool. It says plainly why.
+RAN.append("why names no internal tool")
+code, said, _ = run(CHECK, write(added("- evals: Pass: OK; Fail: an empty receipt")))
+SAID.append(said)
+whys = [item[2] for item in items(said)]
+if code != 2 or not whys or any(re.search(r"brief check|outcome", why, re.I) for why in whys):
+    fail("why names no internal tool", f"exit {code}, whys {whys}\n{said[-600:]}")
 
 # 7. Every Why and Suggest line is plain words that pass the shared writing check.
 lines = [line.strip() for said in SAID for line in said.splitlines() if line.strip().startswith(("Why:", "Suggest:"))]

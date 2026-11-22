@@ -86,7 +86,7 @@ for name in sorted(os.listdir(FIXTURES)):
         FAILS.append(f"{name}: {detail}")
 
 binary = os.path.join(FIXTURES, "a24_binary.bin")
-ran = subprocess.run([sys.executable, SCRIPT, binary], capture_output=True, text=True)
+ran = subprocess.run([sys.executable, SCRIPT, binary], capture_output=True, text=True, encoding="utf-8")
 said = (ran.stdout + ran.stderr).strip().splitlines()
 binary_ok = ran.returncode == 3 and len(said) == 1 and "not UTF-8" in said[0] and "Traceback" not in ran.stderr
 print(f"{'PASS' if binary_ok else 'FAIL'} a24_binary.bin: file is not UTF-8, a usage error")
@@ -96,7 +96,8 @@ if not binary_ok:
 # A fixture that names a failing check exits 1 from the script. A format-valid one exits 0, or 2 for one-letter values
 # such as `goal: g`. None crashes.
 for name, want in sorted(EXPECT.items()):
-    ran = subprocess.run([sys.executable, SCRIPT, os.path.join(FIXTURES, name)], capture_output=True, text=True)
+    ran = subprocess.run([sys.executable, SCRIPT, os.path.join(FIXTURES, name)], capture_output=True, text=True,
+                         encoding="utf-8")
     ok = ran.returncode in ((0, 2) if want is None else (1,)) and "Traceback" not in ran.stderr
     if not ok:
         FAILS.append(f"{name}: script exit {ran.returncode}, stderr {ran.stderr[-200:]!r}")

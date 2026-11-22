@@ -18,6 +18,11 @@ check_decisions.landing() says. A Parked line stays in the Parking lot. An `out 
 bold or not, also puts it in Constraints, unless it has a question mark. Then it is a question in Unknowns.
 Each confirmed value is copied into the brief's `## Confirmed` block.
 
+check_brief fails an `[insert ...]` anywhere and an Evals case body that is a placeholder, and a `## Confirmed` line
+does not clear a fail. check_decisions lists such text inside a longer value for a yes, so the mapper writes it the way
+check_brief reads as literal: an `[insert ...]` goes in a code span, and `stated: ` goes before a case body such as
+`` `N/A` `` that holds a code span.
+
 A value check_brief would read as a marker gets `stated: ` in front, so check_brief reads it as the person's words:
 a brief tag outside its home slot (`how:` in Done), `default` on a line that is not a slot's own value, `unknown` at
 the start, only trap words, or `none`. check_decisions has judged the value itself, and a confirmation is the yes.
@@ -45,8 +50,19 @@ from check_decisions import (  # noqa: E402
     slot_value,
     split_fences,
     unstated,
+    utf8_output,
 )
-from check_brief import TAG, TAGS, UNKNOWN_START, classify, is_bare_trap  # noqa: E402
+from check_brief import (  # noqa: E402
+    CODE_SPAN,
+    INSERT_FINDER,
+    TAG,
+    TAGS,
+    UNKNOWN_START,
+    case_marks,
+    classify,
+    is_bare_trap,
+    judge,
+)
 
 EVIDENCE = "Every claim names its run, file:line or photo, or says guess."
 REPORT = "Report only. Do not run or post until the user says to."
@@ -64,12 +80,35 @@ def items(text):
     return {name: real_items(sections.get(name, [])) for name in ("Decided", "Open", "Parked")}
 
 
+def literal(text):
+    """The text with each `[insert ...]` outside code put in a code span. check_decisions has listed it, so the person
+    said it is meant, and check_brief reads a code span as literal text."""
+    return INSERT_FINDER.sub(lambda m: m.group("keep") or f"`{m.group()}`", text)
+
+
+def literal_cases(item):
+    """An Evals item with `stated: ` before each colon-labelled case body that holds a code span and that check_brief
+    would fail as a placeholder, as in Pass: `N/A`. A case body that is only a placeholder with no code span is left
+    as written, so check_brief fails it."""
+    text, marks = case_marks(item)
+    out, last = [], 0
+    for i, (start, end, _, colon) in enumerate(marks):
+        body = text[end:marks[i + 1][0] if i + 1 < len(marks) else len(text)]
+        if colon and CODE_SPAN.search(body) and judge(body)[0] == "fail":
+            lead = end + len(body) - len(body.lstrip())
+            out += [text[last:lead], "stated: "]
+            last = lead
+    return "".join(out) + text[last:] if out else item
+
+
 def written(text, slot, own=False):
     """A user value as written in brief slot `slot`, without its `stated:` labels. own is True for a slot's own value.
 
     One `stated:` goes in front when check_brief would read the value as a marker. See the module docstring.
     """
-    raw = unstated(text)
+    raw = literal(unstated(text))
+    if slot == "Evals":
+        raw = literal_cases(raw)
     tag = TAG.match(raw)
     if ((tag and slot not in TAGS.get(tag.group(1).lower(), [])) or (DEFAULT_LEAD.match(raw) and not own)
             or UNKNOWN_START.match(raw) or is_bare_trap(raw) or classify(raw) == "fail"):
@@ -93,7 +132,7 @@ def question_of(row):
 
 
 def unknown(text):
-    return f"unknown: {question_of(text)}"
+    return f"unknown: {literal(question_of(text))}"
 
 
 def slot_text(decided, opens, slot, fallback):
@@ -182,6 +221,7 @@ def main(path, confirmed=None):
 
 
 if __name__ == "__main__":
+    utf8_output()
     if sys.argv[1:] in (["-h"], ["--help"]):
         print(__doc__.strip())
         sys.exit(0)

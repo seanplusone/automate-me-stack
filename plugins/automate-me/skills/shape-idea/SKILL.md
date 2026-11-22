@@ -168,9 +168,9 @@ This is the check-with-me step. On exit 2, stop and show the user the list, one 
 - Output: file format (CSV/JSON): unknown | yes
 ```
 
-Copy the slot and the value exactly as the list shows them. When they give a new answer, edit `decisions.md` instead, for example move the line to Open as a question. Then run the check again. A yes clears only its own item. It never clears a format error. A yes that no longer matches any value prints a NOTE. Remove that line.
+Copy the slot and the value exactly as the list shows them. When they give a new answer, edit `decisions.md` instead, for example move the line to Open as a question. Then run the check again. A yes clears only its own item, the one with that slot and value. It never clears a format error, and it never clears an Evals line with no pass case and fail case: add the cases. A yes that no longer matches any value prints a NOTE. Remove that line.
 
-The list is broad on purpose. In a Decided value it lists the word "unknown" anywhere, any question mark, and a hedge such as "maybe" or "not sure". It lists a trap word such as "clean", a hole inside a longer value, and `none`. It also lists an Open line with no question mark, a Parked `out of scope:` line with a question mark, and anything outcome's brief check would ask about. A wrong item costs one yes. A missed one costs a wrong brief.
+The list is broad on purpose. In a Decided value it lists the word "unknown" anywhere, any question mark, and a hedge such as "maybe" or "not sure". It lists a trap word such as "clean", a hole or an `[insert ...]` inside a longer value, a placeholder word inside a longer value such as `TBD by Friday`, and `none`. It also lists an Open line with no question mark, a Parked `out of scope:` line with a question mark, and anything outcome's brief check would ask about. A wrong item costs one yes. A missed one costs a wrong brief.
 
 The reply follows the [writing rules](../shared/writing-rules.md). Inside `decisions.md`, keep the user's numbers and names, and rewrite any line the writing check flags.
 

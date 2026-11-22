@@ -14,7 +14,7 @@ Status: new. Four synthetic scored cases. Each `run-1` was written by a fresh mo
 
 - `## Decided`, `## Open`, `## Parked`, or `## Handoff` is missing, repeated, or out of order. Section, slot and field names are ASCII, so `## Decıded` with a dotless i is a missing section, and `wrıting: pass` is a missing writing line. No input crashes the check;
 - a slot is missing from both Decided and Open, is repeated, is in both, or is blank (`output:` or `goal: stated:`). A blank slot is also on the CHECK WITH ME list, with a suggestion;
-- a value is untouched template text. That is a template hole such as `<goal>`, a template line left unfilled, or a word from outcome's fixed placeholder list such as TBD, TODO or N/A. An Open item that is only a placeholder or a hole (`TBD?`, `<question>?`) fails too;
+- a value is untouched template text. That is a template hole such as `<goal>`, a template line left unfilled, or only words from outcome's fixed placeholder list such as TBD, TODO or N/A. An Open item that is only a placeholder or a hole (`TBD?`, `<question>?`) fails too. A placeholder word or an `[insert ...]` inside a longer value is not untouched. It goes on the CHECK WITH ME list;
 - a label is left with nothing after it. `decide: stated:`, `tools: stated:`, a lone `stated:` and `out of scope: stated:` fail with a message that names the line;
 - a Decided `tools:`, `agents:` (or `agents and roles:`), `evals:`, `decide:`, or `write first:` line is repeated. Bold and a singular label (`**tools:**`, `tool:`, `eval:`) name the same line;
 - text sits inside a ``` or ~~~ fence under Decided, Open or Parked, because its text would be lost. An unclosed fence fails;
@@ -31,9 +31,10 @@ Status: new. Four synthetic scored cases. Each `run-1` was written by a fresh mo
 - a Decided value, or a Parked `out of scope:` line, with the word "unknown" anywhere (`go-live date: unknown`, `file format (CSV/JSON): unknown`, `the page shows Status: Unknown`);
 - any question mark in a Decided value, of any script and inside any markup (`**CSV or JSON?**`, `a Slack message that asks "Who's in for lunch?"`, `勝者だけ、それとも全票？`);
 - a hedge such as "maybe", "not sure" or "for now", or a trap word such as "clean" or "good". Also a hole inside a longer value such as `the form submits on <Enter>`, `none`, or a value outcome's brief check would ask about, such as `ok`;
+- a word from outcome's placeholder list inside a longer value, such as `TBD by Friday` or an Evals case of `` `N/A` ``. The list's everyday words (none, later, pending, placeholder) count only alone. An `[insert ...]` inside a longer value, such as `show the terminal prompt [Insert card] on the receipt`, is listed too;
 - an Open line with no question mark, or with a hole inside it. Any question mark makes it a question, so `**Should the poll close after 20 minutes?**` passes;
 - a Parked `out of scope:` line with a question mark, which may be a limit or a question;
-- an Evals line with no pass case and fail case. A yes cannot clear this one. Label the cases.
+- an Evals line with no pass case and fail case. A yes cannot clear this one, so it is the item shown for that value even beside a hedge. Add a pass case and a fail case.
 
 Each item names the slot as the brief names it, the exact value, a plain reason, and a suggested answer. A real run on `cases/check-with-me/decisions.md` prints:
 
@@ -56,9 +57,9 @@ The agent shows the list to the person. Each yes goes in `confirmed.md`, next to
 - Output: a chat message with the list that asks "Did you water them?" | yes
 ```
 
-The agent edits `decisions.md` for any other answer, and runs the check again. A yes clears its item on the next run. It never clears a format error. A yes that matches no value prints a NOTE and does not fail. The mapper copies each yes into the brief's `## Confirmed` block, so the brief check does not ask again. Each confirmed answer is a test case too: `cases/check-with-me/` holds a decisions file, its `confirmed.md`, and `expected.txt`, the list it must print without the confirmations.
+The agent edits `decisions.md` for any other answer, and runs the check again. A yes clears its item on the next run, and only that item. It names one slot and one exact value, so `tools: Use the terminal` and `agents: Use the terminal` are two items. It never clears a format error. A yes that matches no value prints a NOTE and does not fail. The mapper copies each yes into the brief's `## Confirmed` block, so the brief check does not ask again. A `## Confirmed` line cannot clear a fail in the brief check, so the mapper writes a confirmed `[insert ...]` in a code span, and puts `stated: ` before an Evals case such as `` `N/A` ``. The brief check reads both as the person's words. Each confirmed answer is a test case too: `cases/check-with-me/` holds a decisions file, its `confirmed.md`, and `expected.txt`, the list it must print without the confirmations.
 
-**Pass, exit 0,** when the format is valid and every item has a yes. Exit 3 is a usage error: bad arguments, or a path that is missing, a directory, or not UTF-8 text. It prints one line on stderr.
+**Pass, exit 0,** when the format is valid and every item has a yes. Exit 3 is a usage error: bad arguments, or a path that is missing, a directory, or not UTF-8 text. It prints one line on stderr. Files are read and written as UTF-8, and output is UTF-8, under any locale.
 
 The placeholder list is outcome's, and it is deliberately narrow. A phrase off the list, such as "see notes", passes. The CHECK WITH ME list and outcome's read-back catch the rest.
 

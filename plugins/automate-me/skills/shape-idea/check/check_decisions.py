@@ -40,9 +40,10 @@ Format invalid (exit 1) when:
   CHECK WITH ME list, with a suggestion. A slot written as `**goal:**` or `1. goal:` gets its own message;
 - a Decided `tools:`, `agents:` (or `agents and roles:`), `evals:`, `decide:`, or `write first:` line is blank or
   repeated, or another Decided or Parked line is blank;
-- a value is untouched template text: a template hole such as `<goal>`, a line of the template left unfilled, or a
-  word from outcome's fixed placeholder list such as TBD, TODO or N/A (check_brief's judge() says fail). `none` is
-  not on this list here: it is on the CHECK WITH ME list;
+- a value is untouched template text: a template hole such as `<goal>`, a line of the template left unfilled, or
+  only words from outcome's fixed placeholder list such as TBD, TODO or N/A (check_brief's judge() says fail). `none`
+  is not on this list here: it is on the CHECK WITH ME list. An `[insert ...]` inside a longer value, or a placeholder
+  word beside other words, is not untouched: it is on the CHECK WITH ME list;
 - an Open item is only a placeholder or only a hole (`TBD?`, `?`, `<question>?`);
 - stop is missing, repeated, not one of done, turn-cap, open-cap, or does not match the file;
 - turns is missing, repeated, or not a whole number from 1 through 10;
@@ -56,25 +57,28 @@ Check with me (exit 2, when the format is valid). Each item names the slot as th
 plain reason (Why) and a suggested answer (Suggest). The triggers are broad on purpose. A wrong item costs one yes:
 - a Decided value, or a Parked `out of scope:` line with no question mark, that holds the word "unknown" anywhere, any
   question mark (`?`, `？`, `؟` and the rest), a hedge such as "maybe" or "not sure", a trap word such as "clean" or
-  "good", a hole inside a longer value, a value check_brief would ask about such as `ok`, or `none`;
+  "good", a word from outcome's fixed placeholder list inside a longer value (`TBD by Friday`), a hole or an
+  `[insert ...]` inside a longer value, a value check_brief would ask about such as `ok`, or `none`;
 - a blank slot or line (also format invalid);
-- an Open item with no question mark, or with a hole inside it;
+- an Open item with no question mark, or with a hole or an `[insert ...]` inside it;
 - a Parked `out of scope:` line with a question mark: is it a limit or a question?
 - a Parked line check_brief's judge() would ask about;
 - every value check_brief asks about on the mapped brief, such as an Evals line with no pass case and fail case. A yes
-  cannot clear that one: label the cases.
+  cannot clear that one: label the cases. It is the item shown for its value, even when a hedge is on the same value.
 
 confirmed.md sits next to decisions.md, or at the path after `--confirmed`. Blank lines and `#` lines are skipped.
 Each other line is one answer, the slot and the exact value from the list, then ` | yes`:
 
     - Output: file format (CSV/JSON): unknown | yes
 
-A yes clears the item with that exact slot and value. It never clears a format error. A line that matches no item
-is printed as a NOTE, not a failure. The mapper copies each yes into the brief's `## Confirmed` block.
+A yes clears the item with that exact slot and value, and no other: `tools: X` and `agents: X` are two items. It never
+clears a format error. A line that matches no item is printed as a NOTE, not a failure. The mapper copies each yes into
+the brief's `## Confirmed` block.
 
 Prints a PASS or FAIL line per check, the CHECK WITH ME list, any NOTE lines, then
 `PASS|FORMAT INVALID|CHECK WITH ME decisions: <path>`. Exit 0 pass, 1 format invalid, 2 check with me, 3 usage: bad
 arguments, or a path that is missing, a directory, or not UTF-8 text, with one line on stderr. A UTF-8 BOM is ignored.
+Files are read and written as UTF-8, and output is UTF-8, whatever the locale.
 """
 import contextlib
 import io
@@ -89,7 +93,17 @@ sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath
 from check_writing import check_writing  # noqa: E402
 
 sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "outcome", "check")))
-from check_brief import TRAP, check as check_brief, core, found_asks as brief_asks, judge  # noqa: E402
+from check_brief import (  # noqa: E402
+    INSERT_FINDER,
+    PLACEHOLDER,
+    TEMPLATE,
+    TRAP,
+    check as check_brief,
+    core,
+    found,
+    found_asks as brief_asks,
+    judge,
+)
 
 SECTIONS = ["Decided", "Open", "Parked", "Handoff"]
 # Names are ASCII. re.A keeps IGNORECASE from matching a dotless i or a long s, so no lookup meets an unknown name.
@@ -130,6 +144,8 @@ HEDGES = re.compile(r"(?<![^\W_])(?:maybe|perhaps|possibly|probably|might|unsure
 TRAPS = re.compile(r"(?<![^\W_])(?:" + "|".join(sorted(TRAP)) + r")(?![^\W_])")
 BRIEF_CHECK = "the mapped brief passes outcome's brief check"
 EVALS_ASK = "ASK: Evals: Is there a pass case and a fail case here?"
+# The words of outcome's fixed placeholder list that are also everyday words. Only placeholder_in() reads this.
+EVERYDAY = {"none", "later", "pending", "placeholder"}
 
 Item = namedtuple("Item", "slot value why suggest clears")
 
@@ -200,6 +216,25 @@ def unstated(value):
             return (tags + text).strip()
 
 
+def insert_in(value):
+    """The first `[insert ...]` outside code in a value that has other words, or None. Alone it is a template hole."""
+    if not found(INSERT_FINDER, value) or untouched(value):
+        return None
+    return next(m.group() for m in INSERT_FINDER.finditer(value) if m.group("keep") is None)
+
+
+def untouched(value):
+    """True when check_brief's judge() fails the value as a whole: nothing but template text, holes or placeholders.
+
+    judge() also fails an `[insert ...]` anywhere. Inside a longer value that may be literal text, as
+    `show the prompt [Insert card]`, so it is not untouched when the rest of the value passes on its own.
+    """
+    if judge(value)[0] != "fail":
+        return False
+    rest = INSERT_FINDER.sub(lambda m: m.group("keep") or " ", value)
+    return rest == value or core(value) in TEMPLATE or judge(rest)[0] == "fail"
+
+
 def blank(value):
     """True when nothing is left once markup, punctuation and one leading tag go, as check_brief's core() reads it."""
     return not core(value or "")
@@ -217,9 +252,18 @@ def open_body(item):
     return re.sub(r"^(?:\s*(?:unknown|stated)\s*:)+", "", text, flags=re.I).strip()
 
 
-def open_slot(item):
-    """The brief slot an Open item fills: its slot, or Unknowns."""
-    return BRIEF_SLOT[slot_of(item)] if slot_of(item) else "Unknowns"
+def open_key(item):
+    """(brief slot, value) a confirmation names for an Open item, as the mapper places it.
+
+    A slot or a `tools:`, `agents:` or `evals:` question fills that brief slot, so two labels with the same text are two
+    items. Any other item goes to Unknowns, and a `decide:` or `write first:` label stays on its value there.
+    """
+    if slot_of(item):
+        return BRIEF_SLOT[slot_of(item)], open_body(item)
+    extra = extra_of(item)
+    if extra and extra[0] in ("tools", "agents", "evals"):
+        return BRIEF_SLOT[extra[0]], open_body(item)
+    return "Unknowns", f"{extra[0]}: {open_body(item)}" if extra else open_body(item)
 
 
 def scoped(item):
@@ -313,7 +357,7 @@ def handoff_fields(items):
 
 def prose_fails(text):
     """Runs the shared writing check. A self-reported writing line is not consulted."""
-    handle = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False)
+    handle = tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".md", delete=False)
     try:
         handle.write(text)
         handle.close()
@@ -387,7 +431,7 @@ def check(text):
     parked = real_items(sections.get("Parked", []))
     add("no open item is a placeholder",
         [f"open item {item!r} is only a placeholder or a template hole, not a question" for item in opens
-         if not (slot_of(item) and blank(open_body(item))) and judge(open_body(item))[0] == "fail"])
+         if not (slot_of(item) and blank(open_body(item))) and untouched(open_body(item))])
     loose = {}
     for line in decided + opens + [text for name, text in extras if name in ("Decided", "Open")]:
         match = LOOSE_SLOT.match(line)
@@ -438,7 +482,7 @@ def check(text):
     values += [("Parking lot", parked_value(row)) for row in parked if not is_none(row) and not parked_limit(row)]
     add("no value is a placeholder or template text",
         [f"{slot}: {value!r} is a placeholder or template text; write the real answer" for slot, value in values
-         if not blank(value) and core(value) != "none" and judge(value)[0] == "fail"])
+         if not blank(value) and core(value) != "none" and untouched(value)])
 
     handoff = sections.get("Handoff", [])
     handoff_ready = counts.get("Handoff") == 1
@@ -540,11 +584,32 @@ def mapped(text, confirmed=()):
     return map_decisions.map_text(text, confirmed)
 
 
+def placeholder_in(value):
+    """The first run of one to three words, as written, that check_brief's judge() calls a placeholder, or None.
+
+    A value made only of placeholders is format invalid. This finds one inside a longer value, as `TBD by Friday`.
+    A run with no word left, such as a `pass:` label or a dash, is not one. Nor is a word of that list that is also an
+    everyday word, such as `later` in `a watch app later`: inside a longer value it is that word.
+    """
+    if not PLACEHOLDER.search(core(value)):
+        return None
+    words = value.split()
+    for size in (1, 2, 3):
+        for start in range(len(words) - size + 1):
+            piece = " ".join(words[start:start + size])
+            if core(piece) and core(piece) not in EVERYDAY and judge(piece) == ("fail", "placeholder"):
+                return piece.strip(" \"'.,;:!?()[]*_`")
+    return None
+
+
 # A value trigger: (test, why, suggest). test returns the word it found, or None. The first match names the item.
 VALUE_TRIGGERS = [
     (lambda value: "none" if core(value) == "none" else None,
      'It says "none", so this slot may not be filled in yet.',
      "Confirm there is nothing for it, or write the real answer."),
+    (placeholder_in,
+     "It has '{word}' in it, so part of it may not be filled in yet.",
+     "Write the missing part in the person's words, or confirm it as is if the word is meant."),
     (lambda value: "unknown" if "unknown" in core(value) else None,
      'It says "unknown", so this may not be decided yet.',
      "Move it to Open as a question, or confirm it as is."),
@@ -558,6 +623,8 @@ VALUE_TRIGGERS = [
      'The word "{word}" can mean many things, so nobody can check it.',
      "Name something a person can see or count, or confirm it as is."),
 ]
+INSERT = ("It has '{word}' in it, which may be template text left to fill in.",
+          "Fill in the real text, or confirm it as is if the words in brackets are meant.")
 HOLE = ("It has text in angle or curly brackets, which may be a template hole.",
         "Fill in the real text, or confirm it as is if the brackets are meant.")
 VAGUE = ("It is very short or vague, so it may not be a real answer.",
@@ -567,13 +634,23 @@ NO_QUESTION = ("It sits in Open but has no question mark, so it may be a decisio
                "Make it a question that ends in a question mark, or move it to Decided if it is settled.")
 LIMIT_OR_QUESTION = ("It is tagged out of scope and also has a question mark, so it may be a question and not a limit.",
                      "Confirm it to keep it as a question for later, or drop the question mark if it is a firm limit.")
-BRIEF_ASK = ("Outcome's brief check is not sure this is a real answer.", "Write the full answer, or confirm it as is.")
-EVALS_CASES = ("Evals needs one case that should pass and one that should fail, and the check cannot find both.",
-               "Label each case, as `pass: <case>; fail: <case>`. A yes does not clear this one.")
+BRIEF_ASK = ("It is too short or vague to tell what should happen.", "Write the full answer, or confirm it as is.")
+EVALS_CASES = ("Evals needs one case that should pass and one that should fail.",
+               "Add a pass case and a fail case, for example `pass: …; fail: …`.")
+
+
+def brief_item(slot, value, line):
+    """The Item for one check_brief ASK line. A yes cannot clear the Evals pass and fail ask: only labelled cases do."""
+    if line == EVALS_ASK:
+        return Item(slot, value, *EVALS_CASES, False)
+    return Item(slot, value, *(HOLE if line.endswith(", or a hole to fill?") else BRIEF_ASK), True)
 
 
 def judged(slot, value):
-    """The Item check_brief's judge() asks for, or None."""
+    """The Item check_brief's judge() asks for, or None. An `[insert ...]` inside a longer value is one too."""
+    word = insert_in(value)
+    if word:
+        return Item(slot, value, INSERT[0].format(word=word), INSERT[1], True)
     outcome, why = judge(value)
     if outcome != "ask":
         return None
@@ -600,27 +677,28 @@ def review(text, with_brief=True):
     decided, opens, parked = found["Decided"], found["Open"], found["Parked"]
     out = [value_item(slot, value) for slot, value in answers(decided, parked)]
     for item in opens:
-        body = open_body(item)
+        slot, body = open_key(item)
         if slot_of(item) and blank(body):
-            out.append(Item(open_slot(item), body, BLANK[0], BLANK[1].format(slot=open_slot(item).lower()), True))
+            out.append(Item(slot, body, BLANK[0], BLANK[1].format(slot=slot.lower()), True))
         elif not has_question(item):
-            out.append(Item(open_slot(item), body, *NO_QUESTION, True))
+            out.append(Item(slot, body, *NO_QUESTION, True))
         else:
-            out.append(judged(open_slot(item), body))
+            asked = judged(slot, open_body(item))
+            out.append(asked and asked._replace(value=body))
     for row in parked:
         if OUT_OF_SCOPE.match(row.strip()) and has_question(row):
             out.append(Item("Parking lot", parked_value(row), *LIMIT_OR_QUESTION, True))
         elif not parked_limit(row) and not blank(parked_value(row)):
             out.append(judged("Parking lot", parked_value(row)))
     if with_brief:
-        for slot, value, line in brief_asks(mapped(text)):
-            out.append(Item(slot, value, *(EVALS_CASES if line == EVALS_ASK else BRIEF_ASK), line != EVALS_ASK))
-    seen, unique = set(), []
+        out += [brief_item(*ask) for ask in brief_asks(mapped(text))]
+    # One item per slot and value. An item a yes cannot clear wins, so its advice is not hidden behind one a yes clears.
+    unique = {}
     for item in filter(None, out):
-        if (item.slot, item.value) not in seen:
-            seen.add((item.slot, item.value))
-            unique.append(item)
-    return unique
+        key = (item.slot, item.value)
+        if key not in unique or unique[key].clears and not item.clears:
+            unique[key] = item
+    return list(unique.values())
 
 
 def read_confirmed(text):
@@ -657,8 +735,7 @@ def verdict(text, confirmed_text=""):
              for slot, value in dict.fromkeys(yes) if (slot, value) not in keys]
     if not failed and not pending:
         # The brief must pass check_brief whole. Anything it still asks about stays on the list.
-        pending = [Item(slot, value, *(EVALS_CASES if line == EVALS_ASK else BRIEF_ASK), False)
-                   for slot, value, line in brief_asks(mapped(text, used))]
+        pending = [brief_item(*ask) for ask in brief_asks(mapped(text, used))]
     code = 1 if failed else 2 if pending else 0
     return Verdict(code, results, pending, notes, used)
 
@@ -688,6 +765,13 @@ def read(path):
         return None, "not UTF-8 text"
     except OSError as err:
         return None, err.strerror or str(err)
+
+
+def utf8_output():
+    """Prints UTF-8 whatever the locale says, so a value in any script prints. A character that cannot print is
+    replaced, never a crash."""
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8", errors="replace")
 
 
 def unreadable(path, why):
@@ -736,6 +820,7 @@ def main(path, confirmed=None):
 
 
 if __name__ == "__main__":
+    utf8_output()
     if sys.argv[1:] in (["-h"], ["--help"]):
         print(__doc__.strip())
         sys.exit(0)

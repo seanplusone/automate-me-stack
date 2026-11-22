@@ -579,7 +579,7 @@ REPROS = [
     ("r4_open_evals_tbd", edit(("- what should I call", "- evals: TBD?")), 1, None, lambda d, b: "placeholder" in d),
     ("r4_open_agents_unknown", edit(("- what should I call", "- agents: unknown: ?")), 1, None, lambda d, b: "placeholder" in d),
     ("r4_open_tools_hole", edit(("- what should I call", "- tools: Should the poll run in <channel>?")), 2, None,
-     lambda d, b: 'Unknowns: "Should the poll run in <channel>?"' in d and "CHECK WITH ME" in d),
+     lambda d, b: 'Tools: "Should the poll run in <channel>?"' in d and "CHECK WITH ME" in d),
     ("r4_decided_hole", edit(("- the one habit", "- the form submits on <Enter>")), 2, None,
      lambda d, b: 'Done: "the form submits on <Enter>"' in d and "CHECK WITH ME" in d),
     ("r4_parked_hole", edit(("- I should probably", "- the form submits on <Enter>")), 2, None,

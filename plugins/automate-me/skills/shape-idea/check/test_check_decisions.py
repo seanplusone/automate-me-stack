@@ -457,7 +457,7 @@ for label, text, slot, value in (
         ("hole in an Open question", open_q("- Should it press <Enter> to confirm each move?"), "Unknowns",
          "Should it press <Enter> to confirm each move?"),
         ("hole in an Open tools question", open_q("- Do you want a reminder?\n- tools: Should the poll run in <channel>?"),
-         "Unknowns", "Should the poll run in <channel>?")):
+         "Tools", "Should the poll run in <channel>?")):
     expect_me(f"r4 checked with me, not failed: {label}", text, slot, value)
 
 UNLABELED = added("- evals: a poll with 3 choices works and a poll with none errors")
@@ -493,7 +493,7 @@ for label, text in EMPTY:
     RAN.append(f"r5 an empty labelled value fails clearly: {label}")
     said = {}
     for name, script in (("check", SCRIPT), ("map", CHECK_MAP)):
-        got = subprocess.run([sys.executable, script, write(text)], capture_output=True, text=True)
+        got = subprocess.run([sys.executable, script, write(text)], capture_output=True, text=True, encoding="utf-8")
         said[name] = got
     bad = [f"{name} exit {got.returncode}" for name, got in said.items() if got.returncode != 1]
     bad += [f"{name} wrote to stderr: {got.stderr[-300:]}" for name, got in said.items() if got.stderr]
@@ -530,12 +530,12 @@ expect("r5 an Open goal beside a decide line that starts with default", OPEN_GOA
 for args in ([], ["a.md", "b.md"], ["a.md", "--confirmed"]):
     for name, script in (("check", SCRIPT), ("map", CHECK_MAP)):
         RAN.append(f"r5 usage error is one stderr line: {name} {args}")
-        got = subprocess.run([sys.executable, script, *args], capture_output=True, text=True)
+        got = subprocess.run([sys.executable, script, *args], capture_output=True, text=True, encoding="utf-8")
         if got.returncode != 3 or got.stdout or len(got.stderr.strip().splitlines()) != 1:
             FAILS.append(f"r5 usage error is one stderr line: {name} {args}: exit {got.returncode}, "
                          f"{len(got.stdout.splitlines())} stdout lines, stderr {got.stderr!r}")
 RAN.append("r5 help with an extra argument is a usage error")
-got = subprocess.run([sys.executable, CHECK_MAP, "-h", "x"], capture_output=True, text=True)
+got = subprocess.run([sys.executable, CHECK_MAP, "-h", "x"], capture_output=True, text=True, encoding="utf-8")
 if got.returncode != 3:
     FAILS.append(f"r5 help with an extra argument is a usage error: exit {got.returncode}")
 
@@ -559,7 +559,7 @@ for label, text in (("Decided heading", swap("## Decided", "## Decıded")),
                     ("writing field", swap("- writing: pass", "- wrıting: pass"))):
     for name, script in (("check", SCRIPT), ("map", CHECK_MAP)):
         RAN.append(f"r6 a dotless i is a plain format error: {label}: {name}")
-        got = subprocess.run([sys.executable, script, write(text)], capture_output=True, text=True)
+        got = subprocess.run([sys.executable, script, write(text)], capture_output=True, text=True, encoding="utf-8")
         if got.returncode != 1 or "Traceback" in got.stderr + got.stdout:
             FAILS.append(f"r6 a dotless i is a plain format error: {label}: {name}: exit {got.returncode}, "
                          f"stderr {got.stderr[-300:]!r}")
@@ -581,7 +581,7 @@ if "map:" not in (DOC + "Format invalid (exit 1) when:").split("Format invalid (
 
 def expect_unreadable(name, path):
     RAN.append(name)
-    got = subprocess.run([sys.executable, SCRIPT, path], capture_output=True, text=True)
+    got = subprocess.run([sys.executable, SCRIPT, path], capture_output=True, text=True, encoding="utf-8")
     said = (got.stdout + got.stderr).strip().splitlines()
     if got.returncode != 3 or len(said) != 1 or "Traceback" in got.stderr:
         FAILS.append(f"{name}: exit {got.returncode}, said {said}")
