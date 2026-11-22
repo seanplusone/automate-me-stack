@@ -194,7 +194,7 @@ for c in cases/*/; do
 done
 ```
 
-Every `run-1` passes both checks. The loop checks the shape of every other brief under `runs/`, and it scores `run-1` only. `from-decisions` has a `decisions.md` and no `runs/` or key. The loop maps each file and runs `check_brief.py` on the result. `set -e` stops the loop when any command fails. `apartment-search/runs/run-2` passes the shape check and fails the score, which is the point of it, so score it on its own:
+Every `run-1` passes both checks. The loop checks the shape of every other brief under `runs/`, and it scores `run-1` only. `from-decisions` has a `decisions.md` and no `runs/` or key. The loop maps each file and runs `check_brief.py` on the result. `map_decisions.py` runs shape-idea's `check_decisions.py` first, with the same `confirmed.md`. It prints a brief only on exit 0. Exit 1 prints the format errors, and exit 2 prints the CHECK WITH ME list. Each yes the user gives goes in `confirmed.md` next to the decisions file, and the mapper copies it into the brief's `## Confirmed` block. `set -e` stops the loop when any command fails. `apartment-search/runs/run-2` passes the shape check and fails the score, which is the point of it, so score it on its own:
 
 ```
 python3 check/score_case.py cases/apartment-search/key.md cases/apartment-search/runs/run-2/brief.md

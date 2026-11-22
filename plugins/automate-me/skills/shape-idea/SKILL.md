@@ -61,7 +61,7 @@ Five slots are required: goal, done, output, verify, and constraints. Each one i
 
 A hedge is "maybe", "I think", or "not sure". It is not a decision. If a wrong guess would change the shape, it goes to Open. "Later" goes to Parked, even when it is hedged. A Parked line stays in outcome's Parking lot. Only an `out of scope:` tag makes it an exclusion.
 
-"Unknown" is not a decision either. A slot, or a `tools:`, `agents:`, `evals:` or `decide:` line, that the user calls unknown goes to Open as a question. The check fails a Decided value that is `unknown` alone, `unknown` and punctuation (`unknown:`, `unknown, Slack or Teams`), or `unknown` and at most two words (`unknown for now`). Markup, brackets, link syntax and labels in front do not hide it. A longer value that starts with the word, such as "unknown senders get nothing", may be prose. The check asks `Is '<value>' decided, or still unknown?`, and a Confirmed line records a yes.
+"Unknown" is not a decision either. A slot, or a `tools:`, `agents:`, `evals:` or `decide:` line, that the user calls unknown goes to Open as a question. A Decided line that still holds the word goes on the check's CHECK WITH ME list, described in the handoff step.
 
 A Decided `evals:` line names one case that should pass and one that should fail, as `evals: pass: <case>; fail: <case>` or `evals: <case> should pass, <case> should fail`. A Decided `decide:` line says what the user will decide with the result. It goes to Goal. Without it, outcome's decide question waits in Unknowns. A Decided `out of scope:` line is a firm exclusion.
 
@@ -152,15 +152,25 @@ Outcome reads the sections like this. This skill does not ask Tools, Agents and 
 | The `verify:` line | Verification |
 | A decided `tools:`, `agents:`, or `evals:` line | That slot, in the user's words |
 | Tools, Agents and roles, and Evals when unset | Unknowns |
-| The Confirmed section | The brief's Confirmed block |
+| Each yes in `confirmed.md` | The brief's `## Confirmed` block |
 
 The read-back asks at most 3 questions, in this order: an open goal or done question, then the decide question, then Tools, then Agents and roles, then Evals. Unasked ones stay in Unknowns.
 
-Run `python3 "$SKILL_DIR"/check/check_decisions.py <decisions.md>` after you write Handoff. Exit 1 means fix what it flags before you show the file. The checks are listed in `README.md`. A code fence does not hide a slot, and a fence under Decided, Open or Parked fails, because its text would not reach the brief. `writing: pass` does not override a writing failure.
+Run `python3 "$SKILL_DIR"/check/check_decisions.py <decisions.md>` after you write Handoff. It has three outcomes.
 
-Exit 2 is a break point. Each `ASK:` line is a value the checks cannot judge. `ASK: <slot>: Is '<value>' a real answer for <slot>?` comes from outcome's brief check on the mapped brief, for values such as `ok` or `maybe`. `ASK: <slot>: Is '<value>' decided, or still unknown?` is a value that starts with "unknown". Stop and ask the user that yes/no question, one line each. Do not guess the answer. On a yes, add the line under a `## Confirmed` section at the end of the file, as `- <Slot>: <value>`, and run the check again. On a no, replace the value with the user's answer, or move the slot to Open as a question. The handoff is ready only on exit 0.
+- Exit 1, FORMAT INVALID. The file breaks a rule the script knows for certain. Examples are a missing section, a missing Handoff line, a blank slot, a template hole such as `<goal>`, a placeholder such as TBD, or a writing failure. Fix what it flags before you show the file. The checks are listed in `README.md`. A code fence under Decided, Open or Parked fails, because its text would not reach the brief. `writing: pass` does not override a writing failure.
+- Exit 2, CHECK WITH ME. The format is valid, and the script found values it cannot be sure about. It prints one list. Each item names the slot, the exact value, why it may not be ready, and a suggested answer.
+- Exit 0, PASS. The handoff is ready.
 
-The placeholder list is outcome's, and it is deliberately narrow: TBD, TODO, n/a, none, "to be decided", "same as above", and a few more, plus template holes such as `<goal>`. A phrase off the list, such as "Por determinar", passes the check. A phrase of only hedge words, such as "not sure yet", is an ASK. The ask and outcome's read-back catch the rest.
+This is the check-with-me step. On exit 2, stop and show the user the list, one item at a time. Do not guess the answer. When they say a value is right as written, add one line for it to `confirmed.md`, in the same folder as `decisions.md`:
+
+```
+- Output: file format (CSV/JSON): unknown | yes
+```
+
+Copy the slot and the value exactly as the list shows them. When they give a new answer, edit `decisions.md` instead, for example move the line to Open as a question. Then run the check again. A yes clears only its own item. It never clears a format error. A yes that no longer matches any value prints a NOTE. Remove that line.
+
+The list is broad on purpose. In a Decided value it lists the word "unknown" anywhere, any question mark, and a hedge such as "maybe" or "not sure". It lists a trap word such as "clean", a hole inside a longer value, and `none`. It also lists an Open line with no question mark, a Parked `out of scope:` line with a question mark, and anything outcome's brief check would ask about. A wrong item costs one yes. A missed one costs a wrong brief.
 
 The reply follows the [writing rules](../shared/writing-rules.md). Inside `decisions.md`, keep the user's numbers and names, and rewrite any line the writing check flags.
 

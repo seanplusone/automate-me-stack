@@ -131,7 +131,7 @@ for src in sorted(__import__("pathlib").Path(SHAPE).glob("*/runs/run-1/decisions
 # 1. A placeholder slot stops the mapper before any brief is written.
 tbd = decisions(BASE.replace("- goal: a tiny habit tracker on my phone", "- goal: TBD"))
 code, out = run_main(tbd)
-tbd_bad = [] if code == 1 and "the mapped brief passes outcome's brief check" in out and "# Brief" not in out else [f"exit {code}"]
+tbd_bad = [] if code == 1 and "FAIL no value is a placeholder or template text" in out and "# Brief" not in out else [f"exit {code}"]
 print(f"{'PASS' if not tbd_bad else 'FAIL'} a placeholder slot stops the mapper")
 FAILS.extend(f"a placeholder slot stops the mapper: {item}" for item in tbd_bad)
 
@@ -327,6 +327,17 @@ for skill in (shape_skill, outcome_skill):
         doc_bad.append("stated tag wording")
 if 'python3 "$SKILL_DIR"/../shape-idea/check/check_decisions.py' not in outcome_skill:
     doc_bad.append("check_decisions first")
+outcome_readme = open(os.path.join(HERE, "..", "README.md")).read()
+for label, doc in (("shape skill", shape_skill), ("shape readme", shape_readme), ("outcome skill", outcome_skill),
+                   ("outcome readme", outcome_readme)):
+    for needed in ("CHECK WITH ME", "confirmed.md"):
+        if needed not in doc:
+            doc_bad.append(f"{label} does not name {needed}")
+    # check_brief still prints ASK lines, so only shape-idea's docs drop them.
+    for banned in ("ASK:",) * label.startswith("shape") + ("## Confirmed` section at the end",
+                                                           "## Confirmed` at its end", "decided, or still unknown?"):
+        if banned in doc:
+            doc_bad.append(f"{label} still says {banned}")
 print(f"{'PASS' if not doc_bad else 'FAIL'} docs match the checks")
 FAILS.extend(f"docs match the checks: {item}" for item in doc_bad)
 
@@ -354,10 +365,15 @@ def edit(*pairs):
 
 
 def chain(text):
+    """text is the decisions file, or (decisions, confirmed.md) to write a confirmed.md beside it."""
+    text, confirmed = text if isinstance(text, tuple) else (text, None)
     folder = tempfile.mkdtemp()
     path = os.path.join(folder, "decisions.md")
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(text)
+    if confirmed is not None:
+        with open(os.path.join(folder, "confirmed.md"), "w", encoding="utf-8") as handle:
+            handle.write(confirmed)
     dec = subprocess.run([sys.executable, SCRIPTS["dec"], path], capture_output=True, text=True)
     mapped = subprocess.run([sys.executable, SCRIPTS["map"], path], capture_output=True, text=True)
     brief_path = os.path.join(folder, "brief.md")
@@ -374,17 +390,19 @@ ADD = "- constraints"
 OUT = "- output:"
 REPROS = [
     # (name, text, dec exit, brief exit or None when no brief, test on (dec stdout, brief text))
-    ("unknown_out", edit((OUT, "- output: unknown")), 1, None,
-     lambda d, b: "move it to Open as a question" in d),
-    ("notsure_out", edit((OUT, "- output: not sure yet")), 2, None, lambda d, b: "ASK: Output: Is 'not sure yet'" in d),
-    ("tbd_phrase", edit((OUT, "- output: to be decided"), ("- verify:", "- verify: see notes")), 1, None,
-     lambda d, b: "slot Output is only a placeholder" in d),
-    ("trap_verify", edit(("- verify:", "- verify: it looks good")), 1, None, lambda d, b: "no visible signal" in d),
-    ("trap_done", edit(("- done:", "- done: clean")), 1, None, lambda d, b: "no visible signal" in d),
-    ("tools_unknown", edit((ADD, "&\n- tools: unknown: waiting to pick Python or Node")), 1, None,
-     lambda d, b: "move it to Open as a question" in d),
-    ("agents_unknown", edit((ADD, "&\n- agents: unknown yet")), 1, None,
-     lambda d, b: "move it to Open as a question" in d),
+    ("unknown_out", edit((OUT, "- output: unknown")), 2, None,
+     lambda d, b: 'Output: "unknown"' in d and "CHECK WITH ME" in d),
+    ("notsure_out", edit((OUT, "- output: not sure yet")), 2, None,
+     lambda d, b: 'Output: "not sure yet"' in d and "CHECK WITH ME" in d),
+    ("tbd_phrase", edit((OUT, "- output: to be decided"), ("- verify:", "- verify: see notes")), 1, None, lambda d, b: "placeholder" in d),
+    ("trap_verify", edit(("- verify:", "- verify: it looks good")), 2, None,
+     lambda d, b: 'Verification: "it looks good"' in d and "CHECK WITH ME" in d),
+    ("trap_done", edit(("- done:", "- done: clean")), 2, None,
+     lambda d, b: 'Done: "clean"' in d and "CHECK WITH ME" in d),
+    ("tools_unknown", edit((ADD, "&\n- tools: unknown: waiting to pick Python or Node")), 2, None,
+     lambda d, b: 'Tools: "unknown: waiting to pick Python or Node"' in d and "CHECK WITH ME" in d),
+    ("agents_unknown", edit((ADD, "&\n- agents: unknown yet")), 2, None,
+     lambda d, b: 'Agents and roles: "unknown yet"' in d and "CHECK WITH ME" in d),
     ("evals_colon", edit((ADD, "&\n- evals: pass: mark today and the streak goes up; fail: miss a day and it still grows")),
      0, 0, lambda d, b: "- Evals: pass: mark today" in b and EVALS not in b),
     ("evals_labels", edit((ADD, "&\n- evals: Pass: mark today and the streak goes up; Fail: miss a day and it still grows")),
@@ -419,63 +437,75 @@ REPROS = [
     ("open_url", edit(("- what should I call", "- should it sync with https://example.org/sync?")), 0, 0,
      lambda d, b: "unknown: should it sync with https://example.org/sync?" in b),
     ("bom", "\ufeff" + HABIT_TEXT, 0, 0, lambda d, b: b.startswith("# Brief")),
-    ("writefirst", edit((ADD, "&\n- tools: write first: none")), 1, None, lambda d, b: "Tools is only a placeholder" in d),
+    ("writefirst", edit((ADD, "&\n- tools: write first: none")), 2, None,
+     lambda d, b: 'Tools: "write first: none"' in d and "CHECK WITH ME" in d),
     ("evals_tbdfail", edit((ADD, "&\n- evals: marking today should pass. TBD should fail.")), 1, None,
      lambda d, b: "Evals: '. TBD' is a placeholder" in d),
     ("ask_output", edit((OUT, "- output: ok")), 2, None,
-     lambda d, b: "ASK: Output: Is 'ok' a real answer for Output?" in d),
+     lambda d, b: 'Output: "ok"' in d and "CHECK WITH ME" in d),
     # Independent review (codex), round 3.
-    ("bold_unknown", edit((OUT, "- output: **unknown**")), 1, None, lambda d, b: "move it to Open" in d),
-    ("stated_trap", edit(("- verify:", "- verify: stated: clean")), 1, None, lambda d, b: "no visible signal" in d),
-    ("decide_unknown", edit(("- the one habit", "- decide: unknown")), 1, None, lambda d, b: "move it to Open" in d),
+    ("bold_unknown", edit((OUT, "- output: **unknown**")), 2, None,
+     lambda d, b: 'Output: "**unknown**"' in d and "CHECK WITH ME" in d),
+    ("stated_trap", edit(("- verify:", "- verify: stated: clean")), 2, None,
+     lambda d, b: 'Verification: "clean"' in d and "CHECK WITH ME" in d),
+    ("decide_unknown", edit(("- the one habit", "- decide: unknown")), 2, None,
+     lambda d, b: 'Goal: "unknown"' in d and "CHECK WITH ME" in d),
     ("decide_line", edit(("- the one habit", "- decide: which habit to keep")), 0, 0,
      lambda d, b: "  - which habit to keep" in block(b, "- Goal:", "- Done:") and DECIDE not in b and "decide:" not in b),
-    ("evals_unknown_case", edit((ADD, "&\n- evals: pass: unknown; fail: clean")), 1, None,
-     lambda d, b: "move it to Open" in d),
-    ("slot_tag", edit((OUT, "- output: investigate: count the votes")), 1, None,
-     lambda d, b: "belongs in Done" in d),
+    ("evals_unknown_case", edit((ADD, "&\n- evals: pass: unknown; fail: clean")), 2, None,
+     lambda d, b: 'Evals: "pass: unknown; fail: clean"' in d and "CHECK WITH ME" in d),
+    ("slot_tag", edit((OUT, "- output: investigate: count the votes")), 0, 0,
+     lambda d, b: "investigate: count the votes" in block(b, "- Output:", "- Constraints:")),
     ("slot_tag_home", edit(("- done:", "- done: investigate: why a streak breaks")), 0, 0,
      lambda d, b: "  - investigate: why a streak breaks" in block(b, "- Done:", "- Output:")),
     ("goal_default", edit(("- goal:", "- goal: default to a poll in the chat")), 0, 0,
      lambda d, b: "- Goal: default to a poll in the chat\n- Done:" in b),
-    ("parked_hedge", edit(("- I should probably", "- later, perhaps")), 1, None,
-     lambda d, b: "'later, perhaps' is a placeholder" in d),
+    ("parked_hedge", edit(("- I should probably", "- later, perhaps")), 1, None, lambda d, b: "placeholder" in d),
     ("open_hole", edit(("- what should I call", "- should the bot use <channel>?")), 2, None,
-     lambda d, b: "ASK: Unknowns: Is 'should the bot use <channel>?' a real question, or a hole to fill?" in d),
+     lambda d, b: 'Unknowns: "should the bot use <channel>?"' in d and "CHECK WITH ME" in d),
     ("parked_hole", edit(("- I should probably", "- ask about <channel> later")), 2, None,
-     lambda d, b: "ASK: Parking lot: Is 'ask about <channel> later' a real answer for Parking lot, or a hole to fill?" in d),
-    ("open_bare_q", edit(("- what should I call", "- ?")), 1, None, lambda d, b: "placeholder, not a question" in d),
-    ("how_ok", edit(("- the one habit", "- how: ok")), 2, None, lambda d, b: "ASK: Done: Is 'how: ok'" in d),
+     lambda d, b: 'Parking lot: "ask about <channel> later"' in d and "CHECK WITH ME" in d),
+    ("open_bare_q", edit(("- what should I call", "- ?")), 1, None, lambda d, b: "placeholder" in d),
+    ("how_ok", edit(("- the one habit", "- how: ok")), 2, None,
+     lambda d, b: 'Done: "how: ok"' in d and "CHECK WITH ME" in d),
     ("how_line", edit(("- the one habit", "- how: fold the paper first")), 0, 0,
      lambda d, b: "  - stated: how: fold the paper first" in block(b, "- Done:", "- Output:")),
-    ("done_ok", edit(("- the one habit", "- ok")), 2, None, lambda d, b: "ASK: Done: Is 'ok' a real answer for Done?" in d),
+    ("done_ok", edit(("- the one habit", "- ok")), 2, None,
+     lambda d, b: 'Done: "ok"' in d and "CHECK WITH ME" in d),
     ("parked_tag", edit(("- I should probably", "- investigate: the old app")), 0, 0,
      lambda d, b: "  - stated: investigate: the old app" in block(b, "- Parking lot:", "- Unknowns:")),
-    ("ask_confirmed", edit((OUT, "- output: ok")) + "\n## Confirmed\n\n- Output: ok\n", 0, 0,
+    ("ask_confirmed", (edit((OUT, "- output: ok")), "- Output: ok | yes\n"), 0, 0,
      lambda d, b: b.rstrip().endswith("## Confirmed\n\n- Output: ok")),
     # Round 3, fix 3. A prefix or markup hides nothing, and the brief keeps each line's meaning.
-    ("stated_unknown_out", edit((OUT, "- output: stated: *unknown*")), 1, None, lambda d, b: "move it to Open" in d),
+    ("stated_unknown_out", edit((OUT, "- output: stated: *unknown*")), 2, None,
+     lambda d, b: 'Output: "*unknown*"' in d and "CHECK WITH ME" in d),
     ("stated_tbd_out", edit((OUT, "- output: stated: TBD")), 1, None, lambda d, b: "placeholder" in d),
-    ("other_trap", edit(("- the one habit", "- it should look clean and modern")), 1, None,
-     lambda d, b: "no visible signal" in d),
-    ("other_unknown", edit(("- the one habit", "- unknown: which browser")), 1, None, lambda d, b: "move it to Open" in d),
-    ("other_question", edit(("- the one habit", "- should the streak reset at midnight?")), 1, None,
-     lambda d, b: "move it to Open" in d),
-    ("decide_maybe", edit(("- the one habit", "- decide: maybe")), 2, None, lambda d, b: "ASK: Goal: Is 'maybe'" in d),
+    ("other_trap", edit(("- the one habit", "- it should look clean and modern")), 2, None,
+     lambda d, b: 'Done: "it should look clean and modern"' in d and "CHECK WITH ME" in d),
+    ("other_unknown", edit(("- the one habit", "- unknown: which browser")), 2, None,
+     lambda d, b: 'Done: "unknown: which browser"' in d and "CHECK WITH ME" in d),
+    ("other_question", edit(("- the one habit", "- should the streak reset at midnight?")), 2, None,
+     lambda d, b: 'Done: "should the streak reset at midnight?"' in d and "CHECK WITH ME" in d),
+    ("decide_maybe", edit(("- the one habit", "- decide: maybe")), 2, None,
+     lambda d, b: 'Goal: "maybe"' in d and "CHECK WITH ME" in d),
     ("decide_notsure", edit(("- the one habit", "- decide: not sure yet")), 2, None,
-     lambda d, b: "ASK: Goal: Is 'not sure yet'" in d),
-    ("decide_ok", edit(("- the one habit", "- decide: ok")), 2, None, lambda d, b: "ASK: Goal: Is 'ok'" in d),
-    ("decide_confirmed", edit(("- the one habit", "- decide: maybe")) + "\n## Confirmed\n\n- Goal: maybe\n", 0, 0,
+     lambda d, b: 'Goal: "not sure yet"' in d and "CHECK WITH ME" in d),
+    ("decide_ok", edit(("- the one habit", "- decide: ok")), 2, None,
+     lambda d, b: 'Goal: "ok"' in d and "CHECK WITH ME" in d),
+    ("decide_confirmed", (edit(("- the one habit", "- decide: maybe")), "- Goal: maybe | yes\n"), 0, 0,
      lambda d, b: "  - maybe" in block(b, "- Goal:", "- Done:") and DECIDE not in b),
-    ("italic_out", edit((OUT, "- output: _unknown_")), 1, None, lambda d, b: "move it to Open" in d),
-    ("italic_tools", edit((ADD, "&\n- tools: *unknown*: Slack or Teams")), 1, None, lambda d, b: "move it to Open" in d),
-    ("paren_agents", edit((ADD, "&\n- agents: (unknown yet)")), 1, None, lambda d, b: "move it to Open" in d),
-    ("italic_eval", edit((ADD, "&\n- evals: pass: *unknown*; fail: a missed day keeps the streak")), 1, None,
-     lambda d, b: "move it to Open" in d),
+    ("italic_out", edit((OUT, "- output: _unknown_")), 2, None,
+     lambda d, b: 'Output: "_unknown_"' in d and "CHECK WITH ME" in d),
+    ("italic_tools", edit((ADD, "&\n- tools: *unknown*: Slack or Teams")), 2, None,
+     lambda d, b: 'Tools: "*unknown*: Slack or Teams"' in d and "CHECK WITH ME" in d),
+    ("paren_agents", edit((ADD, "&\n- agents: (unknown yet)")), 2, None,
+     lambda d, b: 'Agents and roles: "(unknown yet)"' in d and "CHECK WITH ME" in d),
+    ("italic_eval", edit((ADD, "&\n- evals: pass: *unknown*; fail: a missed day keeps the streak")), 2, None,
+     lambda d, b: 'Evals: "pass: *unknown*; fail: a missed day keeps the streak"' in d and "CHECK WITH ME" in d),
     ("unknown_prose_done", edit(("- done:", "- done: unknown drinks count as water")), 2, None,
-     lambda d, b: "ASK: Done: Is 'unknown drinks count as water' decided, or still unknown?" in d),
+     lambda d, b: 'Done: "unknown drinks count as water"' in d and "CHECK WITH ME" in d),
     ("unknown_prose_out", edit((OUT, "- output: Unknown days listed with a count")), 2, None,
-     lambda d, b: "ASK: Output: Is 'Unknown days listed with a count' decided, or still unknown?" in d),
+     lambda d, b: 'Output: "Unknown days listed with a count"' in d and "CHECK WITH ME" in d),
     ("default_goal_decide", edit(("- goal:", "- goal: Default to water when I forget which habit"),
                                  ("- the one habit", "- decide: which habit to keep")), 0, 0,
      lambda d, b: "- Goal: Default to water" in b and DECIDE not in b),
@@ -508,25 +538,33 @@ REPROS = [
     ("fence_parked", edit(("- I should probably", "&\n~~~\n- sync between phones, not now\n~~~")), 1, None,
      lambda d, b: "under Parked" in d),
     # Round 4. Unknown is never ready, a Parked line stays parked unless tagged, and the mapper agrees with check_brief.
-    ("r4_tools_for_now", edit((ADD, "&\n- tools: Unknown for now")), 1, None, lambda d, b: "move it to Open" in d),
-    ("r4_tools_comma", edit((ADD, "&\n- tools: unknown, Slack or Teams")), 1, None, lambda d, b: "move it to Open" in d),
-    ("r4_output_for_now", edit((OUT, "- output: unknown for now")), 1, None, lambda d, b: "move it to Open" in d),
-    ("r4_agents_for_now", edit((ADD, "&\n- agents: unknown for now")), 1, None, lambda d, b: "move it to Open" in d),
-    ("r4_decide_so_far", edit(("- the one habit", "- decide: unknown so far")), 1, None, lambda d, b: "move it to Open" in d),
-    ("r4_output_quoted", edit((OUT, '- output: "unknown": CSV or JSON')), 1, None, lambda d, b: "move it to Open" in d),
-    ("r4_output_stated_dash", edit((OUT, "- output: stated: Unknown - CSV or JSON")), 1, None,
-     lambda d, b: "move it to Open" in d),
-    ("r4_evals_unknown_tails", edit((ADD, "&\n- evals: pass: unknown for now; fail: unknown, ask Sam")), 1, None,
-     lambda d, b: "move it to Open" in d),
-    ("r4_unknown_prose_confirmed", edit((OUT, "- output: Unknown days listed with a count"))
-     + "\n## Confirmed\n\n- Output: Unknown days listed with a count\n", 0, 0,
+    ("r4_tools_for_now", edit((ADD, "&\n- tools: Unknown for now")), 2, None,
+     lambda d, b: 'Tools: "Unknown for now"' in d and "CHECK WITH ME" in d),
+    ("r4_tools_comma", edit((ADD, "&\n- tools: unknown, Slack or Teams")), 2, None,
+     lambda d, b: 'Tools: "unknown, Slack or Teams"' in d and "CHECK WITH ME" in d),
+    ("r4_output_for_now", edit((OUT, "- output: unknown for now")), 2, None,
+     lambda d, b: 'Output: "unknown for now"' in d and "CHECK WITH ME" in d),
+    ("r4_agents_for_now", edit((ADD, "&\n- agents: unknown for now")), 2, None,
+     lambda d, b: 'Agents and roles: "unknown for now"' in d and "CHECK WITH ME" in d),
+    ("r4_decide_so_far", edit(("- the one habit", "- decide: unknown so far")), 2, None,
+     lambda d, b: 'Goal: "unknown so far"' in d and "CHECK WITH ME" in d),
+    ("r4_output_quoted", edit((OUT, '- output: "unknown": CSV or JSON')), 2, None,
+     lambda d, b: 'Output: "\"unknown\": CSV or JSON"' in d and "CHECK WITH ME" in d),
+    ("r4_output_stated_dash", edit((OUT, "- output: stated: Unknown - CSV or JSON")), 2, None,
+     lambda d, b: 'Output: "Unknown - CSV or JSON"' in d and "CHECK WITH ME" in d),
+    ("r4_evals_unknown_tails", edit((ADD, "&\n- evals: pass: unknown for now; fail: unknown, ask Sam")), 2, None,
+     lambda d, b: 'Evals: "pass: unknown for now; fail: unknown, ask Sam"' in d and "CHECK WITH ME" in d),
+    ("in_file_confirmed", edit((OUT, "- output: ok")) + "\n## Confirmed\n\n- Output: ok\n", 1, None,
+     lambda d, b: "FAIL" in d),
+    ("r4_unknown_prose_confirmed", (edit((OUT, "- output: Unknown days listed with a count")),
+                                    "- Output: Unknown days listed with a count | yes\n"), 0, 0,
      lambda d, b: "- Output: Unknown days listed with a count" in b),
     ("r4_parked_oos_ai", edit(("- I should probably", "- out of scope: AI")), 2, None,
-     lambda d, b: "ASK: Constraints: Is 'out of scope: AI' a real answer for Constraints?" in d),
+     lambda d, b: 'Constraints: "out of scope: AI"' in d and "CHECK WITH ME" in d),
     ("r4_parked_bold_oos_ai", edit(("- I should probably", "- **out of scope:** AI")), 2, None,
-     lambda d, b: "ASK: Constraints: Is 'out of scope: AI'" in d),
-    ("r4_parked_oos_confirmed", edit(("- I should probably", "- out of scope: AI"))
-     + "\n## Confirmed\n\n- Constraints: out of scope: AI\n", 0, 0,
+     lambda d, b: 'Constraints: "out of scope: AI"' in d and "CHECK WITH ME" in d),
+    ("r4_parked_oos_confirmed", (edit(("- I should probably", "- out of scope: AI")),
+                                 "- Constraints: out of scope: AI | yes\n"), 0, 0,
      lambda d, b: "  - out of scope: AI" in block(b, "- Constraints:", "- Tools:")),
     ("r4_dark_mode", edit(("- I should probably", "- dark mode, maybe not now")), 0, 0,
      lambda d, b: "out of scope: dark" not in b and "  - dark mode, maybe not now" in block(b, "- Parking lot:", "- Unknowns:")),
@@ -537,18 +575,17 @@ REPROS = [
      lambda d, b: "unknown: Should the button say 'What's next?' or 'Continue'?" in b),
     ("r4_closing_quote_question", edit(("- what should I call", '- should the label say "Continue?"')), 0, 0,
      lambda d, b: '1. ' in b and 'should the label say "Continue?"\n' in b),
-    ("r4_open_tools_bare", edit(("- what should I call", "- tools: ?")), 1, None, lambda d, b: "placeholder, not a question" in d),
-    ("r4_open_evals_tbd", edit(("- what should I call", "- evals: TBD?")), 1, None, lambda d, b: "placeholder, not a question" in d),
-    ("r4_open_agents_unknown", edit(("- what should I call", "- agents: unknown: ?")), 1, None,
-     lambda d, b: "placeholder, not a question" in d),
+    ("r4_open_tools_bare", edit(("- what should I call", "- tools: ?")), 1, None, lambda d, b: "placeholder" in d),
+    ("r4_open_evals_tbd", edit(("- what should I call", "- evals: TBD?")), 1, None, lambda d, b: "placeholder" in d),
+    ("r4_open_agents_unknown", edit(("- what should I call", "- agents: unknown: ?")), 1, None, lambda d, b: "placeholder" in d),
     ("r4_open_tools_hole", edit(("- what should I call", "- tools: Should the poll run in <channel>?")), 2, None,
-     lambda d, b: "ASK: Unknowns: Is 'Should the poll run in <channel>?' a real question, or a hole to fill?" in d),
+     lambda d, b: 'Unknowns: "Should the poll run in <channel>?"' in d and "CHECK WITH ME" in d),
     ("r4_decided_hole", edit(("- the one habit", "- the form submits on <Enter>")), 2, None,
-     lambda d, b: "ASK: Done: Is 'the form submits on <Enter>' a real answer for Done, or a hole to fill?" in d),
+     lambda d, b: 'Done: "the form submits on <Enter>"' in d and "CHECK WITH ME" in d),
     ("r4_parked_hole", edit(("- I should probably", "- the form submits on <Enter>")), 2, None,
-     lambda d, b: "or a hole to fill?" in d),
+     lambda d, b: 'Parking lot: "the form submits on <Enter>"' in d and "CHECK WITH ME" in d),
     ("r4_evals_unlabeled", edit((ADD, "&\n- evals: a poll with 3 choices works and a poll with none errors")), 2, None,
-     lambda d, b: "ASK: Evals: Is there a pass case and a fail case here?" in d),
+     lambda d, b: 'Evals: "a poll with 3 choices works and a poll with none errors"' in d and "CHECK WITH ME" in d),
     ("r4_bold_tools", edit((ADD, "&\n- **tools:** Slack only")), 0, 0,
      lambda d, b: "- Tools: Slack only" in b and TOOLS not in b and "Slack" not in block(b, "- Done:", "- Output:")),
     ("r4_bold_decide", edit(("- the one habit", "- **decide:** whether to keep the bot")), 0, 0,
@@ -558,9 +595,10 @@ REPROS = [
      0, 0, lambda d, b: "- Evals: pass: mark today" in b and EVALS not in b),
     # Round 5. One normalization for an answer's first word, no crash on an empty label, code spans kept, and the
     # stock decide question never shares Goal with the user's value.
-    ("r5_paren_unknown", edit((OUT, "- output: (unknown), CSV or JSON")), 1, None, lambda d, b: "move it to Open" in d),
-    ("r5_link_unknown", edit((OUT, "- output: [unknown](https://example.org/status)")), 1, None,
-     lambda d, b: "move it to Open" in d),
+    ("r5_paren_unknown", edit((OUT, "- output: (unknown), CSV or JSON")), 2, None,
+     lambda d, b: 'Output: "(unknown), CSV or JSON"' in d and "CHECK WITH ME" in d),
+    ("r5_link_unknown", edit((OUT, "- output: [unknown](https://example.org/status)")), 2, None,
+     lambda d, b: 'Output: "[unknown](https://example.org/status)"' in d and "CHECK WITH ME" in d),
     ("r5_empty_decide", edit(("- the one habit", "- decide: stated:")), 1, None, lambda d, b: "decide: needs a value" in d),
     ("r5_empty_tools", edit((ADD, "&\n- tools: stated:")), 1, None, lambda d, b: "tools: needs a value" in d),
     ("r5_empty_other", edit(("- the one habit", "- stated:")), 1, None, lambda d, b: "no value" in d),
@@ -574,16 +612,17 @@ REPROS = [
     ("r5_fullwidth_oos", edit(("- I should probably", "- out of scope\uff1acatering")), 0, 0,
      lambda d, b: "  - out of scope: catering" in block(b, "- Constraints:", "- Tools:")),
     ("r5_open_hole", edit(("- what should I call", "- Should it press <Enter> to confirm each move?")), 2, None,
-     lambda d, b: "ASK: Unknowns: Is 'Should it press <Enter> to confirm each move?' a real question" in d),
+     lambda d, b: 'Unknowns: "Should it press <Enter> to confirm each move?"' in d and "CHECK WITH ME" in d),
     ("r5_unknown_senders", edit((ADD, "- constraints: unknown senders get nothing")), 2, None,
-     lambda d, b: "ASK: Constraints: Is 'unknown senders get nothing' decided, or still unknown?" in d),
-    ("r5_compound_oos", edit((ADD, "&\n- out of scope: stated: unknown for now")), 1, None,
-     lambda d, b: "move it to Open" in d),
-    ("r5_compound_how", edit((ADD, "&\n- stated: how: clean")), 1, None, lambda d, b: "no visible signal" in d),
+     lambda d, b: 'Constraints: "unknown senders get nothing"' in d and "CHECK WITH ME" in d),
+    ("r5_compound_oos", edit((ADD, "&\n- out of scope: stated: unknown for now")), 2, None,
+     lambda d, b: 'Constraints: "out of scope: unknown for now"' in d and "CHECK WITH ME" in d),
+    ("r5_compound_how", edit((ADD, "&\n- stated: how: clean")), 2, None,
+     lambda d, b: 'Done: "how: clean"' in d and "CHECK WITH ME" in d),
 ]
 repro_bad = []
 for name, text, want_dec, want_brief, ok in REPROS:
-    TEXTS.append(text)
+    TEXTS.append(text[0] if isinstance(text, tuple) else text)
     dec, mapped, brief = chain(text)
     got_brief = brief.returncode if mapped.returncode == 0 else None
     if mapped.returncode == 0 and "# Brief" not in mapped.stdout:

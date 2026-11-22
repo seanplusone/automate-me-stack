@@ -1,12 +1,11 @@
 """Map a shape-idea decisions.md into an outcome brief.
 
-Usage: python3 check/map_decisions.py <decisions.md>
+Usage: python3 check/map_decisions.py <decisions.md> [--confirmed <confirmed.md>]
 
 This is the literal mapping in ../SKILL.md, "A decisions file".
-The script runs check_decisions, which checks the file's shape, maps it with map_text(), and runs
-check_brief's check() and asks() on that brief. A file that fails exits 1, and a file with a value
-to confirm exits 2 with its ASK lines. Neither prints a brief. On exit 0 it prints the brief
-check_brief passed, so the mapper and check_brief always agree.
+The script runs check_decisions first, with the same confirmed.md. A file that is format invalid exits 1, and a file
+with a CHECK WITH ME list exits 2. Both print the checker's report and no brief. On exit 0 it prints the brief, and
+check_decisions has already run check_brief on that brief, so the brief passes it.
 
 Shape-idea records goal, done, output, constraints, and verify.
 Tools, Agents and roles, and Evals are not asked there. They are written
@@ -16,7 +15,12 @@ An Open `tools:`, `agents:`, `evals:` or `decide:` question replaces that stock 
 Outcome asks them. It does not invent a tool, a role, or a pass and fail case.
 A Decided `write first:` line goes under Tools. Each Decided line lands where
 check_decisions.landing() says. A Parked line stays in the Parking lot. An `out of scope:` tag,
-bold or not, also puts it in Constraints, unless it is a question. No other word moves it.
+bold or not, also puts it in Constraints, unless it has a question mark. Then it is a question in Unknowns.
+Each confirmed value is copied into the brief's `## Confirmed` block.
+
+A value check_brief would read as a marker gets `stated: ` in front, so check_brief reads it as the person's words:
+a brief tag outside its home slot (`how:` in Done), `default` on a line that is not a slot's own value, `unknown` at
+the start, only trap words, or `none`. check_decisions has judged the value itself, and a confirmation is the yes.
 Bad arguments, or a path that cannot be read, exit 3 with one line on stderr.
 """
 import os
@@ -25,23 +29,24 @@ import sys
 
 sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "shape-idea", "check")))
 from check_decisions import (  # noqa: E402
-    bare,
-    ends_in_question,
+    BRIEF_SLOT,
+    arguments,
+    blank,
     extra_of,
+    has_question,
+    inputs,
     landing,
     parked_limit,
     parse,
-    question_end,
-    read,
     real_items,
     report,
     scoped,
     slot_of,
     slot_value,
     split_fences,
-    unreadable,
     unstated,
 )
+from check_brief import TAG, TAGS, UNKNOWN_START, classify, is_bare_trap  # noqa: E402
 
 EVIDENCE = "Every claim names its run, file:line or photo, or says guess."
 REPORT = "Report only. Do not run or post until the user says to."
@@ -50,16 +55,26 @@ AGENTS = "Who does the work, and does anyone else check it?"
 EVALS = "What is one case that should pass, and one that should fail?"
 DECIDE = "What will you decide with the result?"
 ASKED = ("decide", "tools", "agents", "evals")
-# A brief tag and the one brief slot where it may lead an item.
-TAG_LEAD = re.compile(r"^(investigate|out of scope|how)\s*[:\uff1a]", re.I)
-TAG_HOME = {"investigate": "Done", "out of scope": "Constraints", "how": "Agents and roles"}
 DEFAULT_LEAD = re.compile(r"^default\b", re.I)
 
 
 def items(text):
     visible = split_fences(text.lstrip("\ufeff"))[0]
     sections = parse(visible)[0]
-    return {name: real_items(sections.get(name, [])) for name in ("Decided", "Open", "Parked", "Confirmed")}
+    return {name: real_items(sections.get(name, [])) for name in ("Decided", "Open", "Parked")}
+
+
+def written(text, slot, own=False):
+    """A user value as written in brief slot `slot`, without its `stated:` labels. own is True for a slot's own value.
+
+    One `stated:` goes in front when check_brief would read the value as a marker. See the module docstring.
+    """
+    raw = unstated(text)
+    tag = TAG.match(raw)
+    if ((tag and slot not in TAGS.get(tag.group(1).lower(), [])) or (DEFAULT_LEAD.match(raw) and not own)
+            or UNKNOWN_START.match(raw) or is_bare_trap(raw) or classify(raw) == "fail"):
+        return f"stated: {raw}"
+    return raw
 
 
 def slot_lines(rows, slot):
@@ -67,46 +82,35 @@ def slot_lines(rows, slot):
 
 
 def question_of(row):
+    """The question an Open or Parked line asks, with an ASCII `?`, which is the only mark check_brief reads."""
     extra = extra_of(row)
     text = (slot_value(row) if slot_of(row) else extra[1] if extra else row).strip()
-    text = re.sub(r"^(unknown:\s*)", "", text, flags=re.I)
-    text = re.sub(r"^(stated:\s*)", "", text, flags=re.I)
-    end = question_end(text)
-    # check_brief reads only an ASCII `?`, so the mark that ends the question is written as one.
-    return text.rstrip(".") + "?" if end is None else text[:end] + "?" + text[end + 1:]
+    text = re.sub(r"^(?:\s*(?:unknown|stated)\s*:\s*)+", "", text, flags=re.I).lstrip("? ")
+    if "?" in text:
+        return text
+    marks = [i for i, char in enumerate(text) if has_question(char)]
+    return text[:marks[-1]] + "?" + text[marks[-1] + 1:] if marks else text.rstrip(".") + "?"
 
 
 def unknown(text):
     return f"unknown: {question_of(text)}"
 
 
-def brief_item(text, slot):
-    """A line that is not a slot, as written in brief slot `slot` (Done or Parking lot), without its `stated:` labels.
-
-    When it starts with a brief tag outside its home, or with `default`, one `stated:` goes in front so check_brief
-    reads it as words. check_decisions judges it again without that prefix.
-    """
-    raw = unstated(text)
-    tag = TAG_LEAD.match(raw)
-    if (tag and TAG_HOME[tag.group(1).lower()] != slot) or DEFAULT_LEAD.match(raw):
-        return f"stated: {raw}"
-    return raw
-
-
 def slot_text(decided, opens, slot, fallback):
     """Return (text, is_unknown)."""
     firm = slot_lines(decided, slot)
     if firm:
-        return unstated(slot_value(firm[0])), False
+        return written(slot_value(firm[0]), BRIEF_SLOT[slot], own=True), False
     pending = slot_lines(opens, slot)
     return unknown(pending[0] if pending else fallback), True
 
 
-def map_text(text):
+def map_text(text, confirmed=()):
+    """The brief for `text`. confirmed is the (slot, value) of each yes, copied into the `## Confirmed` block."""
     found = items(text)
     decided, opens, parked = found["Decided"], found["Open"], found["Parked"]
     lands = [landing(row) for row in decided]
-    named = {label: value for _, value, label in lands if label in ASKED + ("write first",) and bare(value)}
+    named = {label: value for _, value, label in lands if label in ASKED + ("write first",) and not blank(value)}
     limits_out = [value for _, value, label in lands if label == "out of scope"]
     limits_out += [scoped(row) for row in parked if parked_limit(row)]
     other = [value for _, value, label in lands if label is None]
@@ -130,22 +134,23 @@ def map_text(text):
     ordered = [goal] * goal_unknown + [done] * done_unknown
     ordered += [question[name] for name in ASKED if name in question]
     ordered += [output] * output_unknown + [verify] * verify_unknown + [limits] * limits_unknown + rest
-    ordered += [unknown(row) for row in parked if ends_in_question(row)]
+    ordered += [unknown(row) for row in parked if has_question(row)]
     lines = ["# Brief: from decisions", ""]
     lines.append(f"- Goal: {goal}")
     # Goal holds only the user's lines. The stock or Open decide question waits in Unknowns, so no line the mapper
     # adds sits beside the user's goal.
-    lines += [f"  - {brief_item(named['decide'], 'Goal')}"] if "decide" in named else []
+    lines += [f"  - {written(named['decide'], 'Goal')}"] if "decide" in named else []
     lines.append("- Done:")
     lines.append(f"  - {done}")
-    lines += [f"  - {brief_item(row, 'Done')}" for row in other]
+    lines += [f"  - {written(row, 'Done')}" for row in other]
     lines.append(f"- Output: {output}")
     lines.append("- Constraints:")
     lines.append(f"  - {limits}")
     lines.append(f"  - {REPORT}")
-    lines += [f"  - {row}" for row in limits_out]
+    lines += [f"  - {written(row, 'Constraints')}" for row in limits_out]
     for slot, name in (("Tools", "tools"), ("Agents and roles", "agents"), ("Evals", "evals")):
-        lines += [f"- {slot}: {named[name]}"] if name in named else [f"- {slot}:", f"  - {question[name]}"]
+        lines += [f"- {slot}: {written(named[name], slot, own=True)}"] if name in named else [f"- {slot}:",
+                                                                                               f"  - {question[name]}"]
         if name == "tools" and "write first" in named:
             lines.append(f"  - write first: {named['write first']}")
     lines.append("- Verification:")
@@ -153,26 +158,26 @@ def map_text(text):
     lines.append(f"  - {EVIDENCE}")
     if parked:
         lines.append("- Parking lot:")
-        lines += [f"  - {brief_item(row, 'Parking lot')}" for row in parked]
+        lines += [f"  - {written(row, 'Parking lot')}" for row in parked]
     if ordered:
         lines.append("- Unknowns:")
         lines += [f"  - {item}" for item in ordered]
         lines += ["", "## Questions", ""]
         lines += [f"{number}. {question_of(item)}" for number, item in enumerate(ordered[:3], 1)]
-    if found["Confirmed"]:
-        lines += ["", "## Confirmed", ""] + [f"- {row}" for row in found["Confirmed"]]
+    if confirmed:
+        lines += ["", "## Confirmed", ""] + [f"- {slot}: {value}" for slot, value in confirmed]
     return "\n".join(lines) + "\n"
 
 
-def main(path):
-    text, why = read(path)
-    if why:
-        return unreadable(path, why)
-    code, lines = report(text, path)
+def main(path, confirmed=None):
+    text, answers_text, code = inputs(path, confirmed)
+    if code:
+        return code
+    code, lines, result = report(text, path, answers_text)
     if code:
         print("\n".join(lines))
         return code
-    print(map_text(text), end="")
+    print(map_text(text, result.used), end="")
     return 0
 
 
@@ -180,7 +185,5 @@ if __name__ == "__main__":
     if sys.argv[1:] in (["-h"], ["--help"]):
         print(__doc__.strip())
         sys.exit(0)
-    if len(sys.argv) != 2:
-        print("usage: python3 check/map_decisions.py <decisions.md>", file=sys.stderr)
-        sys.exit(3)
-    sys.exit(main(sys.argv[1]))
+    args = arguments(sys.argv[1:], "usage: python3 check/map_decisions.py <decisions.md> [--confirmed <confirmed.md>]")
+    sys.exit(3 if args is None else main(*args))

@@ -21,7 +21,7 @@ EXPECT = {
     "01_slot_only_in_parked.md": "every slot is decided or open",
     "02_turns_0.md": "turn count recorded and at most 10",
     "03_duplicate_decided.md": "sections present once",
-    "04_open_without_q.md": "every open item ends with a question",
+    "04_open_without_q.md": "no open item is a placeholder",
     "05_done_with_slot_in_open.md": "stop matches the file",
     "06_missing_writing.md": "handoff says writing pass",
     "07_writing_fail.md": "handoff says writing pass",
@@ -35,7 +35,7 @@ EXPECT = {
     "15_no_title.md": "file has a Decisions title",
     "16_writing_pass_selfreport_with_slop.md": "prose passes the writing check",
     "17_wrong_next.md": "handoff names outcome",
-    "18_none_plus_items_open.md": "every open item ends with a question",
+    "18_none_plus_items_open.md": "no open item is a placeholder",
     "19_negative_turns.md": "turn count recorded and at most 10",
     "20_turns_unicode_digit.md": "turn count recorded and at most 10",
     "22_no_map_line.md": "handoff has a map line",
@@ -93,6 +93,15 @@ print(f"{'PASS' if binary_ok else 'FAIL'} a24_binary.bin: file is not UTF-8, a u
 if not binary_ok:
     FAILS.append(f"a24_binary.bin: stdout={ran.stdout!r} stderr={ran.stderr!r}")
 
+# A fixture that names a failing check exits 1 from the script. A format-valid one exits 0, or 2 for one-letter values
+# such as `goal: g`. None crashes.
+for name, want in sorted(EXPECT.items()):
+    ran = subprocess.run([sys.executable, SCRIPT, os.path.join(FIXTURES, name)], capture_output=True, text=True)
+    ok = ran.returncode in ((0, 2) if want is None else (1,)) and "Traceback" not in ran.stderr
+    if not ok:
+        FAILS.append(f"{name}: script exit {ran.returncode}, stderr {ran.stderr[-200:]!r}")
+        print(f"FAIL {name}: script exit {ran.returncode}")
+
 if __name__ == "__main__":
-    print(f"{len(EXPECT) + 1 - len(FAILS)}/{len(EXPECT) + 1} fixtures matched")
+    print(f"{2 * len(EXPECT) + 1 - len(FAILS)}/{2 * len(EXPECT) + 1} fixtures matched")
     sys.exit(1 if FAILS else 0)

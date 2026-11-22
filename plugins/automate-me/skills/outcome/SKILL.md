@@ -13,7 +13,7 @@ Voice is only how the text arrives. The skill works on the transcript, typos and
 
 ## A decisions file
 
-If the user brings a `decisions.md` from [shape-idea](../shape-idea/SKILL.md), run `python3 "$SKILL_DIR"/../shape-idea/check/check_decisions.py` on that file first. If it fails (exit 1), stop and show the failures. Do not map a file the check rejects. Exit 2 is a break point. Stop, ask the user each `ASK:` line as a yes/no question, and record the answer in the decisions file. A yes is a `- <Slot>: <value>` line under `## Confirmed` at its end. A no is a new value. Run the check again. Map only on exit 0. Do not sort it as a ramble. Shape-idea does not ask which tool to use, who does the work, or which two cases prove it. Those three stay `unknown:` until the user answers, unless a Decided line already names that slot. Do not invent them. Run `python3 "$SKILL_DIR"/check/check_brief.py` on the brief.
+If the user brings a `decisions.md` from [shape-idea](../shape-idea/SKILL.md), run `python3 "$SKILL_DIR"/../shape-idea/check/check_decisions.py` on that file first. If the format is invalid (exit 1), stop and show the failures. Do not map a file the check rejects. Exit 2 prints one CHECK WITH ME list. Stop and show the user each item, with its reason and its suggested answer. Record each yes in `confirmed.md` next to the decisions file, as `- <Slot>: <value> | yes`. A new answer is an edit to `decisions.md`. Run the check again. Map only on exit 0. Do not sort it as a ramble. Shape-idea does not ask which tool to use, who does the work, or which two cases prove it. Those three stay `unknown:` until the user answers, unless a Decided line already names that slot. Do not invent them. Run `python3 "$SKILL_DIR"/check/check_brief.py` on the brief.
 
 | In the decisions file | In the brief |
 |---|---|
@@ -31,13 +31,13 @@ If the user brings a `decisions.md` from [shape-idea](../shape-idea/SKILL.md), r
 | The `verify:` line | Verification, plus the evidence sentence |
 | A decided `tools:`, `agents:`, or `evals:` line | That slot, in the user's words |
 | Tools, Agents and roles, and Evals when unset | Unknowns |
-| The Confirmed section | The brief's `## Confirmed` block |
+| Each yes in `confirmed.md` | The brief's `## Confirmed` block |
 
 A Parked line always stays in the Parking lot, in its own words. Only an `out of scope:` tag, bold or not, also makes it a Constraints item. "Later", "not now" and a hedge do not, so "dark mode, maybe not now" stays parked. A tagged line keeps one `out of scope:`. A parked question stays a question, tagged or not, so it goes to the Parking lot and Unknowns and never to Constraints.
 
 A Decided line that starts with `decide:` puts its value under Goal, with no `decide:` in front, as the template writes it. Without one, `unknown: What will you decide with the result?` goes to Unknowns and the Questions block, not Goal, so no line the mapper adds sits beside the user's goal. Tools is `unknown: Which tool must the run use, and what, if anything, must be written first?`. Agents and roles is `unknown: Who does the work, and does anyone else check it?`. Evals is `unknown: What is one case that should pass, and one that should fail?`. A decided `tools:`, `agents:` (or `agents and roles:`), or `evals:` line fills that slot instead. An Open `tools:`, `agents:`, `evals:` or `decide:` question takes the stock question's place. A decided `write first:` line goes under Tools. After the user answers, rewrite each slot in their words.
 
-Some lines start with a brief tag outside its home slot, or with `default`. When such a line is a Decided line that is not a slot, a Decided `decide:` value, or a Parked line, it is prefixed with `stated:`. The words and the tag both stay after `stated:`. A slot value is never prefixed. `stated:` never hides an unknown, a trap word, a placeholder or an ask. The decisions check maps the file, runs the brief check on the brief, and judges each prefixed line again without `stated:`, and once more without its tags. It fails or asks before any brief is shown.
+Some values would read as a marker to the brief check. They are a brief tag outside its home slot, `default` on a line that is not a slot's own value, `unknown` at the start, only trap words, or `none`. The mapper puts `stated:` in front of such a value, so the brief check reads it as the user's words. The words and the tag both stay after `stated:`. The decisions check has already judged the value itself, and the user has said yes to anything on its CHECK WITH ME list, so `stated:` hides nothing.
 
 The read-back asks at most 3 questions, in this order: an open goal or done question, then the decide question, then Tools, then Agents and roles, then Evals. Unasked ones stay in Unknowns. Constraints also says report only, and not to run or post, because shape-idea never does. The same traps apply.
 

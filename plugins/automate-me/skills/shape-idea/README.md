@@ -8,32 +8,59 @@ Status: new. Four synthetic scored cases. Each `run-1` was written by a fresh mo
 
 ## What the checks cover, and what they don't
 
-`check/check_decisions.py` checks a finished file's shape:
+`check/check_decisions.py` has three outcomes. Format invalid is only what the script knows for certain. Everything it cannot be sure about goes on one CHECK WITH ME list, so the person decides it. A wrong item costs one yes. A wrong fail blocks a real file.
 
-- `## Decided`, `## Open`, `## Parked`, and `## Handoff` are present once, in that order;
-- every Open item ends with a question mark, before any closing quotes or brackets (a lone `none` means the section is empty). Only the end counts, so `Should the button say 'What's next?' or 'Continue'?` is one question. A full-width `？`, the Arabic `؟` and the other question marks in `QUESTION_MARKS` count, so `投票は20分で締め切る？` is a question. The question after any `tools:`, slot or `unknown:` label is not only a placeholder such as `?` or `TBD?`, and holds no template hole such as `<channel>`;
-- the file maps to a brief that passes outcome's `check_brief.py`. The check maps the file with outcome's mapper and runs the brief check's `check()` and `asks()` on that brief. A placeholder, a template hole, a trap word such as "clean", a tag outside its slot, or a default beside an unknown fails as it does in the brief. Each line the mapper prefixes with `stated:` is judged again without it;
-- a Decided value is not a question by the same rule, so `output: (a list or a page?)` fails. Move a question to Open;
-- `stop` is `done`, `turn-cap`, or `open-cap`, once;
-- each of goal, done, output, verify, and constraints starts one Decided line or one Open line, with a value, and not both;
-- a hole inside a longer value, such as `the form submits on <Enter>`, asks in any Decided, Open or Parked line, as the brief check does. An Open item that is only a hole fails. A hole inside inline code and an autolink such as `<https://example.org>` are fine;
-- no answer is an unknown. An answer is a Decided value, an Evals case, or a Parked `out of scope:` line that is not a question. It is read after its last `<words>:` label, so `deadline: unknown` and `tools: chat API: unknown` are unknowns. A URL, a time such as `9:30` and a code span are not labels. Its first word, once markup, quotes, brackets, link syntax and every leading label (`stated:`, `out of scope:`, `how:` and the rest) are gone, is not `unknown` followed by nothing, by punctuation, or by at most two words. `unknown for now`, `(unknown), CSV or JSON` and `[unknown](https://example.org)` fail. Move it to Open as a question. A longer value, such as `unknown senders get nothing`, asks whether it is decided;
-- no label is left with nothing after it. `decide: stated:`, `tools: stated:`, a lone `stated:` and `out of scope: stated:` fail with a message that names the line;
-- text inside a ``` or ~~~ fence, of any length, including a nested fence, is not a decision. A fence under Decided, Open or Parked fails, because its text would be lost. An unclosed fence fails;
-- a Decided `tools:`, `agents:` (or `agents and roles:`), `evals:`, `decide:`, or `write first:` line has a value and is not repeated. Bold and a singular label (`**tools:**`, `tool:`, `eval:`) name the same line. An `evals:` line with no pass case or no fail case asks, as the brief check does. The five slots stay the only required ones;
-- `stop: done` requires all five Decided and none of them Open;
-- `stop: open-cap` is only after turn 1, and only with more than 5 Open lines that are not slots;
-- `stop: turn-cap` requires `turns: 10`;
-- `turns` is an ASCII whole number from 1 through 10;
-- the shared writing check passes on the file, whether or not the line says `writing: pass`;
-- no item runs past one line;
-- Handoff has `next: /automate-me:outcome`, a single `writing: pass` line, and one `map:` line.
+**Format invalid, exit 1.** It fails when:
 
-Exit 0 when every check passed. Exit 1 when any check failed. Exit 2 when nothing failed but a value needs the person. Exit 3 on a usage error: bad arguments, or a path that is missing, a directory, or not UTF-8 text. A heading such as `## Decıded`, which matches a section name only by Unicode case rules, is a usage error too. It prints one line on stderr.
+- `## Decided`, `## Open`, `## Parked`, or `## Handoff` is missing, repeated, or out of order. Section, slot and field names are ASCII, so `## Decıded` with a dotless i is a missing section, and `wrıting: pass` is a missing writing line. No input crashes the check;
+- a slot is missing from both Decided and Open, is repeated, is in both, or is blank (`output:` or `goal: stated:`). A blank slot is also on the CHECK WITH ME list, with a suggestion;
+- a value is untouched template text. That is a template hole such as `<goal>`, a template line left unfilled, or a word from outcome's fixed placeholder list such as TBD, TODO or N/A. An Open item that is only a placeholder or a hole (`TBD?`, `<question>?`) fails too;
+- a label is left with nothing after it. `decide: stated:`, `tools: stated:`, a lone `stated:` and `out of scope: stated:` fail with a message that names the line;
+- a Decided `tools:`, `agents:` (or `agents and roles:`), `evals:`, `decide:`, or `write first:` line is repeated. Bold and a singular label (`**tools:**`, `tool:`, `eval:`) name the same line;
+- text sits inside a ``` or ~~~ fence under Decided, Open or Parked, because its text would be lost. An unclosed fence fails;
+- `stop` is not `done`, `turn-cap`, or `open-cap`, once, or does not match the file. `stop: done` requires all five Decided and none of them Open. `stop: open-cap` is only after turn 1, and only with more than 5 Open lines that are not slots. `stop: turn-cap` requires `turns: 10`;
+- `turns` is not an ASCII whole number from 1 through 10;
+- the shared writing check fails on the file, whether or not the line says `writing: pass`;
+- an item runs past one line;
+- Handoff lacks `next: /automate-me:outcome`, a single `writing: pass` line, or one `map:` line;
+- a `confirmed.md` line is not `- <Slot>: <value> | yes`;
+- outcome's `check_brief.py` fails the brief the mapper writes.
 
-Exit 2 is a break point. The check prints one `ASK: <slot>: Is '<value>' a real answer for <slot>?` line for each value that outcome's brief check asks about on the mapped brief, such as `output: ok`, `decide: maybe` or a Parked `out of scope: AI`. It prints `ASK: <slot>: Is '<value>' decided, or still unknown?` for a long answer that starts with "unknown", and `ASK: Unknowns: Is '<question>' a real question, or a hole to fill?` for an Open question with a hole inside it. A prefix such as `stated:` or `how:` does not hide the value. The skill stops, asks the person that yes/no question, and records the answer. A yes goes under an optional `## Confirmed` section after Handoff, as `- <Slot>: <value>`. The mapper copies that section into the brief, so the brief check does not ask again. A no replaces the value. A confirmation never lifts a failure.
+**CHECK WITH ME, exit 2,** when the format is valid. The triggers are broad and simple on purpose, a word or a character, not a pattern:
 
-The placeholder list is outcome's, and it is deliberately narrow. A phrase off the list, such as "see notes", passes. A phrase of only hedge words, such as "not sure yet", is an ASK. The ask and outcome's read-back catch the rest.
+- a Decided value, or a Parked `out of scope:` line, with the word "unknown" anywhere (`go-live date: unknown`, `file format (CSV/JSON): unknown`, `the page shows Status: Unknown`);
+- any question mark in a Decided value, of any script and inside any markup (`**CSV or JSON?**`, `a Slack message that asks "Who's in for lunch?"`, `勝者だけ、それとも全票？`);
+- a hedge such as "maybe", "not sure" or "for now", or a trap word such as "clean" or "good". Also a hole inside a longer value such as `the form submits on <Enter>`, `none`, or a value outcome's brief check would ask about, such as `ok`;
+- an Open line with no question mark, or with a hole inside it. Any question mark makes it a question, so `**Should the poll close after 20 minutes?**` passes;
+- a Parked `out of scope:` line with a question mark, which may be a limit or a question;
+- an Evals line with no pass case and fail case. A yes cannot clear this one. Label the cases.
+
+Each item names the slot as the brief names it, the exact value, a plain reason, and a suggested answer. A real run on `cases/check-with-me/decisions.md` prints:
+
+```
+CHECK WITH ME (3)
+- Output: "a chat message with the list that asks "Did you water them?""
+  Why: It has a question mark, so it may be a question and not a decision.
+  Suggest: Move it to Open if it is still a question, or confirm it as is if the answer quotes a question.
+- Done: "a plant with an unknown schedule is listed every day"
+  Why: It says "unknown", so this may not be decided yet.
+  Suggest: Move it to Open as a question, or confirm it as is.
+- Tools: "a plain text file of plants, maybe one line each"
+  Why: It says "maybe", so the person may not have decided.
+  Suggest: Ask for a firm answer and write that, move it to Open as a question, or confirm it as is.
+```
+
+The agent shows the list to the person. Each yes goes in `confirmed.md`, next to `decisions.md`, or at the path after `--confirmed`. Blank lines and `#` lines are skipped. Each other line is the slot and the exact value from the list, then ` | yes`:
+
+```
+- Output: a chat message with the list that asks "Did you water them?" | yes
+```
+
+The agent edits `decisions.md` for any other answer, and runs the check again. A yes clears its item on the next run. It never clears a format error. A yes that matches no value prints a NOTE and does not fail. The mapper copies each yes into the brief's `## Confirmed` block, so the brief check does not ask again. Each confirmed answer is a test case too: `cases/check-with-me/` holds a decisions file, its `confirmed.md`, and `expected.txt`, the list it must print without the confirmations.
+
+**Pass, exit 0,** when the format is valid and every item has a yes. Exit 3 is a usage error: bad arguments, or a path that is missing, a directory, or not UTF-8 text. It prints one line on stderr.
+
+The placeholder list is outcome's, and it is deliberately narrow. A phrase off the list, such as "see notes", passes. The CHECK WITH ME list and outcome's read-back catch the rest.
 
 `check/score_case.py` scores the file against a case key. Terms match loosely, one item at a time. Exit 0 on a full match. Exit 1 on a miss. Exit 2 on a usage error.
 
@@ -80,7 +107,7 @@ Neither script checks the flow in `SKILL.md`. These parts are instructions only,
 - map: goal goes to Goal. done goes to Done. output goes to Output. constraints goes to Constraints. verify goes to Verification. Tools, Agents and roles, and Evals stay unknown.
 ```
 
-Outcome reads `goal:` as Goal, `done:` as Done, `output:` as Output, `constraints:` as Constraints, and `verify:` as Verification. Tools, Agents and roles, and Evals stay unknown until the user answers, unless a Decided `tools:`, `agents:` or `evals:` line already fills that slot. An Open `tools:`, `agents:`, `evals:` or `decide:` question takes the place of outcome's stock question for that slot. Open is Unknowns. Parked is the Parking lot. A slot that is still open is an unknown, not a filled slot. A Decided `out of scope:` line goes to Constraints. A Decided `decide:` line goes to Goal. Without one, the decide question goes to Unknowns and the Questions block, not Goal. A Confirmed section goes to the brief's Confirmed block.
+Outcome reads `goal:` as Goal, `done:` as Done, `output:` as Output, `constraints:` as Constraints, and `verify:` as Verification. Tools, Agents and roles, and Evals stay unknown until the user answers, unless a Decided `tools:`, `agents:` or `evals:` line already fills that slot. An Open `tools:`, `agents:`, `evals:` or `decide:` question takes the place of outcome's stock question for that slot. Open is Unknowns. Parked is the Parking lot. A slot that is still open is an unknown, not a filled slot. A Decided `out of scope:` line goes to Constraints. A Decided `decide:` line goes to Goal. Without one, the decide question goes to Unknowns and the Questions block, not Goal. Each yes in `confirmed.md` goes to the brief's Confirmed block.
 
 ## Key format
 
@@ -98,6 +125,7 @@ shape-idea/
     check_decisions.py              the shape check
     score_case.py                   scores decisions.md against a case key
     test_check_decisions.py         python3 check/test_check_decisions.py
+    test_check_with_me.py           python3 check/test_check_with_me.py, the three outcomes end to end
     test_score_case.py              python3 check/test_score_case.py
   cases/
     habit-tracker/                  stop: done, turn 3. A phone habit for drinking water.
@@ -109,6 +137,10 @@ shape-idea/
     lunch-poll/                     stop: done, turn 3. A team bot that picks a lunch spot.
     bookmark-box/                   stop: open-cap, turn 2. A phone box for saving links.
                                     each of the last two: input.md, key.md, runs/run-1/decisions.md, runs/score.md
+    check-with-me/                  a saved CHECK WITH ME case. A plant watering list.
+      decisions.md                  three values the check cannot be sure about
+      confirmed.md                  the person's yes for each
+      expected.txt                  the list printed without confirmed.md
 ```
 
 Nothing here needs pstack. If it is installed, `/in-your-own-words` and `/sharpen` are optional helpers, and `/unslop` is an extra pass after the shared writing check. If it is not installed, skip that pass. The skill runs the same without them.
@@ -123,17 +155,26 @@ python3 check/test_check_decisions.py
 python3 check/test_score_case.py
 python3 check/test_judge.py
 python3 check/test_break.py
+python3 check/test_check_with_me.py
+python3 check/check_decisions.py cases/check-with-me/decisions.md
 for c in cases/*/; do
+  if [ ! -f "$c"key.md ]; then
+    continue
+  fi
   python3 check/check_decisions.py "$c"runs/run-1/decisions.md
   python3 check/score_case.py "$c"key.md "$c"runs/run-1/decisions.md
 done
 python3 ../shared/check_writing.py SKILL.md
 for c in cases/*/; do
+  if [ ! -f "$c"key.md ]; then
+    continue
+  fi
   python3 ../shared/check_writing.py "$c"runs/run-1/decisions.md
 done
+python3 ../shared/check_writing.py cases/check-with-me/decisions.md
 ```
 
-`set -e` stops the loop at the first command that fails.
+`set -e` stops the loop at the first command that fails. The loops skip `check-with-me`, which has no key and no runs, and check it on its own.
 
 Every `run-1` passes the shape check and the keyword score. The meaning judge is separate:
 
