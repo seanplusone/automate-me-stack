@@ -236,7 +236,8 @@ for label in ("pass: mark today and the streak goes up; fail: miss a day and it 
               "Pass: mark today and the streak goes up; Fail: miss a day and it still grows",
               "marking today should pass, and a missed day that keeps the streak should fail"):
     expect(f"evals line passes: {label[:20]}", added(f"- evals: {label}"), set())
-expect("evals with a TBD fail case fails", added("- evals: marking today should pass. TBD should fail."), {BRIEF})
+# The shared check reads each Evals case body, so a placeholder case fails as a placeholder, before the brief check.
+expect("evals with a TBD fail case fails", added("- evals: marking today should pass. TBD should fail."), {VALUES})
 expect("evals with only a pass case asks, as check_brief does", added("- evals: pass: mark today"), set())
 expect_me("none is checked with me, not failed", added("- tools: write first: none"), "Tools", "write first: none")
 
@@ -283,7 +284,9 @@ for label, line in (("bold", "- **goal:** a tiny habit tracker on my phone"),
 OK_OUT = swap("- output: the current streak on the phone", "- output: ok")
 expect_me("a short value is checked with me", OK_OUT, "Output", "ok")
 RAN.append("check with me on an evals case body")
-if ("Evals", "ok") not in asks(added("- evals: pass: ok; fail: a missed day keeps the streak")):
+# One item per Evals line: the line is the value a confirmation names.
+if ("Evals", "pass: ok; fail: a missed day keeps the streak") not in asks(
+        added("- evals: pass: ok; fail: a missed day keeps the streak")):
     FAILS.append(f"check with me on an evals case body: {asks(added('- evals: pass: ok; fail: a missed day keeps the streak'))}")
 expect_me("another Decided line lands in Done", swap(HABIT, "- maybe"), "Done", "maybe")
 CONFIRMED = "- Output: ok | yes\n"
@@ -363,7 +366,7 @@ for label, text, slot, value in (
 for label, text, check_name, words in (
         ("stated TBD output", out("stated: TBD"), VALUES, "placeholder"),
         ("extra TBD eval case", added("- evals: pass: mark today and the streak goes up; fail: miss a day and it"
-                                      " still grows; pass: TBD"), BRIEF, "placeholder"),
+                                      " still grows; pass: TBD"), VALUES, "placeholder"),
         ("other line stated TBD", added("- stated: TBD"), VALUES, "placeholder"),
         ("fence under Open", open_q("- Do you want a reminder?\n```\n- sync between phones?\n```"), FENCE, "under Open"),
         ("fence under Parked", parked("- share streaks with friends\n~~~\n- sync between phones, not now\n~~~"), FENCE,

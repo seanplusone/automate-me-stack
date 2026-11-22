@@ -35,7 +35,9 @@ EXPECT = {
     "15_no_title.md": "file has a Decisions title",
     "16_writing_pass_selfreport_with_slop.md": "prose passes the writing check",
     "17_wrong_next.md": "handoff names outcome",
-    "18_none_plus_items_open.md": "no open item is a placeholder",
+    # `none` beside other Open lines is on the CHECK WITH ME list, as `none` is everywhere. The missing map line is
+    # what fails.
+    "18_none_plus_items_open.md": "handoff has a map line",
     "19_negative_turns.md": "turn count recorded and at most 10",
     "20_turns_unicode_digit.md": "turn count recorded and at most 10",
     "22_no_map_line.md": "handoff has a map line",

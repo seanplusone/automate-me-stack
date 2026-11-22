@@ -440,7 +440,7 @@ REPROS = [
     ("writefirst", edit((ADD, "&\n- tools: write first: none")), 2, None,
      lambda d, b: 'Tools: "write first: none"' in d and "CHECK WITH ME" in d),
     ("evals_tbdfail", edit((ADD, "&\n- evals: marking today should pass. TBD should fail.")), 1, None,
-     lambda d, b: "Evals: '. TBD' is a placeholder" in d),
+     lambda d, b: "has a case 'TBD' that is a placeholder" in d),
     ("ask_output", edit((OUT, "- output: ok")), 2, None,
      lambda d, b: 'Output: "ok"' in d and "CHECK WITH ME" in d),
     # Independent review (codex), round 3.

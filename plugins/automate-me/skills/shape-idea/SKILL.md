@@ -59,6 +59,8 @@ Five slots are required: goal, done, output, verify, and constraints. Each one i
 | For later, or off the idea | Parked, or `none` |
 | A firm exclusion | Decided `out of scope:`, or Parked tagged `out of scope:` |
 
+An Open line is a question when it ends in a question mark. A mark of any script counts, and closing markup, quotes and brackets after it do not matter. A line with a mark only in the middle is not a question.
+
 A hedge is "maybe", "I think", or "not sure". It is not a decision. If a wrong guess would change the shape, it goes to Open. "Later" goes to Parked, even when it is hedged. A Parked line stays in outcome's Parking lot. Only an `out of scope:` tag makes it an exclusion.
 
 "Unknown" is not a decision either. A slot, or a `tools:`, `agents:`, `evals:` or `decide:` line, that the user calls unknown goes to Open as a question. A Decided line that still holds the word goes on the check's CHECK WITH ME list, described in the handoff step.
@@ -153,24 +155,28 @@ Outcome reads the sections like this. This skill does not ask Tools, Agents and 
 | A decided `tools:`, `agents:`, or `evals:` line | That slot, in the user's words |
 | Tools, Agents and roles, and Evals when unset | Unknowns |
 | Each yes in `confirmed.md` | The brief's `## Confirmed` block |
+| Each new answer in `confirmed.md` | The old value's place |
 
 The read-back asks at most 3 questions, in this order: an open goal or done question, then the decide question, then Tools, then Agents and roles, then Evals. Unasked ones stay in Unknowns.
 
 Run `python3 "$SKILL_DIR"/check/check_decisions.py <decisions.md>` after you write Handoff. It has three outcomes.
 
 - Exit 1, FORMAT INVALID. The file breaks a rule the script knows for certain. Examples are a missing section, a missing Handoff line, a blank slot, a template hole such as `<goal>`, a placeholder such as TBD, or a writing failure. Fix what it flags before you show the file. The checks are listed in `README.md`. A code fence under Decided, Open or Parked fails, because its text would not reach the brief. `writing: pass` does not override a writing failure.
-- Exit 2, CHECK WITH ME. The format is valid, and the script found values it cannot be sure about. It prints one list. Each item names the slot, the exact value, why it may not be ready, and a suggested answer.
+- Exit 2, CHECK WITH ME. The format is valid, and the script found values it cannot be sure about. It prints one list. Each item names the slot and the exact value. Then come Why, Ask and Suggest. Why says in one short sentence why it may not be ready. Ask holds one to three questions that narrow the answer for that slot. Suggest is a suggested answer or next step.
 - Exit 0, PASS. The handoff is ready.
 
-This is the check-with-me step. On exit 2, stop and show the user the list, one item at a time. Do not guess the answer. When they say a value is right as written, add one line for it to `confirmed.md`, in the same folder as `decisions.md`:
+This is the check-with-me step. It is a drill-down. On exit 2, stop and show the user the list, one item at a time. Do not guess the answer. Ask the item's Ask questions until the answer is exact. Then add one line for it to `confirmed.md`, in the same folder as `decisions.md`. Copy the slot and the value exactly as the list shows them. After the bar, write `yes` to keep the value as written, or the user's new answer in their words:
 
 ```
-- Output: file format (CSV/JSON): unknown | yes
+- Output: maybe a poster on the gym door | yes
+- Output: maybe a poster on the gym door | a poster on the gym door
 ```
 
-Copy the slot and the value exactly as the list shows them. When they give a new answer, edit `decisions.md` instead, for example move the line to Open as a question. Then run the check again. A yes clears only its own item, the one with that slot and value. It never clears a format error, and it never clears an Evals line with no pass case and fail case: add the cases. A yes that no longer matches any value prints a NOTE. Remove that line.
+A new answer takes the old value's place in the brief, and the line keeps its label. `no` alone is format invalid, so write the new answer in its place. The latest line for the same slot and value wins. Do not edit `decisions.md` for an answer. Then run the check again.
 
-The list is broad on purpose. In a Decided value it lists the word "unknown" anywhere, any question mark, and a hedge such as "maybe" or "not sure". It lists a trap word such as "clean", a hole or an `[insert ...]` inside a longer value, a placeholder word inside a longer value such as `TBD by Friday`, and `none`. It also lists an Open line with no question mark, a Parked `out of scope:` line with a question mark, and anything outcome's brief check would ask about. A wrong item costs one yes. A missed one costs a wrong brief.
+The new answer goes through the same check. If it is still unsure, it is listed again under its new text. Ask again, and add a line for the new text. A yes clears only its own item, the one with that slot and value. No answer clears a format error, and a yes never clears an Evals line with no pass case and fail case: add the cases. A line that no longer matches any value prints a NOTE. Remove that line.
+
+Every value goes through one shared check, so the same text gets the same answer in every slot. In a Decided value or an `out of scope:` line it lists the word "unknown" anywhere and any question mark. It also lists a hedge such as "maybe" or "not sure", and a trap word such as "clean". Everywhere it lists a hole or an `[insert ...]` inside a longer value, `none`, and a placeholder word inside a longer value. Punctuation does not hide one, so `a card/TBD` and `poster-TBD` are listed. An Open line is a question when it ends in a question mark. A line with a mark only in the middle is listed. A Parked `out of scope:` line with a question mark is listed too. A wrong item costs one answer. A missed one costs a wrong brief.
 
 The reply follows the [writing rules](../shared/writing-rules.md). Inside `decisions.md`, keep the user's numbers and names, and rewrite any line the writing check flags.
 

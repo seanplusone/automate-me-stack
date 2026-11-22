@@ -1,10 +1,13 @@
 CHECK WITH ME (3)
 - Output: "a chat message with the list that asks "Did you water them?""
   Why: It has a question mark, so it may be a question and not a decision.
+  Ask: Who will see it, and where? What exactly should it show? How will you know it looks right?
   Suggest: Move it to Open if it is still a question, or confirm it as is if the answer quotes a question.
 - Done: "a plant with an unknown schedule is listed every day"
   Why: It says "unknown", so this may not be decided yet.
+  Ask: What will you see when it is done?
   Suggest: Move it to Open as a question, or confirm it as is.
 - Tools: "a plain text file of plants, maybe one line each"
   Why: It says "maybe", so the person may not have decided.
+  Ask: Which tool or app should it use? What must be ready before it starts?
   Suggest: Ask for a firm answer and write that, move it to Open as a question, or confirm it as is.

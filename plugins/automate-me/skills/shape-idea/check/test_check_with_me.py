@@ -82,7 +82,7 @@ def run(script, *args):
 
 
 def items(said):
-    """(slot, value, why, suggest) for each item in the CHECK WITH ME section."""
+    """(slot, value, why, suggest) for each item in the CHECK WITH ME section. Each item also has an Ask line."""
     found, lines = [], said.splitlines()
     start = next((i for i, line in enumerate(lines) if re.match(r"^CHECK WITH ME \(\d+\)$", line)), None)
     if start is None:
@@ -90,10 +90,12 @@ def items(said):
     for i in range(start + 1, len(lines)):
         head = re.match(r'^- (?P<slot>[^:]+): "(?P<value>.*)"$', lines[i])
         if head:
-            why = lines[i + 1].strip() if i + 1 < len(lines) else ""
-            suggest = lines[i + 2].strip() if i + 2 < len(lines) else ""
-            found.append((head["slot"], head["value"], why[len("Why: "):] if why.startswith("Why: ") else None,
-                          suggest[len("Suggest: "):] if suggest.startswith("Suggest: ") else None))
+            fields = {}
+            for line in lines[i + 1:i + 4]:
+                field = re.match(r"^  (Why|Ask|Suggest): (.*)$", line)
+                if field:
+                    fields[field.group(1)] = field.group(2)
+            found.append((head["slot"], head["value"], fields.get("Why"), fields.get("Suggest")))
     return found
 
 
@@ -298,7 +300,7 @@ for value, word in (("TBD by Friday", "TBD"), ("CSV, to be decided by Friday", "
                     ("a list of N/A rows, TODO", "N/A")):
     brief = expect_with_me(f"placeholder inside a value: {value}", out(value), "Output", value)
     why = next((item[2] for item in items(SAID[-1]) if item[:2] == ("Output", value)), "")
-    if f"'{word}'" not in (why or ""):
+    if f"`{word}`" not in (why or ""):
         fail(f"placeholder inside a value names it: {value}", f"Why is {why!r}")
 
 # 11. Text that only looks like a template line is checked with the person, never format invalid. A yes lets it

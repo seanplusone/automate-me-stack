@@ -13,7 +13,7 @@ Voice is only how the text arrives. The skill works on the transcript, typos and
 
 ## A decisions file
 
-If the user brings a `decisions.md` from [shape-idea](../shape-idea/SKILL.md), run `python3 "$SKILL_DIR"/../shape-idea/check/check_decisions.py` on that file first. If the format is invalid (exit 1), stop and show the failures. Do not map a file the check rejects. Exit 2 prints one CHECK WITH ME list. Stop and show the user each item, with its reason and its suggested answer. Record each yes in `confirmed.md` next to the decisions file, as `- <Slot>: <value> | yes`. A new answer is an edit to `decisions.md`. Run the check again. Map only on exit 0. Do not sort it as a ramble. Shape-idea does not ask which tool to use, who does the work, or which two cases prove it. Those three stay `unknown:` until the user answers, unless a Decided line already names that slot. Do not invent them. Run `python3 "$SKILL_DIR"/check/check_brief.py` on the brief.
+If the user brings a `decisions.md` from [shape-idea](../shape-idea/SKILL.md), run `python3 "$SKILL_DIR"/../shape-idea/check/check_decisions.py` on that file first. If the format is invalid (exit 1), stop and show the failures. Do not map a file the check rejects. Exit 2 prints one CHECK WITH ME list. Stop and show the user each item, with its reason, its questions and its suggested answer. Record each answer in `confirmed.md` next to the decisions file, as `- <Slot>: <value> | yes` to keep the value, or `- <Slot>: <value> | <new answer>` to replace it. The latest line wins, and the check reads the new answer again. Run the check again. Map only on exit 0. Do not sort it as a ramble. Shape-idea does not ask which tool to use, who does the work, or which two cases prove it. Those three stay `unknown:` until the user answers, unless a Decided line already names that slot. Do not invent them. Run `python3 "$SKILL_DIR"/check/check_brief.py` on the brief.
 
 | In the decisions file | In the brief |
 |---|---|
@@ -32,6 +32,7 @@ If the user brings a `decisions.md` from [shape-idea](../shape-idea/SKILL.md), r
 | A decided `tools:`, `agents:`, or `evals:` line | That slot, in the user's words |
 | Tools, Agents and roles, and Evals when unset | Unknowns |
 | Each yes in `confirmed.md` | The brief's `## Confirmed` block |
+| Each new answer in `confirmed.md` | The old value's place |
 
 A Parked line always stays in the Parking lot, in its own words. Only an `out of scope:` tag, bold or not, also makes it a Constraints item. "Later", "not now" and a hedge do not, so "dark mode, maybe not now" stays parked. A tagged line keeps one `out of scope:`. A parked question stays a question, tagged or not, so it goes to the Parking lot and Unknowns and never to Constraints.
 

@@ -119,7 +119,7 @@ Everything lives under `plugins/automate-me/skills/`:
 
 ## Checks
 
-Every check prints PASS or FAIL and exits 1 on FAIL. `outcome`'s `check_brief.py` also exits 2 when a value needs the person to confirm it. `shape-idea`'s `check_decisions.py` exits 1 only when the format is invalid, and exits 2 with one CHECK WITH ME list of values to confirm. Each yes goes in `confirmed.md`. Run `sh setup.sh` once after cloning (it makes the `write-edd` practice repo its own git repo), then from `plugins/automate-me/skills/`:
+Every check prints PASS or FAIL and exits 1 on FAIL. `outcome`'s `check_brief.py` also exits 2 when a value needs the person to confirm it. `shape-idea`'s `check_decisions.py` exits 1 only when the format is invalid, and exits 2 with one CHECK WITH ME list of values to confirm. Each answer goes in `confirmed.md`, a yes or a new answer. Run `sh setup.sh` once after cloning (it makes the `write-edd` practice repo its own git repo), then from `plugins/automate-me/skills/`:
 
 ```
 python3 shared/check_shared.py

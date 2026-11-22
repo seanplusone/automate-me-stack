@@ -6,8 +6,8 @@ There are three outcomes.
 
 1. FORMAT INVALID, exit 1. Only what the script knows for certain (see "Format invalid" below).
 2. CHECK WITH ME, exit 2, when the format is valid. One list of values the script cannot be sure about. The agent
-   shows each item to the person and records each yes in confirmed.md.
-3. PASS, exit 0, when the format is valid and every item on the list has a yes.
+   asks the person about each item and records each answer, a yes or a new answer, in confirmed.md.
+3. PASS, exit 0, when the format is valid and every item on the list has an answer that clears it.
 
 Sections are `## Decided`, `## Open`, `## Parked`, and `## Handoff`, in that order, each once.
 An item is one top-level bullet (`- ` or `* `). A later physical line under a section is an item
@@ -42,38 +42,51 @@ Format invalid (exit 1) when:
   repeated, or another Decided or Parked line is blank;
 - a value is untouched template text: a template hole such as `<goal>`, a line of the template left unfilled, or
   only words from outcome's fixed placeholder list such as TBD, TODO or N/A (check_brief's judge() says fail). `none`
-  is not on this list here: it is on the CHECK WITH ME list. An `[insert ...]` inside a longer value, or a placeholder
-  word beside other words, is not untouched: it is on the CHECK WITH ME list;
+  is not on this list here: it is on the CHECK WITH ME list. An `[insert ...]` inside a longer value, a placeholder
+  word beside other words, or a placeholder in a code span is not untouched: it is on the CHECK WITH ME list;
 - an Open item is only a placeholder or only a hole (`TBD?`, `?`, `<question>?`);
 - stop is missing, repeated, not one of done, turn-cap, open-cap, or does not match the file;
 - turns is missing, repeated, or not a whole number from 1 through 10;
 - any item runs past one line;
 - Handoff has no `next: /automate-me:outcome` line, no single `writing: pass` line, or not one `map:` line;
 - the shared writing check fails;
-- a confirmed.md line is not `- <Slot>: <value> | yes`;
-- outcome's check_brief fails the mapped brief.
+- a confirmed.md line is not `- <Slot>: <value> | <answer>`, or its answer is `no` alone;
+- outcome's check_brief fails the mapped brief, or still asks about a value once every item is answered.
 
-Check with me (exit 2, when the format is valid). Each item names the slot as the brief names it, the exact value, a
-plain reason (Why) and a suggested answer (Suggest). The triggers are broad on purpose. A wrong item costs one yes:
-- a Decided value, or a Parked `out of scope:` line with no question mark, that holds the word "unknown" anywhere, any
-  question mark (`?`, `？`, `؟` and the rest), a hedge such as "maybe" or "not sure", a trap word such as "clean" or
-  "good", a word from outcome's fixed placeholder list inside a longer value (`TBD by Friday`), a hole or an
-  `[insert ...]` inside a longer value, a value check_brief would ask about such as `ok`, or `none`;
-- a blank slot or line (also format invalid);
-- an Open item with no question mark, or with a hole or an `[insert ...]` inside it;
-- a Parked `out of scope:` line with a question mark: is it a limit or a question?
-- a Parked line check_brief's judge() would ask about;
-- every value check_brief asks about on the mapped brief, such as an Evals line with no pass case and fail case. A yes
-  cannot clear that one: label the cases. It is the item shown for its value, even when a hedge is on the same value.
+One shared check. Every value goes through judge_value(slot, text, role), which returns Verdict(error, piece, item):
+the format error the script is sure of, and the item to check with the person. entries() only finds the values, and
+the slot only picks the wording and the Ask questions, so the same text gets the same verdict in every slot. It reads
+a value in three layers:
+- text checks, everywhere: blank or untouched (format invalid); `none`; a word from outcome's fixed placeholder list
+  inside a longer value, even when punctuation joins it (`a card/TBD`, `poster-TBD`); an `[insert ...]` or a hole
+  inside a longer value; a value check_brief would ask about, such as `ok`. A code span is literal text, so
+  `` `N/A` `` is listed, not format invalid;
+- decision checks, on a Decided value and an `out of scope:` line: the word "unknown" anywhere, any question mark (`?`,
+  `？`, `؟` and the rest), a hedge such as "maybe" or "not sure", a trap word such as "clean" or "good";
+- the question check, on an Open line: it is a question when it ends in a question mark of any script, once closing
+  markup, quotes and brackets go. A mark only in the middle is listed.
+A Parked line is for later, so only the text checks apply. A Parked `out of scope:` line with a question mark may be a
+limit or a question. An Evals answer is read in pieces as check_brief reads it, the text before the first colon label
+and each case body of either form. When its pass case or fail case is missing, that is the one item for the line, and
+a yes cannot clear it.
+
+Check with me (exit 2, when the format is valid). Each item names the slot as the brief names it and the exact value,
+then three lines. Why is one short plain sentence that quotes at most a short piece of the value. Ask holds one to
+three questions for that slot that narrow the answer. Suggest is a next step, and says "confirm it as is" only when a
+yes can clear the item. The triggers are broad on purpose. A wrong item costs one answer.
 
 confirmed.md sits next to decisions.md, or at the path after `--confirmed`. Blank lines and `#` lines are skipped.
-Each other line is one answer, the slot and the exact value from the list, then ` | yes`:
+Each other line is one answer, the slot and the exact value from the list, a bar, then `yes` or a new answer:
 
-    - Output: file format (CSV/JSON): unknown | yes
+    - Output: maybe a poster on the gym door | yes
+    - Output: maybe a poster on the gym door | a poster on the gym door
 
-A yes clears the item with that exact slot and value, and no other: `tools: X` and `agents: X` are two items. It never
-clears a format error. A line that matches no item is printed as a NOTE, not a failure. The mapper copies each yes into
-the brief's `## Confirmed` block.
+A yes clears the item with that exact slot and value, and no other: `tools: X` and `agents: X` are two items. A new
+answer takes the old value's place on every line with that slot and value, label kept once, and goes through the same
+shared check, so an answer that is still unsure is listed again under its new text. The first ` | ` ends the value.
+The latest line for the same slot and value wins. No answer clears a format error, and a line naming such a value
+prints a NOTE. A line that matches nothing is printed as a NOTE, not a failure. decisions.md is not changed: the mapper maps it
+with the new answers in place, and copies each yes into the brief's `## Confirmed` block.
 
 Prints a PASS or FAIL line per check, the CHECK WITH ME list, any NOTE lines, then
 `PASS|FORMAT INVALID|CHECK WITH ME decisions: <path>`. Exit 0 pass, 1 format invalid, 2 check with me, 3 usage: bad
@@ -100,6 +113,8 @@ from check_brief import (  # noqa: E402
     TRAP,
     check as check_brief,
     core,
+    eval_cases,
+    eval_lead,
     found,
     found_asks as brief_asks,
     judge,
@@ -138,17 +153,15 @@ BRIEF_SLOT = {"goal": "Goal", "done": "Done", "output": "Output", "verify": "Ver
 STATED = re.compile(r"^([*_`]*)\s*stated\s*([*_`]*)\s*[:：]([*_]*)\s*", NAMES)
 # A brief tag that may lead a line. unstated() keeps it and drops any `stated:` beside it.
 TAG_LABEL = re.compile(r"^[*_]*(?:investigate|out of scope|how|write first)[*_]*\s*[:：][*_]*\s*", NAMES)
-CONFIRMED_LINE = re.compile(r"^[-*]\s+(?P<slot>[^:]+?)\s*:\s(?P<value>.*\S)\s+\|\s*(?P<answer>[^|]*?)\s*$")
+# The first ` | ` ends the value, so a new answer may hold a bar.
+CONFIRMED_LINE = re.compile(r"^[-*]\s+(?P<slot>[^:]+?)\s*:\s(?P<value>.*?\S)\s+\|\s*(?P<answer>.*?)\s*$")
 HEDGES = re.compile(r"(?<![^\W_])(?:maybe|perhaps|possibly|probably|might|unsure|unclear|not sure|i think|i guess"
                     r"|for now|depends|idk|dunno|tbh)(?![^\W_])")
 TRAPS = re.compile(r"(?<![^\W_])(?:" + "|".join(sorted(TRAP)) + r")(?![^\W_])")
 BRIEF_CHECK = "the mapped brief passes outcome's brief check"
-EVALS_ASK = "ASK: Evals: Is there a pass case and a fail case here?"
+CONFIRMED_CHECK = "confirmed.md lines are `- <Slot>: <value> | <answer>`"
 # The words of outcome's fixed placeholder list that are also everyday words. Only placeholder_in() reads this.
 EVERYDAY = {"none", "later", "pending", "placeholder"}
-
-Item = namedtuple("Item", "slot value why suggest clears")
-
 
 def canon(name):
     """The section an ASCII heading names."""
@@ -224,15 +237,15 @@ def insert_in(value):
 
 
 def untouched(value):
-    """True when check_brief's judge() fails the value as a whole: nothing but template text, holes or placeholders.
+    """True when the value is nothing but template text, holes or placeholders, so check_brief's judge() fails it whole.
 
-    judge() also fails an `[insert ...]` anywhere. Inside a longer value that may be literal text, as
-    `show the prompt [Insert card]`, so it is not untouched when the rest of the value passes on its own.
+    A code span is the person's literal text, so `` `N/A` `` is not untouched. An `[insert ...]` inside a longer value
+    may be literal text too, as `show the prompt [Insert card]`, so it is not untouched when the rest passes.
     """
-    if judge(value)[0] != "fail":
+    if judge(value)[0] != "fail" or core(value) == "none":
         return False
-    rest = INSERT_FINDER.sub(lambda m: m.group("keep") or " ", value)
-    return rest == value or core(value) in TEMPLATE or judge(rest)[0] == "fail"
+    rest = INSERT_FINDER.sub(lambda m: " literal " if m.group("keep") else " ", value)
+    return core(value) in TEMPLATE or judge(rest)[0] == "fail"
 
 
 def blank(value):
@@ -266,9 +279,12 @@ def open_key(item):
     return "Unknowns", f"{extra[0]}: {open_body(item)}" if extra else open_body(item)
 
 
+LIMIT = "out of scope: "
+
+
 def scoped(item):
     """An `out of scope:` line, bold or not, as the brief writes it in Constraints."""
-    return "out of scope: " + unstated(OUT_OF_SCOPE.sub("", item.strip(), count=1))
+    return LIMIT + unstated(OUT_OF_SCOPE.sub("", item.strip(), count=1))
 
 
 def extra_of(item):
@@ -384,13 +400,6 @@ def landing(item):
     return "Done", unstated(item), None
 
 
-def answers(decided, parked):
-    """(brief slot, value) for every answer the brief will hold: each Decided value, and each Parked `out of scope:`
-    line with no question mark, which the mapper puts in Constraints."""
-    return ([(slot, value) for slot, value, _ in map(landing, decided)]
-            + [("Constraints", scoped(row)) for row in parked if parked_limit(row)])
-
-
 def sections_of(text):
     visible = split_fences(text.lstrip("﻿"))[0]
     sections = parse(visible)[0]
@@ -429,9 +438,12 @@ def check(text):
     decided = real_items(sections.get("Decided", []))
     opens = real_items(sections.get("Open", []))
     parked = real_items(sections.get("Parked", []))
+    # Every value goes through the one shared check. The checks below only group its format errors by where they sit.
+    judged = [(entry, *judge_value(entry.slot, entry.text, entry.role)[:2])
+              for entry in entries({"Decided": decided, "Open": opens, "Parked": parked})]
     add("no open item is a placeholder",
-        [f"open item {item!r} is only a placeholder or a template hole, not a question" for item in opens
-         if not (slot_of(item) and blank(open_body(item))) and untouched(open_body(item))])
+        [f"open item {entry.row!r} is only a placeholder or a template hole, not a question" for entry, error, _ in judged
+         if error and entry.section == "Open" and (error == "placeholder" or entry.kind != "slot")])
     loose = {}
     for line in decided + opens + [text for name, text in extras if name in ("Decided", "Open")]:
         match = LOOSE_SLOT.match(line)
@@ -447,7 +459,7 @@ def check(text):
             missing.append(f"missing slot: {slot}. Add a Decided `{slot}:` line or an Open `{slot}: ...?` item")
     add("every slot is decided or open", missing)
 
-    dup_fails, both_fails, empty_fails = [], [], []
+    dup_fails, both_fails = [], []
     for slot in SLOTS:
         in_decided = [item for item in decided if slot_of(item) == slot]
         in_open = [item for item in opens if slot_of(item) == slot]
@@ -457,32 +469,27 @@ def check(text):
             dup_fails.append(f"slot {slot} is on {len(in_open)} Open lines")
         if in_decided and in_open:
             both_fails.append(f"slot {slot} is both Decided and Open")
-        empty_fails += [f"slot {slot} has an empty value: {item!r}" for item in in_decided
-                        if blank(unstated(slot_value(item)))]
-        empty_fails += [f"slot {slot} has an empty value: {item!r}" for item in in_open if blank(open_body(item))]
     add("no duplicate slot", dup_fails)
     add("a slot is not in Decided and Open", both_fails)
-    add("slot values are not empty", empty_fails)
+    add("slot values are not empty", [f"slot {entry.label[:-2]} has an empty value: {entry.row!r}"
+                                      for entry, error, _ in judged if error == "blank" and entry.kind == "slot"])
 
     extra_fails, seen_extra = [], set()
-    for name, value in filter(None, map(extra_of, decided)):
+    for name, _ in filter(None, map(extra_of, decided)):
         if name in seen_extra:
             extra_fails.append(f"{name}: is on more than one Decided line")
         seen_extra.add(name)
-        if blank(unstated(value)):
-            extra_fails.append(f"{name}: needs a value")
+    extra_fails += [f"{entry.label[:-2]}: needs a value" for entry, error, _ in judged
+                    if error == "blank" and entry.kind == "extra"]
     add("tools, agents, evals, and decide lines are usable", extra_fails)
 
-    # A Parked line is blank when nothing is left as written, or once a slot or line label goes (`decide: stated:`).
-    empty = [("Decided", row) for row in decided if not slot_of(row) and not extra_of(row) and blank(landing(row)[1])]
-    empty += [("Parked", row) for row in parked if blank(parked_value(row)) or blank(landing(row)[1])]
-    add("every line has a value", [f"{source} line {row!r} has no value once its labels are gone; write the value or"
-                                   " drop the line" for source, row in empty])
-    values = answers(decided, parked)
-    values += [("Parking lot", parked_value(row)) for row in parked if not is_none(row) and not parked_limit(row)]
+    add("every line has a value", [f"{entry.section} line {entry.row!r} has no value once its labels are gone; write"
+                                   " the value or drop the line" for entry, error, _ in judged
+                                   if error == "blank" and entry.kind == "line" and entry.section != "Open"])
     add("no value is a placeholder or template text",
-        [f"{slot}: {value!r} is a placeholder or template text; write the real answer" for slot, value in values
-         if not blank(value) and core(value) != "none" and untouched(value)])
+        [f"{entry.slot}: {entry.value!r} is a placeholder or template text; write the real answer" if piece == entry.text
+         else f"{entry.slot}: {entry.value!r} has a case {piece.strip(' ;,.')!r} that is a placeholder or template text;"
+         " write the real case" for entry, error, piece in judged if error == "placeholder" and entry.section != "Open"])
 
     handoff = sections.get("Handoff", [])
     handoff_ready = counts.get("Handoff") == 1
@@ -585,159 +592,292 @@ def mapped(text, confirmed=()):
 
 
 def placeholder_in(value):
-    """The first run of one to three words, as written, that check_brief's judge() calls a placeholder, or None.
+    """The first word or phrase of outcome's fixed placeholder list inside a value, as written, or None.
 
-    A value made only of placeholders is format invalid. This finds one inside a longer value, as `TBD by Friday`.
-    A run with no word left, such as a `pass:` label or a dash, is not one. Nor is a word of that list that is also an
-    everyday word, such as `later` in `a watch app later`: inside a longer value it is that word.
+    A value made only of placeholders is format invalid. This finds one inside a longer value, as `TBD by Friday`, and
+    one joined to a word by any punctuation, as `a card/TBD` or `poster-TBD`. A word of that list that is also an
+    everyday word, such as `later` in `a watch app later`, is that word inside a longer value.
     """
-    if not PLACEHOLDER.search(core(value)):
-        return None
-    words = value.split()
-    for size in (1, 2, 3):
-        for start in range(len(words) - size + 1):
-            piece = " ".join(words[start:start + size])
-            if core(piece) and core(piece) not in EVERYDAY and judge(piece) == ("fail", "placeholder"):
-                return piece.strip(" \"'.,;:!?()[]*_`")
+    for match in PLACEHOLDER.finditer(core(value)):
+        if match.group() in EVERYDAY:
+            continue
+        spelled = re.search(r"[\W_]+".join(map(re.escape, re.split(r"[\W_]+", match.group()))), value, re.I)
+        return spelled.group() if spelled else match.group()
     return None
 
 
-# A value trigger: (test, why, suggest). test returns the word it found, or None. The first match names the item.
-VALUE_TRIGGERS = [
-    (lambda value: "none" if core(value) == "none" else None,
-     'It says "none", so this slot may not be filled in yet.',
-     "Confirm there is nothing for it, or write the real answer."),
-    (placeholder_in,
-     "It has '{word}' in it, so part of it may not be filled in yet.",
-     "Write the missing part in the person's words, or confirm it as is if the word is meant."),
-    (lambda value: "unknown" if "unknown" in core(value) else None,
-     'It says "unknown", so this may not be decided yet.',
-     "Move it to Open as a question, or confirm it as is."),
-    (lambda value: "?" if has_question(value) else None,
-     "It has a question mark, so it may be a question and not a decision.",
-     "Move it to Open if it is still a question, or confirm it as is if the answer quotes a question."),
-    (lambda value: (HEDGES.search(core(value)) or [None])[0],
-     'It says "{word}", so the person may not have decided.',
-     "Ask for a firm answer and write that, move it to Open as a question, or confirm it as is."),
-    (lambda value: (TRAPS.search(core(value)) or [None])[0],
-     'The word "{word}" can mean many things, so nobody can check it.',
-     "Name something a person can see or count, or confirm it as is."),
+def ends_in_question(text):
+    """True when the text ends in a question mark of any script once closing markup, quotes, brackets and spaces go."""
+    rest = (text or "").rstrip()
+    while rest and (rest[-1] in "*_~`'\"" or unicodedata.category(rest[-1]) in ("Pe", "Pf") or rest[-1].isspace()):
+        rest = rest[:-1]
+    return has_question(rest[-1:])
+
+
+def quoted(piece, fallback):
+    """The piece in a code span when it is short plain text, else fallback, so a Why never echoes a long value or an
+    odd character. The writing check skips a code span, so a word from the value never fails it."""
+    return f"`{piece}`" if len(piece) <= 30 and re.fullmatch(r"[A-Za-z0-9 /.,()\[\]-]+", piece) else fallback
+
+
+# Where a value sits. An answer is a decision, so a word that says it is not decided is listed. A question is an Open
+# line. A note is a Parked line, which is for later, so a hedge there is fine. The text checks apply to all three.
+ANSWER, QUESTION, NOTE = "answer", "question", "note"
+EVERY = (ANSWER, QUESTION, NOTE)
+# (reason, test, roles). test returns the word it found, or None. The first match names the item.
+TRIGGERS = [
+    ("no question", lambda text: None if ends_in_question(text) else "?", (QUESTION,)),
+    ("none", lambda text: "none" if core(text) == "none" else None, EVERY),
+    ("placeholder", placeholder_in, EVERY),
+    ("unknown", lambda text: "unknown" if "unknown" in core(text) else None, (ANSWER,)),
+    ("question", lambda text: "?" if has_question(text) else None, (ANSWER,)),
+    ("hedge", lambda text: (HEDGES.search(core(text)) or [None])[0], (ANSWER,)),
+    ("trap", lambda text: (TRAPS.search(core(text)) or [None])[0], (ANSWER,)),
+    ("insert", insert_in, EVERY),
+    ("hole", lambda text: "hole" if judge(text) == ("ask", "hole") else None, EVERY),
+    ("vague", lambda text: "vague" if judge(text)[0] == "ask" else None, EVERY),
 ]
-INSERT = ("It has '{word}' in it, which may be template text left to fill in.",
-          "Fill in the real text, or confirm it as is if the words in brackets are meant.")
-HOLE = ("It has text in angle or curly brackets, which may be a template hole.",
-        "Fill in the real text, or confirm it as is if the brackets are meant.")
-VAGUE = ("It is very short or vague, so it may not be a real answer.",
-         "Write the full answer in the person's words, or confirm it as is.")
-BLANK = ("It has no value.", "Ask the person for the {slot} and write it here, or move it to Open as a question.")
-NO_QUESTION = ("It sits in Open but has no question mark, so it may be a decision.",
-               "Make it a question that ends in a question mark, or move it to Decided if it is settled.")
-LIMIT_OR_QUESTION = ("It is tagged out of scope and also has a question mark, so it may be a question and not a limit.",
-                     "Confirm it to keep it as a question for later, or drop the question mark if it is a firm limit.")
-BRIEF_ASK = ("It is too short or vague to tell what should happen.", "Write the full answer, or confirm it as is.")
-EVALS_CASES = ("Evals needs one case that should pass and one that should fail.",
-               "Add a pass case and a fail case, for example `pass: …; fail: …`.")
+# Why and Suggest for each reason. A Why is one short sentence and quotes at most a short piece of the value.
+REASONS = {
+    "blank": ("It has no value.", "Ask the person for the {slot} and write it here, or move it to Open as a question."),
+    "no question": ("It sits in Open but does not end in a question mark, so it may be a decision.",
+                    "Make it a question that ends in a question mark, or move it to Decided if it is settled."),
+    "none": ('It says "none", so this slot may not be filled in yet.',
+             "Confirm there is nothing for it, or write the real answer."),
+    "placeholder": ("It has {word} in it, so part of it may not be filled in yet.",
+                    "Write the missing part in the person's words, or confirm it as is if the word is meant."),
+    "unknown": ('It says "unknown", so this may not be decided yet.',
+                "Move it to Open as a question, or confirm it as is."),
+    "question": ("It has a question mark, so it may be a question and not a decision.",
+                 "Move it to Open if it is still a question, or confirm it as is if the answer quotes a question."),
+    "hedge": ('It says "{word}", so the person may not have decided.',
+              "Ask for a firm answer and write that, move it to Open as a question, or confirm it as is."),
+    "trap": ('The word "{word}" can mean many things, so nobody can check it.',
+             "Name something a person can see or count, or confirm it as is."),
+    "insert": ("It has {word} in it, which may be template text left to fill in.",
+               "Fill in the real text, or confirm it as is if the words in brackets are meant."),
+    "hole": ("It has text in angle or curly brackets, which may be a template hole.",
+             "Fill in the real text, or confirm it as is if the brackets are meant."),
+    "vague": ("It is very short or vague, so it may not be a real answer.",
+              "Write the full answer in the person's words, or confirm it as is."),
+    "cases": ("Evals needs one case that should pass and one that should fail.",
+              "Add a pass case and a fail case, for example `pass: …; fail: …`."),
+}
+# Wording one slot gives a reason. A Parked `out of scope:` line with a question mark may be a limit or a question.
+SLOT_REASONS = {
+    ("Parking lot", "question"): (
+        "It is out of scope and has a question mark, so it may be a question and not a limit.",
+        "Confirm it to keep it as a question for later, or drop the question mark if it is a firm limit."),
+}
+QUOTE_FALLBACK = {"placeholder": "a placeholder word", "insert": "a note in square brackets"}
+# The drill-down: questions that narrow an answer toward an exact spec for that slot.
+ASKS = {
+    "Goal": ("What do you want to have at the end?", "Who is it for?"),
+    "Done": ("What will you see when it is done?",),
+    "Output": ("Who will see it, and where?", "What exactly should it show?", "How will you know it looks right?"),
+    "Constraints": ("What must it never do?", "Is this a firm limit, or a wish?"),
+    "Verification": ("What will you do to check it?", "What will you see if it works?"),
+    "Tools": ("Which tool or app should it use?", "What must be ready before it starts?"),
+    "Agents and roles": ("Who does the work?", "Who checks it?"),
+    "Evals": ("What is one case that should pass?", "What is one that should fail?"),
+    "Unknowns": ("What exactly do you want to find out?", "Who can answer it?"),
+    "Parking lot": ("Is this for later, or out of scope?",),
+}
+
+Item = namedtuple("Item", "slot value why ask suggest clears")
+# The one shared check's answer for one value. error is the format error ("blank" or "placeholder"), or None, and piece
+# is the part of the value it is about. item is what to check with the person, or None. The script decides error.
+# Only the person clears an item.
+Verdict = namedtuple("Verdict", "error piece item")
 
 
-def brief_item(slot, value, line):
-    """The Item for one check_brief ASK line. A yes cannot clear the Evals pass and fail ask: only labelled cases do."""
-    if line == EVALS_ASK:
-        return Item(slot, value, *EVALS_CASES, False)
-    return Item(slot, value, *(HOLE if line.endswith(", or a hole to fill?") else BRIEF_ASK), True)
+def case_pieces(text):
+    """(pieces, kinds) of one Evals value as check_brief reads it: the text before the first colon label, and each
+    case body. kinds holds pass and fail for the cases found. A value with no case is one piece."""
+    cases = eval_cases(text)
+    lead = eval_lead(text)
+    return [lead] * bool(core(lead)) + [body for _, body in cases] or [text], {kind for kind, _ in cases}
 
 
-def judged(slot, value):
-    """The Item check_brief's judge() asks for, or None. An `[insert ...]` inside a longer value is one too."""
-    word = insert_in(value)
-    if word:
-        return Item(slot, value, INSERT[0].format(word=word), INSERT[1], True)
-    outcome, why = judge(value)
-    if outcome != "ask":
-        return None
-    return Item(slot, value, *(HOLE if why == "hole" else VAGUE), True)
-
-
-def value_item(slot, value):
-    """The Item for one answer, or None."""
-    if blank(value):
-        return Item(slot, value, BLANK[0], BLANK[1].format(slot=slot.lower()), True)
-    for test, why, suggest in VALUE_TRIGGERS:
-        word = test(value)
+def read_piece(text, role):
+    """(error, reason, word) for one piece of text. See TRIGGERS."""
+    if blank(text):
+        return "blank", "blank", None
+    if untouched(text):
+        return "placeholder", None, None
+    for reason, test, roles in TRIGGERS:
+        word = test(text) if role in roles else None
         if word:
-            return Item(slot, value, why.format(word=word), suggest, True)
-    return judged(slot, value)
+            return None, reason, word
+    return None, None, None
 
 
-def review(text, with_brief=True):
-    """Every CHECK WITH ME Item, before confirmations, in file order, one per slot and value.
+def judge_value(slot, text, role=ANSWER):
+    """The one check every value goes through: Verdict(error, item) for `text` in brief slot `slot`.
 
-    with_brief adds the values check_brief asks about on the mapped brief. Run it only when the format is valid.
+    The same text gets the same verdict in every slot. The slot only picks the wording and the Ask questions, and an
+    Evals answer is read as its pieces, the way check_brief reads it. When its pass case or fail case is missing, that
+    is the item, and a yes cannot clear it.
     """
-    found = sections_of(text)
-    decided, opens, parked = found["Decided"], found["Open"], found["Parked"]
-    out = [value_item(slot, value) for slot, value in answers(decided, parked)]
-    for item in opens:
-        slot, body = open_key(item)
-        if slot_of(item) and blank(body):
-            out.append(Item(slot, body, BLANK[0], BLANK[1].format(slot=slot.lower()), True))
-        elif not has_question(item):
-            out.append(Item(slot, body, *NO_QUESTION, True))
+    pieces, kinds = case_pieces(text) if slot == "Evals" and role == ANSWER else ([text], None)
+    reads = [read_piece(piece, role) for piece in pieces]
+    error, piece = next(((error, piece) for (error, _, _), piece in zip(reads, pieces) if error), (None, None))
+    reason, word = next(((reason, word) for _, reason, word in reads if reason), (None, None))
+    if kinds is not None and not blank(text) and not {"pass", "fail"} <= kinds:
+        reason, word = "cases", None
+    if not reason:
+        return Verdict(error, piece, None)
+    why, suggest = SLOT_REASONS.get((slot, reason)) or REASONS[reason]
+    word = quoted(word, QUOTE_FALLBACK[reason]) if reason in QUOTE_FALLBACK else word
+    return Verdict(error, piece, Item(slot, text, why.format(word=word), " ".join(ASKS[slot]),
+                               suggest.format(slot=slot.lower()), reason != "cases"))
+
+
+Entry = namedtuple("Entry", "section row slot value text role label kind")
+EXTRAS = ("tools", "agents", "evals", "decide", "write first")
+
+
+def entries(found):
+    """Every value in the file, once: Entry(section, row, brief slot, value as listed, text to judge, role, label, kind).
+
+    This only finds the values. judge_value() judges them. label is what a replacement keeps in front of the new
+    answer. kind is slot, extra (a tools:, agents:, evals:, decide: or write first: line) or line.
+    """
+    out = []
+    for row in found["Decided"]:
+        slot, value, label = landing(row)
+        kind = "slot" if label in SLOTS else "extra" if label in EXTRAS else "line"
+        # An `out of scope:` value is judged without its tag, as the brief check reads it, and keeps the tag.
+        text = value[len(LIMIT):] if label == "out of scope" else value
+        out.append(Entry("Decided", row, slot, value, text, ANSWER, f"{label}: " if label else "", kind))
+    for row in found["Open"]:
+        slot, value = open_key(row)
+        name = slot_of(row) or (extra_of(row) or (None,))[0]
+        out.append(Entry("Open", row, slot, value, open_body(row), QUESTION, f"{name}: " if name else "",
+                         "slot" if slot_of(row) else "line"))
+    for row in found["Parked"]:
+        if is_none(row):
+            continue
+        if OUT_OF_SCOPE.match(row.strip()):
+            slot = "Parking lot" if has_question(row) else "Constraints"
+            out.append(Entry("Parked", row, slot, scoped(row), scoped(row)[len(LIMIT):], ANSWER, LIMIT, "line"))
         else:
-            asked = judged(slot, open_body(item))
-            out.append(asked and asked._replace(value=body))
-    for row in parked:
-        if OUT_OF_SCOPE.match(row.strip()) and has_question(row):
-            out.append(Item("Parking lot", parked_value(row), *LIMIT_OR_QUESTION, True))
-        elif not parked_limit(row) and not blank(parked_value(row)):
-            out.append(judged("Parking lot", parked_value(row)))
-    if with_brief:
-        out += [brief_item(*ask) for ask in brief_asks(mapped(text))]
-    # One item per slot and value. An item a yes cannot clear wins, so its advice is not hidden behind one a yes clears.
+            out.append(Entry("Parked", row, "Parking lot", parked_value(row), landing(row)[1], NOTE, "", "line"))
+    return out
+
+
+def review(text):
+    """Every CHECK WITH ME Item, before confirmations, in file order, one per slot and value."""
     unique = {}
-    for item in filter(None, out):
+    for entry in entries(sections_of(text)):
+        item = judge_value(entry.slot, entry.text, entry.role).item
+        if not item:
+            continue
+        item = item._replace(value=entry.value)
         key = (item.slot, item.value)
+        # An item a yes cannot clear wins, so its advice is not hidden behind one a yes clears.
         if key not in unique or unique[key].clears and not item.clears:
             unique[key] = item
     return list(unique.values())
 
 
 def read_confirmed(text):
-    """([(slot, value)] for each yes, [fails]) from confirmed.md text."""
-    yes, fails = [], []
+    """([(slot, value, answer)] in file order, [fails]) from confirmed.md text. answer is `yes` or the new answer."""
+    answers, fails = [], []
     for raw in (text or "").lstrip("﻿").splitlines():
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
         match = CONFIRMED_LINE.match(line)
-        if not match:
-            fails.append(f"confirmed.md line {line!r} is not `- <Slot>: <value> | yes`")
-        elif match["answer"].lower() != "yes":
-            fails.append(f"confirmed.md line {line!r} answers {match['answer']!r}. Only yes confirms a value. "
-                         "For any other answer, edit decisions.md")
+        if not match or not match["answer"]:
+            fails.append(f"confirmed.md line {line!r} is not `- <Slot>: <value> | yes` or `- <Slot>: <value> | <new"
+                         " answer>`")
+        elif match["answer"].lower() == "no":
+            fails.append(f"confirmed.md line {line!r} says no. Write the new answer after the bar in place of no")
         else:
-            yes.append((match["slot"].strip(), match["value"].strip()))
-    return yes, fails
+            answer = "yes" if match["answer"].lower() == "yes" else match["answer"]
+            answers.append((match["slot"].strip(), match["value"].strip(), answer))
+    return answers, fails
 
 
-Verdict = namedtuple("Verdict", "code results pending notes used")
+def replaced(text, entry, new):
+    """The decisions text with the line of `entry` holding `new` in place of its value. The label stays, once."""
+    label = "" if new.lower().startswith(entry.label.lower()) else entry.label
+    lines, section = text.split("\n"), None
+    for i, line in enumerate(lines):
+        head = HEAD.match(line.strip())
+        if head:
+            section = canon(head.group(1))
+            continue
+        bullet = BULLET.match(line)
+        if section == entry.section and bullet and bullet.group(1).strip() == entry.row:
+            lines[i] = f"{line[0]} {label}{new}"
+    return "\n".join(lines)
+
+
+def listed(entry):
+    """True when the shared check lists the entry for the person and finds no format error in it."""
+    error, _, item = judge_value(entry.slot, entry.text, entry.role)
+    return item is not None and error is None
+
+
+def settle(text, answers):
+    """(text, yes, swapped) once each replacement answer is in place. The latest line for a slot and value wins.
+
+    yes is the (slot, value) of each latest yes. swapped is the (slot, value) of each replacement made. The new answer
+    sits where the old value was, so the same shared check reads it on the next pass. Each line applies once, to every
+    line with that slot and value. A replacement only answers an item: it never replaces a value with a format error.
+    """
+    latest = {}
+    for slot, value, answer in answers:
+        latest.pop((slot, value), None)
+        latest[(slot, value)] = answer
+    swaps = {key: answer for key, answer in latest.items() if answer != "yes"}
+    swapped = []
+    while True:
+        found = [e for e in entries(sections_of(text)) if (e.slot, e.value) in swaps and (e.slot, e.value) not in swapped
+                 and listed(e)]
+        if not found:
+            break
+        key = (found[0].slot, found[0].value)
+        swapped.append(key)
+        for entry in found:
+            if (entry.slot, entry.value) == key:
+                text = replaced(text, entry, swaps[key])
+    return text, [key for key, answer in latest.items() if answer == "yes"], swapped
+
+
+Result = namedtuple("Result", "code results pending notes used text")
 
 
 def verdict(text, confirmed_text=""):
-    """The one result both scripts print. code is 0 pass, 1 format invalid, 2 check with me."""
-    yes, confirm_fails = read_confirmed(confirmed_text)
-    results = check(text) + [("confirmed.md lines are `- <Slot>: <value> | yes`", confirm_fails)]
+    """The one result both scripts print. code is 0 pass, 1 format invalid, 2 check with me.
+
+    results are the format checks, which only the script decides. pending are the items no person has answered yet.
+    used are the (slot, value) of each yes that cleared an item. text is the decisions text with each replacement in
+    place, which is what the mapper maps.
+    """
+    answers, confirm_fails = read_confirmed(confirmed_text)
+    text, yes, swapped = settle(text, answers)
+    results = check(text) + [(CONFIRMED_CHECK, confirm_fails)]
     failed = any(fails for _, fails in results)
-    found = review(text, with_brief=not failed)
+    found = review(text)
     keys = {(item.slot, item.value) for item in found}
     pending = [item for item in found if not (item.clears and (item.slot, item.value) in yes)]
-    used = [key for key in dict.fromkeys(yes) if key in keys]
-    notes = [f"NOTE: confirmed.md line '- {slot}: {value} | yes' matches nothing in decisions.md now; remove it"
-             for slot, value in dict.fromkeys(yes) if (slot, value) not in keys]
+    used = [key for key in yes if key in keys]
+    broken = {(e.slot, e.value) for e in entries(sections_of(text)) if judge_value(e.slot, e.text, e.role).error}
+    notes = [f"NOTE: confirmed.md line '- {slot}: {value} | {answer}' "
+             + ("names a value with a format error. Fix it in decisions.md, because no answer clears it"
+                if (slot, value) in broken else "matches nothing in decisions.md now; remove it")
+             for slot, value, answer in dict.fromkeys(answers) if (slot, value) not in keys - broken | set(swapped)]
     if not failed and not pending:
-        # The brief must pass check_brief whole. Anything it still asks about stays on the list.
-        pending = [brief_item(*ask) for ask in brief_asks(mapped(text, used))]
+        # Once every item is answered, the brief must pass check_brief whole. A value it still asks about here is a
+        # gap in the shared check, so it fails, and a yes cannot hide it.
+        asked = [line for _, _, line in brief_asks(mapped(text, used))]
+        results.append((BRIEF_CHECK + " with every answer", asked))
+        failed = bool(asked)
     code = 1 if failed else 2 if pending else 0
-    return Verdict(code, results, pending, notes, used)
+    return Result(code, results, pending, notes, used, text)
 
 
 def report(text, path, confirmed_text=""):
@@ -750,7 +890,8 @@ def report(text, path, confirmed_text=""):
     if result.pending:
         lines.append(f"CHECK WITH ME ({len(result.pending)})")
         for item in result.pending:
-            lines += [f'- {item.slot}: "{item.value}"', f"  Why: {item.why}", f"  Suggest: {item.suggest}"]
+            lines += [f'- {item.slot}: "{item.value}"', f"  Why: {item.why}", f"  Ask: {item.ask}",
+                      f"  Suggest: {item.suggest}"]
     lines += result.notes
     lines.append(f"{['PASS', 'FORMAT INVALID', 'CHECK WITH ME'][result.code]} decisions: {path}")
     return result.code, lines, result
@@ -783,13 +924,14 @@ def unreadable(path, why):
 def inputs(path, confirmed=None):
     """(decisions text, confirmed.md text, None), or (None, None, exit 3) after one usage line on stderr.
 
-    Without --confirmed, confirmed.md next to decisions.md is read when it exists.
+    Without --confirmed, confirmed.md next to decisions.md is read when that path exists. A directory there is the
+    same usage error as one named with --confirmed.
     """
     text, why = read(path)
     if why:
         return None, None, unreadable(path, why)
-    beside = os.path.join(os.path.dirname(os.path.abspath(path)), "confirmed.md")
-    if confirmed is None and not os.path.isfile(beside):
+    beside = os.path.join(os.path.dirname(path), "confirmed.md")
+    if confirmed is None and not os.path.exists(beside):
         return text, "", None
     confirmed = confirmed or beside
     answers_text, why = read(confirmed)
