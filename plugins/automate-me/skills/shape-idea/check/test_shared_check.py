@@ -1,4 +1,4 @@
-"""Run: python3 check/test_shared_check.py [item1 ... item9]
+"""Run: python3 check/test_shared_check.py [item1 ... item12]
 
 Every value goes through one shared check, so a fix reaches every slot. Each item below is one rule of that check.
 With no argument every item runs. With names, only those run. The property items use a fixed seed and stay fast.
@@ -18,7 +18,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(SKILLS, "outcome", "check"))
 sys.path.insert(0, os.path.join(SKILLS, "shared"))
 from check_brief import ask_lines, check as brief_check  # noqa: E402
-from check_decisions import main as check_main  # noqa: E402
+from check_decisions import entries, main as check_main, sections_of  # noqa: E402
 from check_writing import check_writing  # noqa: E402
 from map_decisions import main as map_main  # noqa: E402
 
@@ -90,7 +90,7 @@ def items(said):
         return found
     for line in said.split("CHECK WITH ME (", 1)[1].splitlines()[1:]:
         head = re.match(r'^- (?P<slot>[^:]+): "(?P<value>.*)"$', line)
-        field = re.match(r"^  (Why|Ask|Suggest): (.*)$", line)
+        field = re.match(r"^  (Why|Ask|Suggest|Line): (.*)$", line)
         if head:
             found.append({"slot": head["slot"], "value": head["value"]})
         elif field and found:
@@ -112,8 +112,22 @@ def flow(text, confirmed=None):
     return code, mcode, items(said), brief if mcode == 0 else "", said
 
 
+def bar(text):
+    """Text as confirmed.md writes it: a backslash is written twice and a bar as a backslash and a bar."""
+    return text.replace("\\", "\\\\").replace("|", "\\|")
+
+
+def answer(slot, value, said):
+    return f"- {slot}: {bar(value)} | {bar(said)}\n"
+
+
 def yes_all(found):
-    return "".join(f"- {item['slot']}: {item['value']} | yes\n" for item in found)
+    return "".join(answer(item["slot"], item["value"], "yes") for item in found)
+
+
+def every_answer(text, said):
+    """A confirmed.md with `said` for every value in the file, listed or not."""
+    return "".join(answer(e.slot, e.value, said) for e in entries(sections_of(text)))
 
 
 def expect(name, ok, why=""):
@@ -207,6 +221,8 @@ SHAPES = [
     "{b} with a note [Insert the price of each cake and the name of each baker], maybe",
     # Backticks the writing check and the brief check read in different ways. A Why must not echo the word inside.
     "{b} ` [Insert ensure] ``",
+    # A long dash fails the writing check, a format error that no answer clears. A bar is written as \\| in an answer.
+    "maybe {b} — by the door", "{b} — by the door", "maybe {b} that reads Open | Closed", "{b} that reads A | B",
 ]
 
 
@@ -242,6 +258,12 @@ def item9():
                text["parked"] == answer or (text["parked"] == "ok" and answer == "check"), f"{text} {got}")
         want = text["parked"] if ends_in_question(value) else "error" if text["parked"] == "error" else "check"
         expect(f"item9 open agrees: {value!r}", text["open"] == want, f"{text} {got}")
+        if answer == "error":
+            for route, make in ROUTES.items():
+                for said in ("yes", "a poster on the gym door"):
+                    code, _, _, _, out = flow(make(value), every_answer(make(value), said))
+                    expect(f"item9 no answer clears a format error in {route}: {value!r} | {said}", code == 1,
+                           f"exit {code}\n{out[-500:]}")
         if answer == "check":
             for route, make in ROUTES.items():
                 code, mcode, found, brief, said = flow(make(value))
@@ -343,9 +365,55 @@ def item8():
     expect("item8 an Open replacement keeps its decide label",
            code == 0 and "unknown: Which colors go on the poster?" in brief and "What will you decide" not in brief,
            said[-500:] + brief[-600:])
-    code, _, _, brief, said = flow(swap(OUT, "- output: maybe a poster"), "- Output: maybe a poster | a poster | one page\n")
-    expect("item8 the first bar splits value and answer", code == 0 and "- Output: a poster | one page\n" in brief,
+    code, _, _, brief, said = flow(swap(OUT, "- output: maybe a poster"), "- Output: maybe a poster | a poster \\| one page\n")
+    expect("item8 a bar in a new answer is written \\|", code == 0 and "- Output: a poster | one page\n" in brief,
            said[-500:] + brief[-300:])
+
+
+def item11():
+    """A format error in decisions.md stays one: no yes and no new answer clears it, and a new answer is checked too."""
+    old = "Maybe a poster on the gym door — above the handle"
+    text = swap(OUT, f"- output: {old}")
+    new = "A poster on the gym door"
+    code, _, found, _, said = flow(text)
+    expect("item11 a long dash is a format error", code == 1 and "FAIL prose passes the writing check" in said,
+           said[-500:])
+    expect("item11 a value with a format error has no line to copy", found and "Line" not in found[0], said[-500:])
+    for reply in (new, "yes"):
+        code, mcode, _, brief, said = flow(text, f"- Output: {old} | {reply}\n")
+        expect(f"item11 an answer does not clear a writing error: {reply}",
+               (code, mcode) == (1, 1) and "FAIL prose passes the writing check" in said and not brief, said[-600:])
+        expect(f"item11 the answer line says no answer clears it: {reply}",
+               f"NOTE: confirmed.md line '- Output: {old} | {reply}' names a value with a format error" in said,
+               said[-600:])
+    code, _, _, _, said = flow(swap(LAST, f"- done: the poster — by Friday\n{LAST}", text.replace(old, "maybe a poster")),
+                               "- Output: maybe a poster | a poster on the gym door\n")
+    expect("item11 a new answer for one value leaves another line's error", code == 1, said[-500:])
+    code, _, _, _, said = flow(swap(OUT, "- output: maybe a poster"), f"- Output: maybe a poster | a poster — by Friday\n")
+    expect("item11 a new answer can add a writing error", code == 1 and "FAIL prose passes the writing check" in said,
+           said[-500:])
+
+
+def item12():
+    """A bar in a value or a new answer is written \\|, and the listed Line is ready to copy."""
+    for old in ("Maybe a sign that reads Open | Closed", "maybe a sign with a \\ on it", "maybe a sign that reads \\| as is"):
+        text = swap(OUT, f"- output: {old}")
+        code, _, found, _, said = flow(text)
+        line = answer("Output", old, "yes").strip()
+        expect(f"item12 the item shows the line to copy: {old!r}",
+               code == 2 and [(i["slot"], i["value"], i.get("Line")) for i in found] == [("Output", old, line)],
+               said[-600:])
+        code, mcode, _, brief, said = flow(text, line + "\n")
+        expect(f"item12 the copied line clears it: {old!r}", (code, mcode) == (0, 0) and "NOTE" not in said
+               and f"- Output: {old}\n" in brief.split("## Confirmed", 1)[-1], said[-600:] + brief[-300:])
+        for new in ("A sign that reads Open | Closed", "a sign with a \\ and a | on it"):
+            code, mcode, _, brief, said = flow(text, answer("Output", old, new))
+            expect(f"item12 a new answer with a bar round-trips: {old!r} | {new!r}",
+                   (code, mcode) == (0, 0) and f"- Output: {new}\n" in brief and "NOTE" not in said,
+                   said[-600:] + brief[-300:])
+    code, _, _, _, said = flow(swap(OUT, "- output: maybe a poster"), "- Output: maybe a poster | a poster | one page\n")
+    expect("item12 a second bar with no backslash is format invalid",
+           code == 1 and "FAIL confirmed.md lines" in said and "\\|" in said, said[-500:])
 
 
 def item10():
@@ -360,7 +428,7 @@ def item10():
                route == "evals case" and code == 2, said[-500:])
 
 
-ITEMS = {f"item{n}": globals()[f"item{n}"] for n in range(1, 11)}
+ITEMS = {f"item{n}": globals()[f"item{n}"] for n in range(1, 13)}
 
 if __name__ == "__main__":
     for name in sys.argv[1:] or ITEMS:

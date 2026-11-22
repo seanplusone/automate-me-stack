@@ -71,9 +71,11 @@ and each case body of either form. When its pass case or fail case is missing, t
 a yes cannot clear it.
 
 Check with me (exit 2, when the format is valid). Each item names the slot as the brief names it and the exact value,
-then three lines. Why is one short plain sentence that quotes at most a short piece of the value. Ask holds one to
+then four lines. Why is one short plain sentence that quotes at most a short piece of the value. Ask holds one to
 three questions for that slot that narrow the answer. Suggest is a next step, and says "confirm it as is" only when a
-yes can clear the item. The triggers are broad on purpose. A wrong item costs one answer.
+yes can clear the item. Line is the item's confirmed.md line, ready to copy, with `yes` or `<new answer>` after the
+bar. A value whose own line has a format error has no Line, because no answer clears it. The triggers are broad on
+purpose. A wrong item costs one answer.
 
 confirmed.md sits next to decisions.md, or at the path after `--confirmed`. Blank lines and `#` lines are skipped.
 Each other line is one answer, the slot and the exact value from the list, a bar, then `yes` or a new answer:
@@ -83,10 +85,15 @@ Each other line is one answer, the slot and the exact value from the list, a bar
 
 A yes clears the item with that exact slot and value, and no other: `tools: X` and `agents: X` are two items. A new
 answer takes the old value's place on every line with that slot and value, label kept once, and goes through the same
-shared check, so an answer that is still unsure is listed again under its new text. The first ` | ` ends the value.
-The latest line for the same slot and value wins. No answer clears a format error, and a line naming such a value
-prints a NOTE. A line that matches nothing is printed as a NOTE, not a failure. decisions.md is not changed: the mapper maps it
-with the new answers in place, and copies each yes into the brief's `## Confirmed` block.
+shared check, so an answer that is still unsure is listed again under its new text. A bar inside the value or the
+answer is written `\\|`, and a backslash `\\\\`, so the one bar with no backslash before it ends the value. A line with
+no such bar, or with two, is format invalid. The latest line for the same slot and value wins.
+
+The format checks read decisions.md as written, before any new answer is put in, and again with the new answers in
+place. So no answer clears a format error, a writing failure included, and a new answer can add one. A line naming a
+value with a format error prints a NOTE. A line that matches nothing is printed as a NOTE, not a failure.
+decisions.md is not changed: the mapper maps it with the new answers in place, and copies each yes into the brief's
+`## Confirmed` block.
 
 Prints a PASS or FAIL line per check, the CHECK WITH ME list, any NOTE lines, then
 `PASS|FORMAT INVALID|CHECK WITH ME decisions: <path>`. Exit 0 pass, 1 format invalid, 2 check with me, 3 usage: bad
@@ -153,8 +160,10 @@ BRIEF_SLOT = {"goal": "Goal", "done": "Done", "output": "Output", "verify": "Ver
 STATED = re.compile(r"^([*_`]*)\s*stated\s*([*_`]*)\s*[:：]([*_]*)\s*", NAMES)
 # A brief tag that may lead a line. unstated() keeps it and drops any `stated:` beside it.
 TAG_LABEL = re.compile(r"^[*_]*(?:investigate|out of scope|how|write first)[*_]*\s*[:：][*_]*\s*", NAMES)
-# The first ` | ` ends the value, so a new answer may hold a bar.
-CONFIRMED_LINE = re.compile(r"^[-*]\s+(?P<slot>[^:]+?)\s*:\s(?P<value>.*?\S)\s+\|\s*(?P<answer>.*?)\s*$")
+# A confirmed.md line. The one bar with no backslash before it ends the value. See bar() and unbar().
+CONFIRMED_LINE = re.compile(r"^[-*]\s+(?P<slot>[^:]+?)\s*:\s(?P<rest>.*)$")
+# In confirmed.md, \| is a bar and \\ is a backslash. Any other backslash is itself.
+BAR_TOKEN = re.compile(r"\\[\\|]|\||[^\\|]+|\\")
 HEDGES = re.compile(r"(?<![^\W_])(?:maybe|perhaps|possibly|probably|might|unsure|unclear|not sure|i think|i guess"
                     r"|for now|depends|idk|dunno|tbh)(?![^\W_])")
 TRAPS = re.compile(r"(?<![^\W_])(?:" + "|".join(sorted(TRAP)) + r")(?![^\W_])")
@@ -781,6 +790,22 @@ def review(text):
     return list(unique.values())
 
 
+def bar(text):
+    """Text as a confirmed.md line writes it, so a bar or a backslash in it is read back as itself. See unbar()."""
+    return text.replace("\\", "\\\\").replace("|", "\\|")
+
+
+def unbar(text):
+    """The pieces of confirmed.md text between bars with no backslash before them, each \\| and \\\\ read back."""
+    pieces, piece = [], ""
+    for token in BAR_TOKEN.findall(text):
+        if token == "|":
+            pieces, piece = pieces + [piece], ""
+        else:
+            piece += token[1] if len(token) == 2 and token[0] == "\\" else token
+    return [part.strip() for part in pieces + [piece]]
+
+
 def read_confirmed(text):
     """([(slot, value, answer)] in file order, [fails]) from confirmed.md text. answer is `yes` or the new answer."""
     answers, fails = [], []
@@ -789,14 +814,15 @@ def read_confirmed(text):
         if not line or line.startswith("#"):
             continue
         match = CONFIRMED_LINE.match(line)
-        if not match or not match["answer"]:
+        pieces = unbar(match["rest"]) if match else []
+        if len(pieces) != 2 or not all(pieces):
             fails.append(f"confirmed.md line {line!r} is not `- <Slot>: <value> | yes` or `- <Slot>: <value> | <new"
-                         " answer>`")
-        elif match["answer"].lower() == "no":
+                         " answer>`. Write a bar inside the value or the answer as `\\|`")
+        elif pieces[1].lower() == "no":
             fails.append(f"confirmed.md line {line!r} says no. Write the new answer after the bar in place of no")
         else:
-            answer = "yes" if match["answer"].lower() == "yes" else match["answer"]
-            answers.append((match["slot"].strip(), match["value"].strip(), answer))
+            value, answer = pieces
+            answers.append((match["slot"].strip(), value, "yes" if answer.lower() == "yes" else answer))
     return answers, fails
 
 
@@ -815,10 +841,22 @@ def replaced(text, entry, new):
     return "\n".join(lines)
 
 
+def has_error(entry):
+    """True when the entry's own line has a format error, from the shared check or the writing check."""
+    return bool(judge_value(entry.slot, entry.text, entry.role).error or prose_fails(entry.row))
+
+
 def listed(entry):
-    """True when the shared check lists the entry for the person and finds no format error in it."""
-    error, _, item = judge_value(entry.slot, entry.text, entry.role)
-    return item is not None and error is None
+    """True when the shared check lists the entry for the person and its line has no format error."""
+    return judge_value(entry.slot, entry.text, entry.role).item is not None and not has_error(entry)
+
+
+def merged(first, second):
+    """Two runs of the format checks as one, by check name. A fail from either run stays."""
+    out = {}
+    for name, fails in first + second:
+        out[name] = out.get(name, []) + [fail for fail in fails if fail not in out.get(name, [])]
+    return list(out.items())
 
 
 def settle(text, answers):
@@ -847,29 +885,38 @@ def settle(text, answers):
     return text, [key for key, answer in latest.items() if answer == "yes"], swapped
 
 
-Result = namedtuple("Result", "code results pending notes used text")
+Result = namedtuple("Result", "code results pending notes used text broken")
 
 
 def verdict(text, confirmed_text=""):
     """The one result both scripts print. code is 0 pass, 1 format invalid, 2 check with me.
 
     results are the format checks, which only the script decides. pending are the items no person has answered yet.
-    used are the (slot, value) of each yes that cleared an item. text is the decisions text with each replacement in
+    used are the (slot, value) of each yes that cleared an item. broken are the (slot, value) of each listed or answered
+    value whose own line has a format error, which no answer clears. text is the decisions text with each replacement in
     place, which is what the mapper maps.
     """
     answers, confirm_fails = read_confirmed(confirmed_text)
+    # The format checks read decisions.md as written, so no answer clears a format error. A new answer is read again
+    # in its place, so it can add an error or an item, and never remove one.
+    original, results = text, check(text)
     text, yes, swapped = settle(text, answers)
-    results = check(text) + [(CONFIRMED_CHECK, confirm_fails)]
+    if text != original:
+        results = merged(results, check(text))
+    results.append((CONFIRMED_CHECK, confirm_fails))
     failed = any(fails for _, fails in results)
     found = review(text)
     keys = {(item.slot, item.value) for item in found}
     pending = [item for item in found if not (item.clears and (item.slot, item.value) in yes)]
     used = [key for key in yes if key in keys]
-    broken = {(e.slot, e.value) for e in entries(sections_of(text)) if judge_value(e.slot, e.text, e.role).error}
-    notes = [f"NOTE: confirmed.md line '- {slot}: {value} | {answer}' "
+    named = {(slot, value) for slot, value, _ in answers} | {(item.slot, item.value) for item in pending}
+    broken = {(e.slot, e.value) for source in {original, text} for e in entries(sections_of(source))
+              if (e.slot, e.value) in named and has_error(e)}
+    notes = [f"NOTE: confirmed.md line '- {slot}: {bar(value)} | {bar(answer)}' "
              + ("names a value with a format error. Fix it in decisions.md, because no answer clears it"
                 if (slot, value) in broken else "matches nothing in decisions.md now; remove it")
-             for slot, value, answer in dict.fromkeys(answers) if (slot, value) not in keys - broken | set(swapped)]
+             for slot, value, answer in dict.fromkeys(answers)
+             if (slot, value) in broken or (slot, value) not in keys | set(swapped)]
     if not failed and not pending:
         # Once every item is answered, the brief must pass check_brief whole. A value it still asks about here is a
         # gap in the shared check, so it fails, and a yes cannot hide it.
@@ -877,7 +924,7 @@ def verdict(text, confirmed_text=""):
         results.append((BRIEF_CHECK + " with every answer", asked))
         failed = bool(asked)
     code = 1 if failed else 2 if pending else 0
-    return Result(code, results, pending, notes, used, text)
+    return Result(code, results, pending, notes, used, text, broken)
 
 
 def report(text, path, confirmed_text=""):
@@ -892,6 +939,8 @@ def report(text, path, confirmed_text=""):
         for item in result.pending:
             lines += [f'- {item.slot}: "{item.value}"', f"  Why: {item.why}", f"  Ask: {item.ask}",
                       f"  Suggest: {item.suggest}"]
+            if (item.slot, item.value) not in result.broken:
+                lines.append(f"  Line: - {item.slot}: {bar(item.value)} | {'yes' if item.clears else '<new answer>'}")
     lines += result.notes
     lines.append(f"{['PASS', 'FORMAT INVALID', 'CHECK WITH ME'][result.code]} decisions: {path}")
     return result.code, lines, result

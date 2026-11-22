@@ -38,7 +38,7 @@ A Parked line is for later, so only the text checks apply there. A Parked `out o
 
 **Format and decisions stay apart.** Only the script decides a format error, and no answer clears one. Only the person clears an item on the list.
 
-**The drill-down.** Each item names the slot as the brief names it and the exact value. Then come three lines. Why is one short, plain sentence that quotes at most a short piece of the value. Ask holds one to three questions for that slot that narrow the answer toward an exact spec. Suggest is a next step, and it offers "confirm it as is" only when a yes can clear the item. A real run on `cases/check-with-me/decisions.md` prints:
+**The drill-down.** Each item names the slot as the brief names it and the exact value. Then come four lines. Why is one short, plain sentence that quotes at most a short piece of the value. Ask holds one to three questions for that slot that narrow the answer toward an exact spec. Suggest is a next step, and it offers "confirm it as is" only when a yes can clear the item. Line is the item's `confirmed.md` line, ready to copy, with `yes` or `<new answer>` after the bar. A value with a format error has no Line, because no answer clears it. A real run on `cases/check-with-me/decisions.md` prints:
 
 ```
 CHECK WITH ME (3)
@@ -46,14 +46,17 @@ CHECK WITH ME (3)
   Why: It has a question mark, so it may be a question and not a decision.
   Ask: Who will see it, and where? What exactly should it show? How will you know it looks right?
   Suggest: Move it to Open if it is still a question, or confirm it as is if the answer quotes a question.
+  Line: - Output: a chat message with the list that asks "Did you water them?" | yes
 - Done: "a plant with an unknown schedule is listed every day"
   Why: It says "unknown", so this may not be decided yet.
   Ask: What will you see when it is done?
   Suggest: Move it to Open as a question, or confirm it as is.
+  Line: - Done: a plant with an unknown schedule is listed every day | yes
 - Tools: "a plain text file of plants, maybe one line each"
   Why: It says "maybe", so the person may not have decided.
   Ask: Which tool or app should it use? What must be ready before it starts?
   Suggest: Ask for a firm answer and write that, move it to Open as a question, or confirm it as is.
+  Line: - Tools: a plain text file of plants, maybe one line each | yes
 ```
 
 **confirmed.md.** The agent asks the person about each item and writes each answer in `confirmed.md`, next to `decisions.md`, or at the path after `--confirmed`. Blank lines and `#` lines are skipped. Each other line is the slot and the exact value from the list, a bar, then the answer:
@@ -65,11 +68,11 @@ CHECK WITH ME (3)
 
 - `yes` keeps the value as written. It clears that one item, the one with that slot and value. `tools: Use the terminal` and `agents: Use the terminal` are two items.
 - Any other answer is a new answer. It takes the old value's place in the mapped brief. The line keeps its label, once, so an `out of scope:` line stays a limit and an Open `decide:` line stays the decide question.
-- The first ` | ` ends the value, so a new answer may hold a bar.
+- A bar inside the value or the new answer is written `\|`, and a backslash `\\`. So the one bar with no backslash before it ends the value, and a line with two such bars is format invalid. Each item's `Line:` is its confirmed.md line with the value already written this way, ready to copy.
 - `no` alone is format invalid. Write the new answer in its place.
 - The latest line for the same slot and value wins.
 - The new answer goes through the same shared check. An answer that is still unsure is listed again under its new text, and it needs its own line.
-- A new answer that is only a placeholder is format invalid. No answer clears a format error, and a line that names a value with one prints a NOTE that says so.
+- A new answer that is only a placeholder is format invalid. No answer clears a format error. The check reads `decisions.md` as written, before any new answer goes in, so a writing failure stays one too. A line that names a value with a format error prints a NOTE that says so.
 - A line that matches nothing prints a NOTE and does not fail. Remove it.
 
 `decisions.md` itself is not changed. The mapper maps it with each new answer in place. It copies each yes into the brief's `## Confirmed` block, once per case body for Evals, so the brief check does not ask again. A `## Confirmed` line cannot clear a fail in the brief check. So the mapper writes a confirmed `[insert ...]` in a code span, and puts `stated: ` before an Evals case such as `` `N/A` ``. The brief check reads both as the person's words. Each saved answer is a test case too: `cases/check-with-me/` holds a decisions file, its `confirmed.md`, and `expected.txt`, the list it must print without the answers.
