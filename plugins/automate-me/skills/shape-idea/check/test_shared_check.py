@@ -1,4 +1,4 @@
-"""Run: python3 check/test_shared_check.py [item1 ... item12]
+"""Run: python3 check/test_shared_check.py [item1 ... item18]
 
 Every value goes through one shared check, so a fix reaches every slot. Each item below is one rule of that check.
 With no argument every item runs. With names, only those run. The property items use a fixed seed and stay fast.
@@ -223,6 +223,8 @@ SHAPES = [
     "{b} ` [Insert ensure] ``",
     # A long dash fails the writing check, a format error that no answer clears. A bar is written as \\| in an answer.
     "maybe {b} — by the door", "{b} — by the door", "maybe {b} that reads Open | Closed", "{b} that reads A | B",
+    # A Quote: or Bad: label is judged as the writing check reads the line in the file.
+    "Quote: maybe utilize {b}", "Bad: maybe {b}",
 ]
 
 
@@ -428,7 +430,98 @@ def item10():
                route == "evals case" and code == 2, said[-500:])
 
 
-ITEMS = {f"item{n}": globals()[f"item{n}"] for n in range(1, 13)}
+def item13():
+    """A new answer is checked as the line it becomes, at every step of a chain of answers."""
+    old = "maybe keep a spreadsheet for the cake prices"
+    step = "Quote: maybe utilize a spreadsheet for the cake prices"
+    final = "a price list on the hall board"
+    text = swap(LAST, f"{LAST}\n- {old}")
+    first = answer("Done", old, step)
+    code, mcode, found, brief, said = flow(text, first)
+    expect("item13 a new answer that starts with Quote: brings in its writing error",
+           (code, mcode) == (1, 1) and "FAIL prose passes the writing check" in said and not brief, said[-600:])
+    expect("item13 no Line for a new answer with a format error",
+           [(i["slot"], i["value"], "Line" in i) for i in found] == [("Done", step, False)], said[-600:])
+    code, mcode, _, brief, said = flow(text, first + answer("Done", step, final))
+    expect("item13 a later answer does not clear the error an earlier answer brought in",
+           (code, mcode) == (1, 1) and "FAIL prose passes the writing check" in said and not brief, said[-600:])
+    expect("item13 the later answer names a value with a format error",
+           f"NOTE: confirmed.md line '- Done: {step} | {final}' names a value with a format error" in said,
+           said[-600:])
+
+
+def item14():
+    """A `- Bad:` line is judged as the writing check reads it in the file, so a banned word there is no error."""
+    old = "Bad: maybe a robust stand for the cakes"
+    text = swap(LAST, f"{LAST}\n- {old}")
+    code, mcode, found, _, said = flow(text)
+    line = answer("Done", old, "yes").strip()
+    expect("item14 the hedge is listed with a line to copy",
+           (code, mcode) == (2, 2) and [(i["slot"], i["value"], i.get("Line")) for i in found] == [("Done", old, line)]
+           and "NOTE" not in said, said[-600:])
+    for said_back, shown in (("yes", old), ("Bad: a robust stand by the door", "Bad: a robust stand by the door")):
+        code, mcode, _, brief, said = flow(text, answer("Done", old, said_back))
+        expect(f"item14 the answer clears it: {said_back}",
+               (code, mcode) == (0, 0) and "NOTE" not in said and f"  - {shown}\n" in brief, said[-600:] + brief[-400:])
+        expect(f"item14 the mapped brief passes: {said_back}", brief and brief_exit(brief) == 0, brief[-600:])
+
+
+def item15():
+    """The docs name the splitting bar the way the parser reads it: the one unescaped bar."""
+    old = "maybe file it under Sales\\Cakes\\"
+    text = swap(LAST, f"{LAST}\n- tools: {old}")
+    code, mcode, found, brief, said = flow(text, answer("Tools", old, "yes"))
+    expect("item15 a value that ends in a backslash is confirmed", (code, mcode) == (0, 0) and "NOTE" not in said
+           and f"- Tools: {old}\n" in brief, said[-600:] + brief[-400:])
+    for doc in ("SKILL.md", "README.md"):
+        with open(os.path.join(SKILLS, "shape-idea", doc), encoding="utf-8") as handle:
+            body = handle.read()
+        expect(f"item15 {doc} says the one unescaped bar", "the one unescaped bar" in body
+               and "no backslash before it" not in body, doc)
+
+
+def item16():
+    """Answers apply in confirmed.md order, so the order of the lines in decisions.md does not change the result."""
+    door, desk = "maybe a sign by the door", "maybe a sign by the desk"
+    answers = [answer("Done", door, "a sign by the door"), answer("Done", desk, door)]
+    for order in (answers, answers[::-1]):
+        got = []
+        for lines in ((door, desk), (desk, door)):
+            code, mcode, found, brief, said = flow(swap(LAST, f"{LAST}\n- {lines[0]}\n- {lines[1]}"), "".join(order))
+            got.append((code, mcode, [(i["slot"], i["value"]) for i in found], brief.count("  - a sign by the door\n")))
+        expect(f"item16 the same result in either line order: {order[0].strip()}", got[0] == got[1], str(got))
+        want = (2, 2, [("Done", door)], 0) if order is answers else (0, 0, [], 2)
+        expect(f"item16 the result follows confirmed.md order: {order[0].strip()}", got[0] == want, str(got))
+
+
+def item17():
+    """A value with pass and fail cases is read as its pieces in every slot, so a short case is listed everywhere."""
+    value = "pass: OK; fail: a blank form"
+    routes = dict(ROUTES, evals=lambda v: swap(LAST, f"{LAST}\n- evals: {v}"))
+    del routes["evals case"]
+    got = {route: outcome(make(value))[0] for route, make in routes.items()}
+    expect("item17 one verdict in every slot", set(got.values()) == {"check"}, str(got))
+    for route, make in routes.items():
+        code, mcode, found, _, _ = flow(make(value))
+        code, mcode, _, brief, said = flow(make(value), yes_all(found))
+        expect(f"item17 a yes clears it in {route}", (code, mcode) == (0, 0) and brief_exit(brief) == 0,
+               said[-500:] + brief[-300:])
+
+
+def item18():
+    """A new answer that repeats the line's label keeps the label once, with one space after the colon."""
+    old = "maybe a poster on the gym door"
+    for new in ("Output:A poster on the gym door", "output :  A poster on the gym door", "OUTPUT: A poster on the gym door"):
+        code, mcode, _, brief, said = flow(swap(OUT, f"- output: {old}"), answer("Output", old, new))
+        expect(f"item18 the label is written once: {new}",
+               (code, mcode) == (0, 0) and "- Output: A poster on the gym door\n" in brief, said[-500:] + brief[-500:])
+    code, mcode, _, brief, said = flow(swap(LAST, f"{LAST}\n- out of scope: maybe the gym door"),
+                                      answer("Constraints", "out of scope: maybe the gym door", "out of scope:the gym door"))
+    expect("item18 an out of scope label is written once", (code, mcode) == (0, 0)
+           and "  - out of scope: the gym door\n" in brief, said[-500:] + brief[-600:])
+
+
+ITEMS = {f"item{n}": globals()[f"item{n}"] for n in range(1, 19)}
 
 if __name__ == "__main__":
     for name in sys.argv[1:] or ITEMS:

@@ -34,7 +34,7 @@ Status: new. Four synthetic scored cases. Each `run-1` was written by a fresh mo
 - Decision checks apply to a Decided value and to an `out of scope:` line. They list the word "unknown" anywhere (`go-live date: unknown`, `the page shows Status: Unknown`). They list any question mark, of any script and inside any markup (`**CSV or JSON?**`, `勝者だけ、それとも全票？`). They list a hedge such as "maybe", "not sure" or "for now", and a trap word such as "clean" or "good".
 - The question check applies to an Open line. An Open line is a question when it ends in a question mark of any script, once closing markup, quotes and brackets go. So `**Should the poll close after 20 minutes?**` passes, and `Should the sale close at noon? Ask on Friday.` is listed.
 
-A Parked line is for later, so only the text checks apply there. A Parked `out of scope:` line with a question mark may be a limit or a question, so it is listed. An Evals line is read in pieces, the way outcome's brief check reads it: the text before the first label, and each case body in either form (`pass: …; fail: …` or `… should pass, … should fail`). When the pass case or the fail case is missing, that is the one item for the line, and a yes cannot clear it. Add the cases.
+A Parked line is for later, so only the text checks apply there. A Parked `out of scope:` line with a question mark may be a limit or a question, so it is listed. A value with cases is read in pieces, the way outcome's brief check reads an Evals line. Outside Evals it is read whole as well. The pieces are the text before the first label, and each case body in either form (`pass: …; fail: …` or `… should pass, … should fail`). So `pass: OK; fail: a blank form` is listed in every slot, because `OK` alone is very short, and the brief check asks about it under Evals. In Evals, when the pass case or the fail case is missing, that is the one item for the line, and a yes cannot clear it. Add the cases.
 
 **Format and decisions stay apart.** Only the script decides a format error, and no answer clears one. Only the person clears an item on the list.
 
@@ -67,11 +67,11 @@ CHECK WITH ME (3)
 ```
 
 - `yes` keeps the value as written. It clears that one item, the one with that slot and value. `tools: Use the terminal` and `agents: Use the terminal` are two items.
-- Any other answer is a new answer. It takes the old value's place in the mapped brief. The line keeps its label, once, so an `out of scope:` line stays a limit and an Open `decide:` line stays the decide question.
-- A bar inside the value or the new answer is written `\|`, and a backslash `\\`. So the one bar with no backslash before it ends the value, and a line with two such bars is format invalid. Each item's `Line:` is its confirmed.md line with the value already written this way, ready to copy.
+- Any other answer is a new answer. It takes the old value's place in the mapped brief. The line keeps its label, once, so an `out of scope:` line stays a limit and an Open `decide:` line stays the decide question. An answer that repeats the label, as `Output:A poster`, is written `output: A poster`.
+- A bar inside the value or the new answer is written `\|`, and a backslash `\\`. So the one unescaped bar ends the value, and a line with two such bars is format invalid. In `\\|` the bar is unescaped, because `\\` is one backslash. Each item's `Line:` is its confirmed.md line with the value already written this way, ready to copy.
 - `no` alone is format invalid. Write the new answer in its place.
 - The latest line for the same slot and value wins.
-- The new answer goes through the same shared check. An answer that is still unsure is listed again under its new text, and it needs its own line.
+- The new answer goes through the same shared check. An answer that is still unsure is listed again under its new text, and it needs its own line. Answers apply in the order of their lines in confirmed.md, so that line comes after the one that made the new text. The order of the lines in `decisions.md` does not change the result. Each new answer is checked in its place, as the whole line it becomes, so a later answer never clears an error an earlier one brought in.
 - A new answer that is only a placeholder is format invalid. No answer clears a format error. The check reads `decisions.md` as written, before any new answer goes in, so a writing failure stays one too. A line that names a value with a format error prints a NOTE that says so.
 - A line that matches nothing prints a NOTE and does not fail. Remove it.
 

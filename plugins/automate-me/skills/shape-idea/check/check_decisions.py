@@ -724,15 +724,17 @@ def read_piece(text, role):
 def judge_value(slot, text, role=ANSWER):
     """The one check every value goes through: Verdict(error, item) for `text` in brief slot `slot`.
 
-    The same text gets the same verdict in every slot. The slot only picks the wording and the Ask questions, and an
-    Evals answer is read as its pieces, the way check_brief reads it. When its pass case or fail case is missing, that
-    is the item, and a yes cannot clear it.
+    The same text gets the same verdict in every slot. The slot only picks the wording and the Ask questions. An answer
+    is read as its pieces, the way check_brief reads an Evals answer, so a short case is listed in any slot. Outside
+    Evals the brief reads it whole too, so the whole text is read as well.
+    When an Evals answer has no pass case or no fail case, that is the item, and a yes cannot clear it.
     """
-    pieces, kinds = case_pieces(text) if slot == "Evals" and role == ANSWER else ([text], None)
+    pieces, kinds = case_pieces(text) if role == ANSWER else ([text], set())
+    pieces += [text] * (slot != "Evals" and pieces != [text])
     reads = [read_piece(piece, role) for piece in pieces]
     error, piece = next(((error, piece) for (error, _, _), piece in zip(reads, pieces) if error), (None, None))
     reason, word = next(((reason, word) for _, reason, word in reads if reason), (None, None))
-    if kinds is not None and not blank(text) and not {"pass", "fail"} <= kinds:
+    if slot == "Evals" and role == ANSWER and not blank(text) and not {"pass", "fail"} <= kinds:
         reason, word = "cases", None
     if not reason:
         return Verdict(error, piece, None)
@@ -826,10 +828,9 @@ def read_confirmed(text):
     return answers, fails
 
 
-def replaced(text, entry, new):
-    """The decisions text with the line of `entry` holding `new` in place of its value. The label stays, once."""
-    label = "" if new.lower().startswith(entry.label.lower()) else entry.label
-    lines, section = text.split("\n"), None
+def rows_of(lines, entry):
+    """The index of each line in `lines` that holds `entry`, as the file writes it."""
+    section, out = None, []
     for i, line in enumerate(lines):
         head = HEAD.match(line.strip())
         if head:
@@ -837,18 +838,32 @@ def replaced(text, entry, new):
             continue
         bullet = BULLET.match(line)
         if section == entry.section and bullet and bullet.group(1).strip() == entry.row:
-            lines[i] = f"{line[0]} {label}{new}"
+            out.append(i)
+    return out
+
+
+def replaced(text, entry, new):
+    """The decisions text with the line of `entry` holding `new` in place of its value. The label stays, once: a new
+    answer that starts with it, in any case and spacing, is written with one space after its colon."""
+    if entry.label:
+        new = re.sub(rf"^{re.escape(entry.label.rstrip(': '))}\s*[:：]\s*", "", new, flags=re.I)
+    lines = text.split("\n")
+    for i in rows_of(lines, entry):
+        lines[i] = f"{lines[i][0]} {entry.label}{new}"
     return "\n".join(lines)
 
 
-def has_error(entry):
-    """True when the entry's own line has a format error, from the shared check or the writing check."""
-    return bool(judge_value(entry.slot, entry.text, entry.role).error or prose_fails(entry.row))
+def has_error(entry, text):
+    """True when the entry's line in `text` has a format error, from the shared check or the writing check. The writing
+    check reads the whole line as the file holds it, the same view the check of the whole file has."""
+    lines = text.split("\n")
+    return bool(judge_value(entry.slot, entry.text, entry.role).error
+                or prose_fails("\n".join(lines[i] for i in rows_of(lines, entry))))
 
 
-def listed(entry):
+def listed(entry, text):
     """True when the shared check lists the entry for the person and its line has no format error."""
-    return judge_value(entry.slot, entry.text, entry.role).item is not None and not has_error(entry)
+    return judge_value(entry.slot, entry.text, entry.role).item is not None and not has_error(entry, text)
 
 
 def merged(first, second):
@@ -860,29 +875,31 @@ def merged(first, second):
 
 
 def settle(text, answers):
-    """(text, yes, swapped) once each replacement answer is in place. The latest line for a slot and value wins.
+    """(steps, yes, swapped) for the replacement answers. The latest line for a slot and value wins.
 
+    steps is the decisions text after each replacement, in confirmed.md order, so the last one is what the mapper maps.
     yes is the (slot, value) of each latest yes. swapped is the (slot, value) of each replacement made. The new answer
-    sits where the old value was, so the same shared check reads it on the next pass. Each line applies once, to every
-    line with that slot and value. A replacement only answers an item: it never replaces a value with a format error.
+    sits where the old value was, so a later line can answer it, and the order of the lines in decisions.md does not
+    matter. Each line applies once, to every line with that slot and value it finds then. A replacement only answers
+    an item: it never replaces a value with a format error.
     """
     latest = {}
     for slot, value, answer in answers:
         latest.pop((slot, value), None)
         latest[(slot, value)] = answer
-    swaps = {key: answer for key, answer in latest.items() if answer != "yes"}
-    swapped = []
-    while True:
-        found = [e for e in entries(sections_of(text)) if (e.slot, e.value) in swaps and (e.slot, e.value) not in swapped
-                 and listed(e)]
+    steps, swapped = [text], []
+    for key, answer in latest.items():
+        if answer == "yes":
+            continue
+        found = [e for e in entries(sections_of(steps[-1])) if (e.slot, e.value) == key and listed(e, steps[-1])]
         if not found:
-            break
-        key = (found[0].slot, found[0].value)
+            continue
         swapped.append(key)
+        new = steps[-1]
         for entry in found:
-            if (entry.slot, entry.value) == key:
-                text = replaced(text, entry, swaps[key])
-    return text, [key for key, answer in latest.items() if answer == "yes"], swapped
+            new = replaced(new, entry, answer)
+        steps.append(new)
+    return steps, [key for key, answer in latest.items() if answer == "yes"], swapped
 
 
 Result = namedtuple("Result", "code results pending notes used text broken")
@@ -893,16 +910,17 @@ def verdict(text, confirmed_text=""):
 
     results are the format checks, which only the script decides. pending are the items no person has answered yet.
     used are the (slot, value) of each yes that cleared an item. broken are the (slot, value) of each listed or answered
-    value whose own line has a format error, which no answer clears. text is the decisions text with each replacement in
-    place, which is what the mapper maps.
+    value whose own line has a format error in decisions.md or after any replacement, which no answer clears. text is
+    the decisions text with each replacement in place, which is what the mapper maps.
     """
     answers, confirm_fails = read_confirmed(confirmed_text)
-    # The format checks read decisions.md as written, so no answer clears a format error. A new answer is read again
-    # in its place, so it can add an error or an item, and never remove one.
-    original, results = text, check(text)
-    text, yes, swapped = settle(text, answers)
-    if text != original:
-        results = merged(results, check(text))
+    # The format checks read decisions.md as written, so no answer clears a format error. Each new answer is read again
+    # in its place, at every step, so it can add an error or an item, and a later answer never removes one.
+    steps, yes, swapped = settle(text, answers)
+    results = check(text)
+    for step in steps[1:]:
+        results = merged(results, check(step))
+    text = steps[-1]
     results.append((CONFIRMED_CHECK, confirm_fails))
     failed = any(fails for _, fails in results)
     found = review(text)
@@ -910,8 +928,8 @@ def verdict(text, confirmed_text=""):
     pending = [item for item in found if not (item.clears and (item.slot, item.value) in yes)]
     used = [key for key in yes if key in keys]
     named = {(slot, value) for slot, value, _ in answers} | {(item.slot, item.value) for item in pending}
-    broken = {(e.slot, e.value) for source in {original, text} for e in entries(sections_of(source))
-              if (e.slot, e.value) in named and has_error(e)}
+    broken = {(e.slot, e.value) for step in steps for e in entries(sections_of(step))
+              if (e.slot, e.value) in named and has_error(e, step)}
     notes = [f"NOTE: confirmed.md line '- {slot}: {bar(value)} | {bar(answer)}' "
              + ("names a value with a format error. Fix it in decisions.md, because no answer clears it"
                 if (slot, value) in broken else "matches nothing in decisions.md now; remove it")
