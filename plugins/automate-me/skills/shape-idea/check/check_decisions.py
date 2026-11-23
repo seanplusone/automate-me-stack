@@ -30,16 +30,19 @@ slots are Decided lines and none of them is also Open.
 
 `turns` is parsed as ASCII digits only (`^[0-9]+$`), from 1 through 10.
 
-A value is blank when nothing is left once `stated:` labels, markup and punctuation go (`goal: stated:`).
+A value is blank when nothing is left once `stated:` labels, markup and punctuation go (`goal: stated:`,
+`decide: stated:`, a lone `stated:`). The message names the line.
 
 Format invalid (exit 1) when:
 - the file has no `# Decisions` title;
 - a section is missing or repeated, or the sections are out of order;
-- a code fence is not closed, or sits under Decided, Open or Parked, because its text would not reach the brief;
+- a ``` or ~~~ code fence is not closed, or sits under Decided, Open or Parked, because its text would not reach the
+  brief;
 - a slot is missing from both Decided and Open, is repeated, is in both, or is blank. A blank value is also on the
   CHECK WITH ME list, with a suggestion. A slot written as `**goal:**` or `1. goal:` gets its own message;
 - a Decided `tools:`, `agents:` (or `agents and roles:`), `evals:`, `decide:`, or `write first:` line is blank or
-  repeated, or another Decided or Parked line is blank;
+  repeated, or another Decided or Parked line is blank. Bold and a singular label (`**tools:**`, `tool:`, `eval:`)
+  name the same line;
 - a value is untouched template text: a template hole such as `<goal>`, a line of the template left unfilled, or
   only words from outcome's fixed placeholder list such as TBD, TODO or N/A (check_brief's judge() says fail). `none`
   is not on this list here: it is on the CHECK WITH ME list. An `[insert ...]` inside a longer value, a placeholder
@@ -49,8 +52,9 @@ Format invalid (exit 1) when:
 - turns is missing, repeated, or not a whole number from 1 through 10;
 - any item runs past one line;
 - Handoff has no `next: /automate-me:outcome` line, no single `writing: pass` line, or not one `map:` line;
-- the shared writing check fails;
-- a confirmed.md line is not `- <Slot>: <value> | <answer>`, or its answer is `no` alone;
+- the shared writing check fails, whether or not the file says `writing: pass`;
+- a confirmed.md line is not `- <Slot>: <value> | <answer>`, or its answer is `no` alone, or a new answer is
+  untouched template text or only a label, styled or not (`**Tool:**`): it needs a value;
 - outcome's check_brief fails the mapped brief, or still asks about a value once every item is answered.
 
 One shared check. Every value goes through judge_value(slot, text, role), which returns Verdict(error, piece, item):
@@ -58,16 +62,18 @@ the format error the script is sure of, and the item to check with the person. e
 the slot only picks the wording and the Ask questions, so the same text gets the same verdict in every slot. It reads
 a value in three layers:
 - text checks, everywhere: blank or untouched (format invalid); `none`; a word from outcome's fixed placeholder list
-  inside a longer value, even when punctuation joins it (`a card/TBD`, `poster-TBD`); an `[insert ...]` or a hole
+  inside a longer value, even when punctuation joins it (`a card/TBD`, `poster-TBD`, `flyer,TBD`), though the
+  list's everyday words (none, later, pending, placeholder) count only alone; an `[insert ...]` or a hole
   inside a longer value; a value check_brief would ask about, such as `ok`. A code span is literal text, so
   `` `N/A` `` is listed, not format invalid;
 - decision checks, on a Decided value and an `out of scope:` line: the word "unknown" anywhere, any question mark (`?`,
-  `？`, `؟` and the rest), a hedge such as "maybe" or "not sure", a trap word such as "clean" or "good";
-- the question check, on an Open line: it is a question when it ends in a question mark of any script, once closing
-  markup, quotes and brackets go. A mark only in the middle is listed.
+  `？`, `؟` and the rest), a hedge such as "maybe", "not sure" or "for now", a trap word such as "clean" or "good";
+- the question check, on an Open line. An Open line is a question when it ends in a question mark of any script, once
+  closing markup, quotes and brackets go. A mark only in the middle is listed.
 A Parked line is for later, so only the text checks apply. A Parked `out of scope:` line with a question mark may be a
-limit or a question. An Evals answer is read in pieces as check_brief reads it, the text before the first colon label
-and each case body of either form. A should pass or should fail phrase with nothing before it is not a case, and the
+limit or a question, so it is listed. An Evals answer is read in pieces as check_brief reads it, the text before
+the first colon label and each case body of either form. Any other value with cases is read in pieces and whole, so
+`pass: OK; fail: a blank form` is listed in every slot. A should pass or should fail phrase with nothing before it is not a case, and the
 text after a phrase that no case body holds is read with that phrase. When its pass case or fail case is missing, that
 is the one item for the line, and a yes cannot clear it, so the brief check reads the brief without that line.
 
@@ -85,11 +91,17 @@ Each other line is one answer, the slot and the exact value from the list, a bar
     - Output: maybe a poster on the gym door | a poster on the gym door
 
 A yes clears the item with that exact slot and value, and no other: `tools: X` and `agents: X` are two items. A new
-answer takes the old value's place on every line with that slot and value, label kept once, and goes through the same
-shared check, so an answer that is still unsure is listed again under its new text. A bar inside the value or the
+answer takes the old value's place on every line with that slot and value, label kept once, so an `out of scope:` line
+stays a limit and an Open `decide:` line stays the decide question. A plain repeat of the line's label goes and the
+value after it is kept exactly (`Output:A poster` is written `output: A poster`). An answer whose label has any * or _
+markup is a styled answer, kept exactly as typed. A new answer goes through the same shared check, so an answer that
+is still unsure is listed again under its new text. A bar inside the value or the
 answer is written `\\|`, and a backslash `\\\\`, so the one unescaped bar ends the value: in `\\\\|` the bar is
 unescaped. A line with no such bar, or with two, is format invalid. The latest line for the same slot and value wins.
-Lines apply in confirmed.md order, and a yes clears a value only if the value is there when the yes applies.
+Lines apply in confirmed.md order, and a yes clears a value only if the value is there when the yes applies: a yes
+above the line that writes its value clears nothing and prints a NOTE. The order of lines in decisions.md does not
+change the result. Each new answer is checked in its place, as the whole line it becomes, so a later answer never
+clears an error an earlier one brought in.
 
 The format checks read decisions.md as written, before any new answer is put in, and again with the new answers in
 place. So no answer clears a format error, a writing failure included, and a new answer can add one. A line naming a
@@ -100,7 +112,10 @@ decisions.md is not changed: the mapper maps it with the new answers in place, a
 Prints a PASS or FAIL line per check, the CHECK WITH ME list, any NOTE lines, then
 `PASS|FORMAT INVALID|CHECK WITH ME decisions: <path>`. Exit 0 pass, 1 format invalid, 2 check with me, 3 usage: bad
 arguments, or a path that is missing, a directory, or not UTF-8 text, with one line on stderr. A UTF-8 BOM is ignored.
-Files are read and written as UTF-8, and output is UTF-8, whatever the locale.
+Files are read and written as UTF-8, and output is UTF-8, whatever the locale. No input crashes the check.
+
+The placeholder list is outcome's, and it is deliberately narrow: a phrase off it, such as "see notes", passes. The
+CHECK WITH ME list and outcome's read-back catch the rest.
 """
 import contextlib
 import io

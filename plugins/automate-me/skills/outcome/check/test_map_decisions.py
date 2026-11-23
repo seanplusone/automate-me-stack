@@ -14,6 +14,7 @@ from map_decisions import AGENTS, DECIDE, EVALS, TOOLS, main, map_text  # noqa: 
 
 sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "shape-idea", "check")))
 from check_decisions import check as check_decisions, main as check_decisions_main  # noqa: E402
+from test_break import fixture_texts  # noqa: E402
 
 FAILS = []
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -305,12 +306,14 @@ shape_readme = open(os.path.join(SKILLS, "shape-idea", "README.md")).read()
 root = open(os.path.normpath(os.path.join(HERE, "..", "..", "..", "..", "..", "README.md"))).read()
 shape_skill = open(os.path.join(SKILLS, "shape-idea", "SKILL.md")).read()
 outcome_skill = open(os.path.join(SKILLS, "outcome", "SKILL.md")).read()
+shape_rules = open(os.path.join(SKILLS, "shape-idea", "check", "check_decisions.py")).read().split('"""', 2)[1]
 doc_bad = []
 for banned in ("Open has at most 5 items", "0 through 10", "passes either way", "does not run the writing script"):
-    if banned in shape_readme:
+    if banned in shape_readme or banned in shape_rules:
         doc_bad.append(banned)
-for needed in ("from 1 through 10", "more than 5", "The check fails when a slot is in both",
-               "The shape check runs the writing script"):
+if "from 1 through 10" not in shape_rules:
+    doc_bad.append("missing from 1 through 10 in the check_decisions.py docstring")
+for needed in ("more than 5", "The check fails when a slot is in both", "The shape check runs the writing script"):
     if needed not in shape_readme:
         doc_bad.append(f"missing {needed}")
 if "four invented ideas" not in root or "bookmark box" not in root or "three invented" in root:
@@ -649,9 +652,8 @@ for label, path in (("missing path", os.path.join(tempfile.mkdtemp(), "missing.m
 
 # 15. Invariant on every decisions text in these tests, the cases and the fixtures: the mapper exits as
 # check_decisions does, and a brief it prints passes check_brief.
-FIXTURES = os.path.join(SKILLS, "shape-idea", "check", "fixtures")
-files = [os.path.join(FIXTURES, f) for f in sorted(os.listdir(FIXTURES)) if f.endswith(".md")]
-files += [os.path.join(CASES, name, "decisions.md") for name in ("done", "capped")]
+TEXTS += [text for _, text in fixture_texts()]
+files = [os.path.join(CASES, name, "decisions.md") for name in ("done", "capped")]
 files += [str(p) for p in sorted(__import__("pathlib").Path(SHAPE).glob("*/runs/run-1/decisions.md"))]
 TEXTS += [open(f, encoding="utf-8").read() for f in files]
 invariant_bad = []

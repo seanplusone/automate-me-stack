@@ -25,6 +25,7 @@ from map_decisions import main as map_main  # noqa: E402
 
 sys.path.insert(0, os.path.normpath(os.path.join(HERE, "..", "..", "shape-idea", "check")))
 from check_decisions import main as decisions_main  # noqa: E402
+from test_break import fixture_texts  # noqa: E402
 
 SKILLS = os.path.normpath(os.path.join(HERE, "..", ".."))
 SEED = 4
@@ -81,10 +82,9 @@ EMPTY = ["decide: stated:", "tools: stated:", "agents: stated:", "evals: stated:
 
 
 def sources():
-    files = sorted(pathlib.Path(SKILLS, "shape-idea", "check", "fixtures").glob("*.md"))
-    files += sorted(pathlib.Path(SKILLS, "outcome", "cases", "from-decisions").glob("*/decisions.md"))
+    files = sorted(pathlib.Path(SKILLS, "outcome", "cases", "from-decisions").glob("*/decisions.md"))
     files += sorted(pathlib.Path(SKILLS, "shape-idea", "cases").glob("*/runs/run-1/decisions.md"))
-    return [path.read_text(encoding="utf-8") for path in files]
+    return [text for _, text in fixture_texts()] + [path.read_text(encoding="utf-8") for path in files]
 
 
 def mutate(text, rng):

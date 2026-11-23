@@ -159,10 +159,10 @@ Outcome reads the sections like this. This skill does not ask Tools, Agents and 
 
 The read-back asks at most 3 questions, in this order: an open goal or done question, then the decide question, then Tools, then Agents and roles, then Evals. Unasked ones stay in Unknowns.
 
-Run `python3 "$SKILL_DIR"/check/check_decisions.py <decisions.md>` after you write Handoff. It has three outcomes.
+Run `python3 "$SKILL_DIR"/check/check_decisions.py <decisions.md>` after you write Handoff. The checks and exits are listed in the docstring at the top of [check_decisions.py](check/check_decisions.py). It has three outcomes.
 
-- Exit 1, FORMAT INVALID. The file breaks a rule the script knows for certain. Examples are a missing section, a missing Handoff line, a blank slot, a template hole such as `<goal>`, a placeholder such as TBD, or a writing failure. Fix what it flags before you show the file. The checks are listed in `README.md`. A code fence under Decided, Open or Parked fails, because its text would not reach the brief. `writing: pass` does not override a writing failure.
-- Exit 2, CHECK WITH ME. The format is valid, and the script found values it cannot be sure about. It prints one list. Each item names the slot and the exact value. Then come Why, Ask, Suggest and Line. Why says in one short sentence why it may not be ready. Ask holds one to three questions that narrow the answer for that slot. Suggest is a suggested answer or next step. Line is the item's `confirmed.md` line, ready to copy.
+- Exit 1, FORMAT INVALID. The file breaks a rule the script knows for certain, such as a missing section, a blank slot, a placeholder such as TBD, or a writing failure. Fix what it flags before you show the file.
+- Exit 2, CHECK WITH ME. The format is valid, and the script found values it cannot be sure about. It prints one list. Each item names the slot and the exact value, then Why, Ask, Suggest and Line.
 - Exit 0, PASS. The handoff is ready.
 
 This is the check-with-me step. It is a drill-down. On exit 2, stop and show the user the list, one item at a time. Do not guess the answer. Ask the item's Ask questions until the answer is exact. Then add one line for it to `confirmed.md`, in the same folder as `decisions.md`. Copy the item's `Line:` as it is. After the bar, keep `yes` to keep the value as written, or write the user's new answer in their words in place of `<new answer>`:
@@ -172,11 +172,9 @@ This is the check-with-me step. It is a drill-down. On exit 2, stop and show the
 - Output: maybe a poster on the gym door | a poster on the gym door
 ```
 
-A bar inside the value or the new answer is written `\|`, and a backslash `\\`. The `Line:` already writes the value that way. So the one unescaped bar splits the line: in `\\|` the bar is unescaped, because `\\` is one backslash. A new answer takes the old value's place in the brief, and the line keeps its label once, even when the answer repeats it. Each new answer is checked in its place, and a later line can answer it, so write a line for a new answer after the line that made it. A yes above the line that writes its value clears nothing and prints a NOTE. `no` alone is format invalid, so write the new answer in its place. The latest line for the same slot and value wins. Do not edit `decisions.md` for an answer. Then run the check again.
+A bar inside the new answer is written `\|`, and a backslash `\\`. The `Line:` already writes the value that way. `no` alone is format invalid, so write the new answer in its place. Do not edit `decisions.md` for an answer. Then run the check again.
 
-The new answer goes through the same check. If it is still unsure, it is listed again under its new text. Ask again, and add a line for the new text. A yes clears only its own item, the one with that slot and value. No answer clears a format error, a writing failure included, and a yes never clears an Evals line with no pass case and fail case: add the cases. A line that no longer matches any value prints a NOTE. Remove that line.
-
-Every value goes through one shared check, so the same text gets the same answer in every slot. In a Decided value or an `out of scope:` line it lists the word "unknown" anywhere and any question mark. It also lists a hedge such as "maybe" or "not sure", and a trap word such as "clean". Everywhere it lists a hole or an `[insert ...]` inside a longer value, `none`, and a placeholder word inside a longer value. Punctuation does not hide one, so `a card/TBD` and `poster-TBD` are listed. An Open line is a question when it ends in a question mark. A line with a mark only in the middle is listed. A Parked `out of scope:` line with a question mark is listed too. A wrong item costs one answer. A missed one costs a wrong brief.
+The new answer goes through the same check. If it is still unsure, it is listed again under its new text. Ask again, and add a line for the new text after the line that made it. A yes never clears an Evals line with no pass case and fail case: add the cases. A line that no longer matches any value prints a NOTE. Remove that line.
 
 The reply follows the [writing rules](../shared/writing-rules.md). Inside `decisions.md`, keep the user's numbers and names, and rewrite any line the writing check flags.
 

@@ -5,7 +5,6 @@ With no argument every item runs. With names, only those run. The property items
 """
 import contextlib
 import io
-import itertools
 import os
 import random
 import re
@@ -20,8 +19,7 @@ sys.path.insert(0, os.path.join(SKILLS, "outcome", "check"))
 sys.path.insert(0, os.path.join(SKILLS, "shared"))
 from check_brief import ask_lines, check as brief_check, core, eval_cases  # noqa: E402
 from check_decisions import (  # noqa: E402
-    BRIEF_SLOT, EXTRA_NAME, answer_blank, blank, case_pieces, entries, judge_value, main as check_main, replaced,
-    sections_of, verdict)
+    __doc__ as RULES, case_pieces, entries, main as check_main, sections_of, verdict)
 from check_writing import check_writing  # noqa: E402
 from map_decisions import main as map_main, map_text  # noqa: E402
 
@@ -135,6 +133,15 @@ def slot_entries(brief, slot):
     return None
 
 
+def docs():
+    """(name, text) for the rule list, the check_decisions.py docstring, then SKILL.md and README.md, which point to it."""
+    found = [("check_decisions.py docstring", RULES)]
+    for doc in ("SKILL.md", "README.md"):
+        with open(os.path.join(SKILLS, "shape-idea", doc), encoding="utf-8") as handle:
+            found.append((doc, handle.read()))
+    return found
+
+
 def keys(found):
     return [(i["slot"], i["value"], i.get("Line")) for i in found]
 
@@ -204,11 +211,10 @@ def item4():
         code, mcode, found, _, said = flow(swap(OPEN, f"- {value}"))
         expect(f"item4 open ends in a mark: {value}", (code, mcode) == (0, 0) and not found, said[-500:])
     rule = "An Open line is a question when it ends in a question mark"
-    for doc in ("SKILL.md", "README.md"):
-        with open(os.path.join(SKILLS, "shape-idea", doc), encoding="utf-8") as handle:
-            body = handle.read()
-        expect(f"item4 {doc} states the rule", rule in body and "Any question mark makes it a question" not in body,
-               f"{doc} lacks {rule!r} or keeps the old rule")
+    (name, rules), *pointers = docs()
+    expect(f"item4 the {name} states the rule", rule in rules, f"lacks {rule!r}")
+    for doc, body in [(name, rules), *pointers]:
+        expect(f"item4 {doc} has no old rule", "Any question mark makes it a question" not in body, doc)
 
 
 def item5():
@@ -549,11 +555,10 @@ def item15():
            (code, mcode) == (0, 0) and "NOTE" not in said
            and slot_entries(brief, "Tools") == ["a folder named Open | Closed"] and old not in brief,
            said[-600:] + brief[-400:])
-    for doc in ("SKILL.md", "README.md"):
-        with open(os.path.join(SKILLS, "shape-idea", doc), encoding="utf-8") as handle:
-            body = handle.read()
-        expect(f"item15 {doc} says the one unescaped bar", "the one unescaped bar" in body
-               and "no backslash before it" not in body, doc)
+    (name, rules), *pointers = docs()
+    expect(f"item15 the {name} says the one unescaped bar", "the one unescaped bar" in rules, name)
+    for doc, body in [(name, rules), *pointers]:
+        expect(f"item15 {doc} has no old bar rule", "no backslash before it" not in body, doc)
 
 
 def item16():
@@ -901,80 +906,58 @@ GATE = """# Decisions: Registration gate
 """
 
 
-STYLED_SLOTS = (("tool", "Tools", "Maybe use a spreadsheet", ("tool", "tools", "Tool", "TOOLS"),
-                 ("_inventory.csv", "*notes.txt", "a printed price list")),
-                ("agents", "Agents and roles", "maybe a parent runs the stall",
-                 ("agent", "agents", "agents and roles", "Agents  and  roles"),
-                 ("_A parent runs the stall", "*A parent runs the stall", "A parent runs the stall")),
-                ("evals", "Evals", "maybe pass: a signed form; fail: a blank form", ("eval", "evals"),
-                 ("pass: a signed form; fail: a blank form", "*pass: a signed form; fail: a blank form")))
+STYLED_SLOTS = (("tool", "Tools", "Maybe use a spreadsheet"),
+                ("agents", "Agents and roles", "maybe a parent runs the stall"),
+                ("evals", "Evals", "maybe pass: a signed form; fail: a blank form"))
+
+
+def mapped_once(name, slot, new, value):
+    """Both scripts exit 0, the brief maps exactly `value` to `slot` on one slot line, and check_brief passes."""
+    label, _, old = next(s for s in STYLED_SLOTS if s[1] == slot)
+    code, mcode, found, brief, said = flow(swap(LAST, f"{LAST}\n- {label}: {old}"), answer(slot, old, new))
+    got = slot_entries(brief, slot)
+    heads = [line for line in brief.splitlines() if line.startswith(f"- {slot}:")]
+    expect(f"{name}: {slot}: | {new}",
+           (code, mcode) == (0, 0) and got == [value] and heads == [f"- {slot}: {value}"] and brief_exit(brief) == 0,
+           f"{slot} entries {got}, slot lines {heads}, want [{value!r}]\n" + seen(code, mcode, found, said))
 
 
 def item27():
-    """Styled answers are byte-identical after mapping. Generated: every wrap of * and _ of length 1 to 4, mixed ones
-    too (`*_`, `**_`), with its mirror closer before the colon, after it, around the whole `alias: value`, or missing;
-    with and without a space; every name for the slot; values that start with _, * or a letter; either colon. The
-    written value and the brief entry are the answer exactly. With no wrap, the plain label goes and the value after it
-    is kept exactly. The grid reads what replaced() writes; item28 runs a sample through both scripts."""
-    wraps = ["".join(w) for n in range(1, 5) for w in itertools.product("*_", repeat=n)]
-    assert len(wraps) == 30
-
-    def cells(alias, value):
-        """(how, new answer, value the slot should hold) for each wrap, closer position, space and colon."""
-        for colon, space in itertools.product((":", "："), ("", " ")):
-            yield f"plain {colon} space {space!r}", f"{alias}{colon}{space}{value}", value
-            for wrap in wraps:
-                mirror = wrap[::-1]
-                for how, new in (("closed before the colon", f"{wrap}{alias}{mirror}{colon}{space}{value}"),
-                                 ("closed after the colon", f"{wrap}{alias}{colon}{mirror}{space}{value}"),
-                                 ("around the whole answer", f"{wrap}{alias}{colon}{space}{value}{mirror}"),
-                                 ("not closed", f"{wrap}{alias}{colon}{space}{value}")):
-                    yield f"{wrap} {how} {colon} space {space!r}", new, new
-
-    ran = failed = 0
-    for label, slot, old, aliases, values in STYLED_SLOTS:
-        text = swap(LAST, f"{LAST}\n- {label}: {old}")
-        entry = next(e for e in entries(sections_of(text)) if e.slot == slot)
-        for alias, value in itertools.product(aliases, values):
-            for how, new, want in cells(alias, value):
-                after = replaced(text, entry, new)
-                got = [e.value for e in entries(sections_of(after)) if e.slot == slot]
-                brief = map_text(after, [(slot, want)])
-                ok = got == [want] and f"- {slot}: {want}" in brief.splitlines() and slot_entries(brief, slot) == [want]
-                ran += 1
-                failed += not ok
-                expect(f"item27 {how}: {slot}: | {new}", ok,
-                       f"{slot} values {got}, brief entries {slot_entries(brief, slot)}, want [{want!r}]")
-    print(f"item27 grid: {ran} cells, {failed} failed")
+    """A styled answer, one with any * or _ markup on its label, is kept byte for byte by both scripts: closer before
+    the colon, after it, around the whole answer, or missing; mixed wraps; either colon; a space after the colon or not.
+    A plain repeated label goes and the value after it is kept exactly. The brief names the slot once."""
+    for new, value in (("Tool: Use a local spreadsheet", "Use a local spreadsheet"),
+                       ("Tool:_inventory.csv", "_inventory.csv"),
+                       ("Tool:*notes.txt", "*notes.txt"),
+                       ("tools：a printed price list", "a printed price list")):
+        mapped_once("item27 a plain label goes", "Tools", new, value)
+    mapped_once("item27 a plain alias goes", "Agents and roles", "agents and roles：A parent runs the stall",
+                "A parent runs the stall")
+    for new in ("**Tool:** Use a local spreadsheet",
+                "***Tool: Use a local spreadsheet***",
+                "***Tool***: Use a local spreadsheet",
+                "*_Tool_*: Use a local spreadsheet",
+                "__Tool: a printed price list__",
+                "**Tool:_inventory.csv",
+                "_Tool_: a printed price list",
+                "*Tool*:_inventory.csv",
+                "**Tool:**_inventory.csv",
+                "*Tool: Use a local spreadsheet",
+                "_Tools：_ Use a local spreadsheet",
+                "**TOOLS:** a printed price list",
+                "__Tool__: *notes.txt"):
+        mapped_once("item27 a styled answer is kept as typed", "Tools", new, new)
+    for slot, new in (("Agents and roles", "**Agents and roles:** A parent runs the stall"),
+                      ("Agents and roles", "*Agent:* A parent runs the stall"),
+                      ("Evals", "**Eval:** pass: a signed form; fail: a blank form")):
+        mapped_once("item27 a styled alias is kept as typed", slot, new, new)
 
 
 def item28():
-    """A confirmed answer wrapped whole in bold italic (`***Tool: Use a local spreadsheet***`) is kept as typed by both
-    scripts, with no dangling closer, and so is a sample of other styled answers. A plain label still goes."""
-    sample = (("Tools", "***Tool: Use a local spreadsheet***", "***Tool: Use a local spreadsheet***"),
-              ("Tools", "**Tool:** Use a local spreadsheet", "**Tool:** Use a local spreadsheet"),
-              ("Tools", "***Tool***: Use a local spreadsheet", "***Tool***: Use a local spreadsheet"),
-              ("Tools", "*_Tool_*: Use a local spreadsheet", "*_Tool_*: Use a local spreadsheet"),
-              ("Tools", "_Tool_: a printed price list", "_Tool_: a printed price list"),
-              ("Tools", "**Tool:_inventory.csv", "**Tool:_inventory.csv"),
-              ("Tools", "__Tool: a printed price list__", "__Tool: a printed price list__"),
-              ("Tools", "Tool:_inventory.csv", "_inventory.csv"),
-              ("Tools", "Tool: Use a local spreadsheet", "Use a local spreadsheet"),
-              ("Agents and roles", "**Agents and roles:** A parent runs the stall",
-               "**Agents and roles:** A parent runs the stall"),
-              ("Agents and roles", "agents and roles：A parent runs the stall", "A parent runs the stall"))
-    for slot, new, value in sample:
-        label, _, old, _, _ = next(s for s in STYLED_SLOTS if s[1] == slot)
-        code, mcode, found, brief, said = flow(swap(LAST, f"{LAST}\n- {label}: {old}"), answer(slot, old, new))
-        got = slot_entries(brief, slot)
-        expect(f"item28 both scripts: {slot}: | {new}",
-               (code, mcode) == (0, 0) and got == [value] and brief_exit(brief) == 0
-               and brief.splitlines().count(f"- {slot}: {value}") == 1,
-               f"{slot} entries {got}, want [{value!r}]\n" + seen(code, mcode, found, said))
-    # The round-14 fixture: a Decided Tool line and a whole-answer bold italic confirmation.
-    text = GATE
+    """A confirmed answer wrapped whole in bold italic is kept as typed by both scripts on a Decided Tool line, with no
+    dangling closer."""
     confirmed = "- Tools: Maybe use a spreadsheet | ***Tool: Use a local spreadsheet***\n"
-    code, mcode, found, brief, said = flow(text, confirmed)
+    code, mcode, found, brief, said = flow(GATE, confirmed)
     lines = [line for line in brief.splitlines() if line.startswith("- Tools:")]
     expect("item28 a whole-answer wrap leaves no dangling closer",
            (code, mcode) == (0, 0) and lines == ["- Tools: ***Tool: Use a local spreadsheet***"]
@@ -984,11 +967,9 @@ def item28():
 
 def item29():
     """A confirmed answer that is only a label, styled or not, needs a value: with * and _ gone, nothing but a slot
-    label and an optional colon is left. Both scripts exit 1 with `tools: needs a value` and print no brief. Generated:
-    every wrap of * and _ of length 1 to 4, every known label, colon inside the wrap, outside it, or none. An answer
-    with text after the label is not empty, and a sample is kept as typed by both scripts."""
-    wraps = ["".join(w) for n in range(1, 5) for w in itertools.product("*_", repeat=n)]
-    labels = sorted(set(EXTRA_NAME) | set(BRIEF_SLOT) | {name.lower() for name in BRIEF_SLOT.values()})
+    label and an optional colon is left. Both scripts exit 1 with `tools: needs a value` and print no brief. Any known
+    slot label counts, in any case, with either colon, inside or after the wrap, or none. An answer with text after the
+    label is not empty, and both scripts keep it as typed."""
     old = "Maybe use a spreadsheet"
     tools = swap(LAST, f"{LAST}\n- tool: {old}")
 
@@ -998,30 +979,14 @@ def item29():
         expect(f"item29 {name}", (code, mcode) == (1, 1) and "tools: needs a value" in said and "# Brief" not in out,
                seen(code, mcode, found, said) + "\nmapper: " + out[-300:])
 
-    for new in ("**Tool:**", "*Tool:*", "__Tool__:", "***Tool:***", "**Tools:**", "Tool:"):
+    for new in ("**Tool:**", "*Tool:*", "__Tool__:", "***Tool:***", "**Tools:**", "Tool:",
+                "**Done:**", "**Output:**", "Goal:", "**Agents:**", "*verify*", "Tool：", "**TOOL:**", "**Tool**:",
+                "_Tools_：", "**Tool**", "tools"):
         needs_value(f"a label alone needs a value: Tools: | {new}", tools, answer("Tools", old, new))
-    needs_value("the round-16 fixture needs a value", GATE, f"- Tools: {old} | **Tool:**\n")
-
-    ran = failed = 0
-    for label, wrap, colon in itertools.product(labels, wraps, (":", "：")):
-        mirror = wrap[::-1]
-        for spelled in {label, label.title(), label.upper()}:
-            for new in (f"{wrap}{spelled}{colon}{mirror}", f"{wrap}{spelled}{mirror}{colon}", f"{wrap}{spelled}{mirror}",
-                        f"{spelled}{colon}", spelled):
-                ok = answer_blank(new)
-                ran += 1
-                failed += not ok
-                expect(f"item29 a label alone is blank: {new}", ok, f"answer_blank {answer_blank(new)}")
-            for value in ("Use a local spreadsheet", "_inventory.csv"):
-                for new in (f"{wrap}{spelled}{colon}{mirror} {value}", f"{wrap}{spelled}{colon} {value}{mirror}"):
-                    ok = not answer_blank(new) and judge_value("Tools", new).error is None
-                    ran += 1
-                    failed += not ok
-                    expect(f"item29 a label with a value is not blank: {new}", ok, f"verdict {judge_value('Tools', new)}")
-    print(f"item29 grid: {ran} cells, {failed} failed")
+    needs_value("a Decided Tool line confirmed with a bold label alone needs a value", GATE, f"- Tools: {old} | **Tool:**\n")
 
     for new in ("**Tool:** Use a local spreadsheet", "***Tool: Use a local spreadsheet***", "__Tool__: _inventory.csv",
-                "*_Tools_*： Use a local spreadsheet"):
+                "*_Tools_*： Use a local spreadsheet", "**Done:** a printed price list"):
         code, mcode, found, brief, said = flow(tools, answer("Tools", old, new))
         expect(f"item29 a label with a value is kept as typed: Tools: | {new}",
                (code, mcode) == (0, 0) and slot_entries(brief, "Tools") == [new] and brief_exit(brief) == 0,
@@ -1033,44 +998,19 @@ def item29():
 
 def item30():
     """The label-only rule is for confirmation answers alone. A Decided value is empty only when core() leaves nothing,
-    as check_brief reads it, so `- Output: **Done**` maps as written. Codex's cases run end to end with an empty
-    confirmed.md: both scripts exit 0, the brief holds the exact bytes, and check_brief passes. Generated: every cell of
-    the item29 grid, as a Decided Output value, is blank exactly when core() is empty; a sample runs verdict() and the
-    mapper in process, and a few run both scripts."""
-    wraps = ["".join(w) for n in range(1, 5) for w in itertools.product("*_", repeat=n)]
-    labels = sorted(set(EXTRA_NAME) | set(BRIEF_SLOT) | {name.lower() for name in BRIEF_SLOT.values()})
+    as check_brief reads it, so `- Output: **Done**` maps as written. Each case runs end to end: both scripts exit 0,
+    the brief holds the exact bytes, and check_brief passes."""
     base = swap("- Tool: Maybe use a spreadsheet", "- Tool: LibreOffice Calc", GATE)
     old = "- Output: A sign-in status message"
 
-    def decided(value):
-        return swap(old, f"- Output: {value}", base)
-
     def as_written(name, value, confirmed=None):
-        code, mcode, found, brief, said = flow(decided(value), confirmed)
+        code, mcode, found, brief, said = flow(swap(old, f"- Output: {value}", base), confirmed)
         expect(f"item30 {name}", (code, mcode) == (0, 0) and slot_entries(brief, "Output") == [value]
                and brief_exit(brief) == 0, f"Output entries {slot_entries(brief, 'Output')}\n" + seen(code, mcode, found, said))
 
     for value in ("**Done**", "*Done*", "Done", "**done**", "**Goal**", "**Output**", "**Tools**"):
         as_written(f"a Decided Output is kept as written: {value}", value, "")
-    as_written("the literal-output fixture maps as written", "**Done**")
-
-    cells = sorted({new for label, wrap, colon in itertools.product(labels, wraps, (":", "\uff1a"))
-                    for spelled in {label, label.title(), label.upper()}
-                    for new in (f"{wrap}{spelled}{colon}{wrap[::-1]}", f"{wrap}{spelled}{wrap[::-1]}{colon}",
-                                f"{wrap}{spelled}{wrap[::-1]}", f"{spelled}{colon}", spelled)})
-    failed = 0
-    for i, new in enumerate(cells):
-        empty = not core(new)
-        ok = blank(new) == empty and (judge_value("Output", new).error == "blank") == empty
-        why = f"core {core(new)!r}, blank {blank(new)}, verdict {judge_value('Output', new)}"
-        if ok and i % 40 == 0:
-            text = decided(new)
-            result = verdict(text, "")
-            ok = result.code == (1 if empty else 0) and (empty or f"- Output: {new}" in map_text(result.text).splitlines())
-            why += f", verdict code {result.code}"
-        failed += not ok
-        expect(f"item30 a Decided Output is blank only when core() is empty: {new}", ok, why)
-    print(f"item30 grid: {len(cells)} cells, {failed} failed")
+    as_written("a literal **Done** output with no confirmed.md maps as written", "**Done**")
     for new in ("**Tool:**", "*Tool:*", "__Tool__:", "***Tool:***", "**Tools:**"):
         as_written(f"a label-shaped Decided Output is kept as written: {new}", new, "")
 
