@@ -853,21 +853,16 @@ def rows_of(lines, entry):
 
 def replaced(text, entry, new):
     """The decisions text with the line of `entry` holding `new` in place of its value. The label stays, once: a new
-    answer that starts with it or another name for it (`tool:` for `tools:`), in any case and spacing, is written with
-    one space after its colon. A run of * and _ before that name goes with it, and so does its closer, the same run
-    reversed (`**_` closes with `_**`), right before or right after the colon. Only that closer goes, so a value's own
-    first mark stays: `Tool:_inventory.csv` and `**Tool:_inventory.csv` both keep their `_`."""
+    answer that starts with a plain copy of it or another name for it (`tool:` for `tools:`), in any case and spacing,
+    loses that copy, and the value after it is kept exactly, so `Tool:_inventory.csv` writes `_inventory.csv`. An
+    answer in any * or _ markup is kept exactly as typed."""
     name = entry.label.rstrip(": ")
     if name:
         names = {name} | {alias for alias, canonical in EXTRA_NAME.items() if canonical == name}
         spelled = "|".join(r"\s+".join(map(re.escape, n.split())) for n in sorted(names, key=len, reverse=True))
-        said = re.match(rf"(?P<wrap>[*_]*)(?:{spelled})", new, flags=re.I)
+        said = re.match(rf"(?:{spelled})\s*[:：]", new, flags=re.I)
         if said:
-            rest, mirror = new[said.end():], re.escape(said["wrap"][::-1])
-            colon = (re.match(rf"{mirror}\s*[:：]", rest) or re.match(rf"\s*[:：]{mirror}", rest)
-                     or re.match(r"\s*[:：]", rest))
-            if colon:
-                new = rest[colon.end():].lstrip()
+            new = new[said.end():].lstrip()
     lines = text.split("\n")
     for i in rows_of(lines, entry):
         lines[i] = f"{lines[i][0]} {entry.label}{new}"

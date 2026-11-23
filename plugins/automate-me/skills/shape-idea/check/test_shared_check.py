@@ -1,4 +1,4 @@
-"""Run: python3 check/test_shared_check.py [item1 ... item27]
+"""Run: python3 check/test_shared_check.py [item1 ... item28]
 
 Every value goes through one shared check, so a fix reaches every slot. Each item below is one rule of that check.
 With no argument every item runs. With names, only those run. The property items use a fixed seed and stay fast.
@@ -820,30 +820,29 @@ def item24():
 
 
 def item25():
-    """A new answer that repeats the line's label in bold or italic keeps one label and no leftover mark."""
+    """A new answer that repeats the line's label in bold or italic is kept exactly as typed, mark and label alike."""
     cases = [
-        ("tool", "Tools", "Maybe use a spreadsheet", "Use a local spreadsheet",
+        ("tool", "Tools", "Maybe use a spreadsheet",
          ("**Tool:** Use a local spreadsheet", "*Tool:* Use a local spreadsheet", "__Tool__: Use a local spreadsheet",
           "_Tools：_ Use a local spreadsheet")),
-        ("agents", "Agents and roles", "maybe a parent runs the stall", "A parent runs the stall",
+        ("agents", "Agents and roles", "maybe a parent runs the stall",
          ("*Agent:* A parent runs the stall", "**Agents and roles:** A parent runs the stall",
           "__agents__ ：A parent runs the stall")),
-        ("evals", "Evals", "maybe pass: a signed form; fail: a blank form", "pass: a signed form; fail: a blank form",
+        ("evals", "Evals", "maybe pass: a signed form; fail: a blank form",
          ("**Eval:** pass: a signed form; fail: a blank form",)),
     ]
-    for label, slot, old, clean, news in cases:
+    for label, slot, old, news in cases:
         for new in news:
             code, mcode, found, brief, said = flow(swap(LAST, f"{LAST}\n- {label}: {old}"), answer(slot, old, new))
             got = slot_entries(brief, slot) or []
-            expect(f"item25 a bold or italic label is written once: {label}: | {new}",
-                   (code, mcode) == (0, 0) and got == [clean] and brief_exit(brief) == 0
-                   and not any(re.search(r"(?i)[*_]|\b(tools?|agents?|eval)\s*[:：]", e) for e in got),
-                   f"{slot} entries {got}\n" + seen(code, mcode, found, said))
+            expect(f"item25 a bold or italic label is kept as typed: {label}: | {new}",
+                   (code, mcode) == (0, 0) and got == [new] and brief_exit(brief) == 0,
+                   f"{slot} entries {got}, want [{new!r}]\n" + seen(code, mcode, found, said))
 
 
 def item26():
-    """A repeated label loses only the closing mark that matches its opening one, so a value that starts with _ or * is
-    kept exactly as written."""
+    """A plain repeated label goes and the value after it is kept exactly, so a value that starts with _ or * keeps
+    that mark. A label in any * or _ markup is a styled answer, kept exactly as typed."""
     def tools(new):
         return flow(swap(LAST, f"{LAST}\n- tool: Maybe use a spreadsheet"), answer("Tools", "Maybe use a spreadsheet", new))
 
@@ -865,83 +864,120 @@ def item26():
                (code, mcode) == (2, 2) and mine == [[value], [value]],
                f"Tools items {mine}, want [{value!r}] from each\n" + seen(code, mcode, found, said))
 
-    for new, value in (("Tool:_inventory.csv", "_inventory.csv"), ("Tool:*notes.txt", "*notes.txt"),
-                       ("**Tool:**_inventory.csv", "_inventory.csv")):
-        kept("a reported value keeps its first mark", new, value)
-    for new, value in (("Tool:*x", "*x"), ("**Tool:**_x", "_x"), ("Tool: *x", "*x"), ("Tool:_x", "_x")):
+    for new, value in (("Tool:_inventory.csv", "_inventory.csv"), ("Tool:*notes.txt", "*notes.txt")):
+        kept("a plain label goes, the value keeps its first mark", new, value)
+    for new in ("**Tool:**_inventory.csv", "**Tool:**_x"):
+        kept("a styled label is kept as typed", new, new)
+    for new, value in (("Tool:*x", "*x"), ("Tool: *x", "*x"), ("Tool:_x", "_x")):
         listed(new, value)
     for value in ("_inventory.csv", "*notes.txt"):
         for space in ("", " "):
             kept("no wrap", f"Tool:{space}{value}", value)
             for wrap in ("*", "**", "_", "__"):
-                kept(f"wrap {wrap} closed after the colon", f"{wrap}Tool:{wrap}{space}{value}", value)
-                kept(f"wrap {wrap} closed before the colon", f"{wrap}Tool{wrap}:{space}{value}", value)
+                for new in (f"{wrap}Tool:{wrap}{space}{value}", f"{wrap}Tool{wrap}:{space}{value}"):
+                    kept(f"wrap {wrap} is kept as typed", new, new)
+
+
+STYLED_SLOTS = (("tool", "Tools", "Maybe use a spreadsheet", ("tool", "tools", "Tool", "TOOLS"),
+                 ("_inventory.csv", "*notes.txt", "a printed price list")),
+                ("agents", "Agents and roles", "maybe a parent runs the stall",
+                 ("agent", "agents", "agents and roles", "Agents  and  roles"),
+                 ("_A parent runs the stall", "*A parent runs the stall", "A parent runs the stall")),
+                ("evals", "Evals", "maybe pass: a signed form; fail: a blank form", ("eval", "evals"),
+                 ("pass: a signed form; fail: a blank form", "*pass: a signed form; fail: a blank form")))
 
 
 def item27():
-    """A repeated label in any wrap of * and _ goes with the closer that mirrors its opening run, before or after the
-    colon or missing, and the value is kept exactly, so the brief writes the slot label once. Generated: every wrap of
-    length 0 to 4, every closer position, with and without a space, every name for the slot, values that start with
-    _, * or a letter. The grid reads what replaced() writes; a few cells run through both scripts."""
-    slots = (("tool", "Tools", "Maybe use a spreadsheet", ("tool", "tools"),
-              ("_inventory.csv", "*notes.txt", "a printed price list")),
-             ("agents", "Agents and roles", "maybe a parent runs the stall", ("agent", "agents", "agents and roles"),
-              ("_A parent runs the stall", "*A parent runs the stall", "A parent runs the stall")),
-             ("evals", "Evals", "maybe pass: a signed form; fail: a blank form", ("eval", "evals"),
-              ("pass: a signed form; fail: a blank form", "*pass: a signed form; fail: a blank form")))
-    wraps = [""] + ["".join(w) for n in range(1, 5) for w in itertools.product("*_", repeat=n)]
-    assert len(wraps) == 31
+    """Styled answers are byte-identical after mapping. Generated: every wrap of * and _ of length 1 to 4, mixed ones
+    too (`*_`, `**_`), with its mirror closer before the colon, after it, around the whole `alias: value`, or missing;
+    with and without a space; every name for the slot; values that start with _, * or a letter; either colon. The
+    written value and the brief entry are the answer exactly. With no wrap, the plain label goes and the value after it
+    is kept exactly. The grid reads what replaced() writes; item28 runs a sample through both scripts."""
+    wraps = ["".join(w) for n in range(1, 5) for w in itertools.product("*_", repeat=n)]
+    assert len(wraps) == 30
 
     def cells(alias, value):
-        """(how, new answer) for each wrap, closer position and space. A missing closer with no space before a value
-        that starts with the mirror is the text of a closer after the colon, so that one cell is left out."""
-        for wrap in wraps:
-            mirror = wrap[::-1]
-            for space in ("", " "):
-                if not wrap:
-                    yield f"no wrap, space {space!r}", f"{alias}:{space}{value}"
-                    continue
-                yield f"{wrap} closed before the colon, space {space!r}", f"{wrap}{alias}{mirror}:{space}{value}"
-                yield f"{wrap} closed after the colon, space {space!r}", f"{wrap}{alias}:{mirror}{space}{value}"
-                if space or not value.startswith(mirror):
-                    yield f"{wrap} not closed, space {space!r}", f"{wrap}{alias}:{space}{value}"
+        """(how, new answer, value the slot should hold) for each wrap, closer position, space and colon."""
+        for colon, space in itertools.product((":", "："), ("", " ")):
+            yield f"plain {colon} space {space!r}", f"{alias}{colon}{space}{value}", value
+            for wrap in wraps:
+                mirror = wrap[::-1]
+                for how, new in (("closed before the colon", f"{wrap}{alias}{mirror}{colon}{space}{value}"),
+                                 ("closed after the colon", f"{wrap}{alias}{colon}{mirror}{space}{value}"),
+                                 ("around the whole answer", f"{wrap}{alias}{colon}{space}{value}{mirror}"),
+                                 ("not closed", f"{wrap}{alias}{colon}{space}{value}")):
+                    yield f"{wrap} {how} {colon} space {space!r}", new, new
 
     ran = failed = 0
-    for label, slot, old, aliases, values in slots:
+    for label, slot, old, aliases, values in STYLED_SLOTS:
         text = swap(LAST, f"{LAST}\n- {label}: {old}")
         entry = next(e for e in entries(sections_of(text)) if e.slot == slot)
         for alias, value in itertools.product(aliases, values):
-            for how, new in cells(alias, value):
+            for how, new, want in cells(alias, value):
                 after = replaced(text, entry, new)
                 got = [e.value for e in entries(sections_of(after)) if e.slot == slot]
-                line = f"- {slot}: {got[0]}" if len(got) == 1 else None
-                brief = map_text(after, [(slot, value)])
-                ok = (got == [value] and line in brief.splitlines() and slot_entries(brief, slot) == [value]
-                      and not re.match(rf"(?i)[*_]*\s*{re.escape(alias)}\s*[*_]*\s*[:：]", got[0]))
+                brief = map_text(after, [(slot, want)])
+                ok = got == [want] and f"- {slot}: {want}" in brief.splitlines() and slot_entries(brief, slot) == [want]
                 ran += 1
                 failed += not ok
                 expect(f"item27 {how}: {slot}: | {new}", ok,
-                       f"{slot} values {got}, brief entries {slot_entries(brief, slot)}, want [{value!r}]")
+                       f"{slot} values {got}, brief entries {slot_entries(brief, slot)}, want [{want!r}]")
     print(f"item27 grid: {ran} cells, {failed} failed")
 
-    sample = (("Tools", "Tool:_inventory.csv", "_inventory.csv"), ("Tools", "**Tool:**_inventory.csv", "_inventory.csv"),
-              ("Tools", "***Tool***: Use a local spreadsheet", "Use a local spreadsheet"),
-              ("Tools", "*_Tool_*: Use a local spreadsheet", "Use a local spreadsheet"),
-              ("Tools", "**_Tool_**: a printed price list", "a printed price list"),
-              ("Tools", "**Tool:_inventory.csv", "_inventory.csv"),
-              ("Agents and roles", "**Agents and roles:** A parent runs the stall", "A parent runs the stall"))
+
+def item28():
+    """A confirmed answer wrapped whole in bold italic (`***Tool: Use a local spreadsheet***`) is kept as typed by both
+    scripts, with no dangling closer, and so is a sample of other styled answers. A plain label still goes."""
+    sample = (("Tools", "***Tool: Use a local spreadsheet***", "***Tool: Use a local spreadsheet***"),
+              ("Tools", "**Tool:** Use a local spreadsheet", "**Tool:** Use a local spreadsheet"),
+              ("Tools", "***Tool***: Use a local spreadsheet", "***Tool***: Use a local spreadsheet"),
+              ("Tools", "*_Tool_*: Use a local spreadsheet", "*_Tool_*: Use a local spreadsheet"),
+              ("Tools", "_Tool_: a printed price list", "_Tool_: a printed price list"),
+              ("Tools", "**Tool:_inventory.csv", "**Tool:_inventory.csv"),
+              ("Tools", "__Tool: a printed price list__", "__Tool: a printed price list__"),
+              ("Tools", "Tool:_inventory.csv", "_inventory.csv"),
+              ("Tools", "Tool: Use a local spreadsheet", "Use a local spreadsheet"),
+              ("Agents and roles", "**Agents and roles:** A parent runs the stall",
+               "**Agents and roles:** A parent runs the stall"),
+              ("Agents and roles", "agents and roles：A parent runs the stall", "A parent runs the stall"))
     for slot, new, value in sample:
-        label, _, old, aliases, _ = next(s for s in slots if s[1] == slot)
+        label, _, old, _, _ = next(s for s in STYLED_SLOTS if s[1] == slot)
         code, mcode, found, brief, said = flow(swap(LAST, f"{LAST}\n- {label}: {old}"), answer(slot, old, new))
         got = slot_entries(brief, slot)
-        expect(f"item27 both scripts: {slot}: | {new}",
+        expect(f"item28 both scripts: {slot}: | {new}",
                (code, mcode) == (0, 0) and got == [value] and brief_exit(brief) == 0
-               and brief.count(f"- {slot}: {value}") == 1
-               and not any(re.search(rf"(?i){re.escape(a)}\s*[*_]*\s*[:：]", e) for e in got for a in aliases),
+               and brief.splitlines().count(f"- {slot}: {value}") == 1,
                f"{slot} entries {got}, want [{value!r}]\n" + seen(code, mcode, found, said))
+    # The round-14 fixture: a Decided Tool line and a whole-answer bold italic confirmation.
+    text = """# Decisions: Registration gate
+## Decided
+- Goal: Gate access to the volunteer portal
+- Done: Registered volunteers can sign in
+- Output: A sign-in status message
+- Tool: Maybe use a spreadsheet
+- Verify: Test the sign-in form using two sample accounts
+- Constraints: Use only the staging server
+## Open
+- none
+## Parked
+- none
+## Handoff
+- next: /automate-me:outcome
+- stop: done
+- turns: 3
+- writing: pass
+- map: Use the standard slot mapping
+"""
+    confirmed = "- Tools: Maybe use a spreadsheet | ***Tool: Use a local spreadsheet***\n"
+    code, mcode, found, brief, said = flow(text, confirmed)
+    lines = [line for line in brief.splitlines() if line.startswith("- Tools:")]
+    expect("item28 a whole-answer wrap leaves no dangling closer",
+           (code, mcode) == (0, 0) and lines == ["- Tools: ***Tool: Use a local spreadsheet***"]
+           and slot_entries(brief, "Tools") == ["***Tool: Use a local spreadsheet***"] and brief_exit(brief) == 0,
+           f"Tools lines {lines}\n" + seen(code, mcode, found, said))
 
 
-ITEMS = {f"item{n}": globals()[f"item{n}"] for n in range(1, 28)}
+ITEMS = {f"item{n}": globals()[f"item{n}"] for n in range(1, 29)}
 
 if __name__ == "__main__":
     for name in sys.argv[1:] or ITEMS:
