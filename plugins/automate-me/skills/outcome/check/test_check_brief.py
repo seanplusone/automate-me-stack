@@ -473,6 +473,10 @@ if [(kind, body.strip(" ,.")) for kind, body in eval_cases(LEAD)] != [
 expect_outcome("a leading phrase beside a pass and a fail case passes", slot("Evals", f"- Evals: {LEAD}"), "pass")
 expect_outcome("a leading should pass is no pass case; asks, not fails",
                slot("Evals", "- Evals: Should pass if the form is signed. A blank form should fail."), "ask")
+RAN.append("cli a leading should fail phrase exits 0")
+ran = run_cli(slot("Evals", f"- Evals: {LEAD}"))
+if ran.returncode != 0 or "Evals: '' is a placeholder" in ran.stdout:
+    FAILS.append(f"cli a leading should fail phrase: exit {ran.returncode}\n{ran.stdout}")
 
 
 if __name__ == "__main__":
