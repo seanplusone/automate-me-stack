@@ -1,4 +1,4 @@
-"""Run: python3 check/test_shared_check.py [item1 ... item18]
+"""Run: python3 check/test_shared_check.py [item1 ... item23]
 
 Every value goes through one shared check, so a fix reaches every slot. Each item below is one rule of that check.
 With no argument every item runs. With names, only those run. The property items use a fixed seed and stay fast.
@@ -632,7 +632,119 @@ def item18():
                said[-500:] + brief[-600:])
 
 
-ITEMS = {f"item{n}": globals()[f"item{n}"] for n in range(1, 19)}
+def seen(code, mcode, found, said):
+    """What a failed expect prints: the exits, the items, the NOTE lines, then the end of the output."""
+    notes = [line for line in said.splitlines() if line.startswith(("NOTE", "FAIL", "  "))][:12]
+    return f"exits {code}, {mcode}; items {keys(found)}\n" + "\n".join(notes) + "\n" + said[-300:]
+
+
+def item19():
+    """A should pass or should fail phrase with nothing before it is not a case, so its sentence is a value."""
+    verify = "- verify: a parent reads the date and three prices from across the hall"
+    for value in ("Should fail if the required email address is missing", "must fail if the price list is blank",
+                  "Should pass if the form has a name and a date"):
+        code, mcode, found, brief, said = flow(swap(verify, f"- verify: {value}"))
+        expect(f"item19 a verify line that starts with the phrase passes: {value}",
+               (code, mcode) == (0, 0) and not found and value in slot_entries(brief, "Verification")
+               and brief_exit(brief) == 0, seen(code, mcode, found, said) + brief[-300:])
+    value = "Should fail if the required email address is missing"
+    text = swap(LAST, f"{LAST}\n- evals: {value}")
+    for confirmed in (None, answer("Evals", value, "yes")):
+        code, mcode, found, _, said = flow(text, confirmed)
+        expect(f"item19 an Evals line with only that phrase lacks its cases: {confirmed!r}",
+               (code, mcode) == (2, 2)
+               and keys(found) == [("Evals", value, answer("Evals", value, "<new answer>").strip())]
+               and found[0]["Why"].startswith("Evals needs one case that should pass")
+               and "confirm" not in found[0]["Suggest"] and "FAIL" not in said, seen(code, mcode, found, said))
+
+
+def item20():
+    """The text after the last should pass or should fail phrase is judged too, in every slot."""
+    value = "A signed form should pass, a blank form should fail. Maybe log both results."
+    routes = {"Output": ROUTES["output"], "Evals": lambda v: swap(LAST, f"{LAST}\n- evals: {v}")}
+    for slot, make in routes.items():
+        code, mcode, found, _, said = flow(make(value))
+        expect(f"item20 the sentence after the cases is listed in {slot}",
+               (code, mcode) == (2, 2) and keys(found) == [(slot, value, answer(slot, value, "yes").strip())]
+               and '"maybe"' in found[0]["Why"], seen(code, mcode, found, said))
+        code, mcode, found, brief, said = flow(make(value), answer(slot, value, "yes"))
+        expect(f"item20 a yes clears it in {slot}", (code, mcode) == (0, 0) and "NOTE" not in said
+               and value in slot_entries(brief, slot) and brief_exit(brief) == 0,
+               seen(code, mcode, found, said) + brief[-400:])
+    # Text between a phrase case and a colon label belongs to no case body, so it is judged on its own.
+    # A colon label's body runs to the end, so the hedge after it is already in that case.
+    for value in ("a signed form should pass, maybe with a name; fail: a blank form",
+                  "pass: a signed form; fail: a blank form. Maybe log both results."):
+        code, mcode, found, _, said = flow(routes["Evals"](value))
+        expect(f"item20 a hedge outside every phrase body is listed: {value}",
+               (code, mcode) == (2, 2) and keys(found) == [("Evals", value, answer("Evals", value, "yes").strip())],
+               seen(code, mcode, found, said))
+
+
+def item21():
+    """A yes applies to a value only when it exists at that point in confirmed.md order. Otherwise it is a NOTE."""
+    poster, flyer = "maybe a poster for the hallway", "maybe a flyer for the hallway"
+    text = swap(OUT, f"- output: {poster}")
+    stale, swapped = answer("Output", flyer, "yes"), answer("Output", poster, flyer)
+    code, mcode, found, _, said = flow(text, stale + swapped)
+    expect("item21 a yes before the line that writes its value does not clear it",
+           (code, mcode) == (2, 2) and keys(found) == [("Output", flyer, stale.strip())],
+           seen(code, mcode, found, said))
+    notes = [line for line in said.splitlines() if line.startswith("NOTE")]
+    expect("item21 the stale yes is a NOTE, and only it",
+           len(notes) == 1 and notes[0].startswith(f"NOTE: confirmed.md line '{stale.strip()}'"),
+           seen(code, mcode, found, said))
+    code, mcode, found, brief, said = flow(text, swapped + stale)
+    expect("item21 the same yes after the line that writes its value clears it",
+           (code, mcode) == (0, 0) and not found and "NOTE" not in said and slot_entries(brief, "Output") == [flyer]
+           and poster not in brief and brief_exit(brief) == 0, seen(code, mcode, found, said) + brief[-400:])
+    # Free Done lines, in either order in decisions.md. A yes for a value there from the start clears it.
+    door, desk = "maybe a sign by the door", "maybe a sign by the desk"
+    stale, swapped = answer("Done", desk, "yes"), answer("Done", door, desk)
+    for rows in ((f"- {door}", LAST), (LAST, f"- {door}")):
+        code, mcode, found, _, said = flow(swap(LAST, "\n".join(rows)), stale + swapped)
+        expect(f"item21 a stale yes on a free line, in either line order: {rows[0]}",
+               (code, mcode) == (2, 2) and keys(found) == [("Done", desk, stale.strip())]
+               and f"NOTE: confirmed.md line '{stale.strip()}'" in said, seen(code, mcode, found, said))
+        code, mcode, found, brief, said = flow(swap(LAST, "\n".join(rows + (f"- {desk}",))), stale + swapped)
+        expect(f"item21 a yes for a value there from the start clears it, in either line order: {rows[0]}",
+               (code, mcode) == (0, 0) and not found and "NOTE" not in said
+               and slot_entries(brief, "Done") == DONE[:1] + [desk if r == f"- {door}" else r[2:] for r in rows]
+               + [desk]
+               and door not in brief and brief_exit(brief) == 0, seen(code, mcode, found, said) + brief[-400:])
+
+
+def item22():
+    """A new answer that repeats the line's label under another name, singular or plural, keeps one label."""
+    cases = [
+        ("tool", "Tools", "Maybe use a spreadsheet", "Use a local spreadsheet",
+         ("Tool:Use a local spreadsheet", "TOOLS ：Use a local spreadsheet", "tools:  Use a local spreadsheet")),
+        ("agents", "Agents and roles", "maybe a parent runs the stall", "A parent runs the stall",
+         ("Agent: A parent runs the stall", "Agents and roles: A parent runs the stall")),
+        ("agent", "Agents and roles", "maybe a parent runs the stall", "A parent runs the stall",
+         ("agents:A parent runs the stall",)),
+        ("evals", "Evals", "maybe pass: a signed form; fail: a blank form", "pass: a signed form; fail: a blank form",
+         ("Eval: pass: a signed form; fail: a blank form",)),
+    ]
+    for label, slot, old, clean, news in cases:
+        for new in news:
+            code, mcode, found, brief, said = flow(swap(LAST, f"{LAST}\n- {label}: {old}"), answer(slot, old, new))
+            got = slot_entries(brief, slot) or []
+            expect(f"item22 the label is written once: {label}: | {new}",
+                   (code, mcode) == (0, 0) and got == [clean] and brief_exit(brief) == 0
+                   and not any(re.match(r"(?i)\s*(tools?|agents?|eval)\s*[:：]", e) for e in got),
+                   f"{slot} entries {got}\n" + seen(code, mcode, found, said))
+
+
+def item23():
+    """--help names the splitting bar the way the parser reads it: the one unescaped bar."""
+    done = subprocess.run([sys.executable, CHECK, "--help"], capture_output=True, text=True, encoding="utf-8")
+    expect("item23 --help exits 0", done.returncode == 0, done.stderr)
+    expect("item23 --help says the one unescaped bar", "the one unescaped bar" in done.stdout
+           and "no backslash before it" not in done.stdout, done.stdout[-1500:])
+
+
+ITEMS = {f"item{n}": globals()[f"item{n}"] for n in range(1, 24)}
 
 if __name__ == "__main__":
     for name in sys.argv[1:] or ITEMS:

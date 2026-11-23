@@ -67,8 +67,9 @@ a value in three layers:
   markup, quotes and brackets go. A mark only in the middle is listed.
 A Parked line is for later, so only the text checks apply. A Parked `out of scope:` line with a question mark may be a
 limit or a question. An Evals answer is read in pieces as check_brief reads it, the text before the first colon label
-and each case body of either form. When its pass case or fail case is missing, that is the one item for the line, and
-a yes cannot clear it.
+and each case body of either form. A should pass or should fail phrase with nothing before it is not a case, and the
+text after a phrase that no case body holds is read with that phrase. When its pass case or fail case is missing, that
+is the one item for the line, and a yes cannot clear it, so the brief check reads the brief without that line.
 
 Check with me (exit 2, when the format is valid). Each item names the slot as the brief names it and the exact value,
 then four lines. Why is one short plain sentence that quotes at most a short piece of the value. Ask holds one to
@@ -86,8 +87,9 @@ Each other line is one answer, the slot and the exact value from the list, a bar
 A yes clears the item with that exact slot and value, and no other: `tools: X` and `agents: X` are two items. A new
 answer takes the old value's place on every line with that slot and value, label kept once, and goes through the same
 shared check, so an answer that is still unsure is listed again under its new text. A bar inside the value or the
-answer is written `\\|`, and a backslash `\\\\`, so the one bar with no backslash before it ends the value. A line with
-no such bar, or with two, is format invalid. The latest line for the same slot and value wins.
+answer is written `\\|`, and a backslash `\\\\`, so the one unescaped bar ends the value: in `\\\\|` the bar is
+unescaped. A line with no such bar, or with two, is format invalid. The latest line for the same slot and value wins.
+Lines apply in confirmed.md order, and a yes clears a value only if the value is there when the yes applies.
 
 The format checks read decisions.md as written, before any new answer is put in, and again with the new answers in
 place. So no answer clears a format error, a writing failure included, and a new answer can add one. A line naming a
@@ -118,6 +120,7 @@ from check_brief import (  # noqa: E402
     PLACEHOLDER,
     TEMPLATE,
     TRAP,
+    case_marks,
     check as check_brief,
     core,
     eval_cases,
@@ -160,7 +163,7 @@ BRIEF_SLOT = {"goal": "Goal", "done": "Done", "output": "Output", "verify": "Ver
 STATED = re.compile(r"^([*_`]*)\s*stated\s*([*_`]*)\s*[:：]([*_]*)\s*", NAMES)
 # A brief tag that may lead a line. unstated() keeps it and drops any `stated:` beside it.
 TAG_LABEL = re.compile(r"^[*_]*(?:investigate|out of scope|how|write first)[*_]*\s*[:：][*_]*\s*", NAMES)
-# A confirmed.md line. The one bar with no backslash before it ends the value. See bar() and unbar().
+# A confirmed.md line. The one unescaped bar ends the value. See bar() and unbar().
 CONFIRMED_LINE = re.compile(r"^[-*]\s+(?P<slot>[^:]+?)\s*:\s(?P<rest>.*)$")
 # In confirmed.md, \| is a bar and \\ is a backslash. Any other backslash is itself.
 BAR_TOKEN = re.compile(r"\\[\\|]|\||[^\\|]+|\\")
@@ -589,7 +592,11 @@ def check(text):
         if handoff_ready and writing != ["pass"] else [])
     add("prose passes the writing check", prose_fails(visible if not hidden else visible + "\n" + hidden))
     if not any(fails for _, fails in results):
-        add(BRIEF_CHECK, [fail for _, fails in check_brief(mapped(text)) for fail in fails])
+        # An Evals line with no pass or no fail case is already listed, and no answer clears it, so the brief check
+        # reads the brief without it and a blank case body there is not a second, format error.
+        held = [(entry, judge_value(entry.slot, entry.text, entry.role).item) for entry, _, _ in judged]
+        gaps = [entry for entry, item in held if item and not item.clears]
+        add(BRIEF_CHECK, [fail for _, fails in check_brief(mapped(dropped(text, gaps))) for fail in fails])
     return results
 
 
@@ -701,11 +708,19 @@ Verdict = namedtuple("Verdict", "error piece item")
 
 
 def case_pieces(text):
-    """(pieces, kinds) of one Evals value as check_brief reads it: the text before the first colon label, and each
-    case body. kinds holds pass and fail for the cases found. A value with no case is one piece."""
-    cases = eval_cases(text)
-    lead = eval_lead(text)
-    return [lead] * bool(core(lead)) + [body for _, body in cases] or [text], {kind for kind, _ in cases}
+    """(pieces, kinds, rest) of one Evals value. pieces are what check_brief reads: the text before the first colon
+    label, and each case body. kinds holds pass and fail for the cases found. A should pass or should fail phrase with
+    a blank body is not a case. rest is the text from each phrase to the next colon label or the end, which no case
+    body holds, read with its phrase so it is never blank. A value with no case is one piece."""
+    plain, marks = case_marks(text)
+    pieces, kinds, rest = [eval_lead(text)] * bool(core(eval_lead(text))), set(), []
+    for i, ((start, _, kind, colon), (_, body)) in enumerate(zip(marks, eval_cases(text))):
+        if colon or not blank(body):
+            pieces, kinds = pieces + [body], kinds | {kind}
+        after = marks[i + 1] if i + 1 < len(marks) else None
+        if not colon and (not after or after[3]):
+            rest.append(plain[start:after[0] if after else len(plain)])
+    return pieces or [text], kinds, rest
 
 
 def read_piece(text, role):
@@ -726,11 +741,12 @@ def judge_value(slot, text, role=ANSWER):
 
     The same text gets the same verdict in every slot. The slot only picks the wording and the Ask questions. An answer
     is read as its pieces, the way check_brief reads an Evals answer, so a short case is listed in any slot. Outside
-    Evals the brief reads it whole too, so the whole text is read as well.
+    Evals the brief reads it whole too, so the whole text is read as well. The text after a phrase that no case body
+    holds is read in every slot, so a sentence after the last case is judged.
     When an Evals answer has no pass case or no fail case, that is the item, and a yes cannot clear it.
     """
-    pieces, kinds = case_pieces(text) if role == ANSWER else ([text], set())
-    pieces += [text] * (slot != "Evals" and pieces != [text])
+    pieces, kinds, rest = case_pieces(text) if role == ANSWER else ([text], set(), [])
+    pieces += [text] * (slot != "Evals" and pieces != [text]) + rest
     reads = [read_piece(piece, role) for piece in pieces]
     error, piece = next(((error, piece) for (error, _, _), piece in zip(reads, pieces) if error), (None, None))
     reason, word = next(((reason, word) for _, reason, word in reads if reason), (None, None))
@@ -798,7 +814,7 @@ def bar(text):
 
 
 def unbar(text):
-    """The pieces of confirmed.md text between bars with no backslash before them, each \\| and \\\\ read back."""
+    """The pieces of confirmed.md text between unescaped bars, each \\| and \\\\ read back."""
     pieces, piece = [], ""
     for token in BAR_TOKEN.findall(text):
         if token == "|":
@@ -844,13 +860,24 @@ def rows_of(lines, entry):
 
 def replaced(text, entry, new):
     """The decisions text with the line of `entry` holding `new` in place of its value. The label stays, once: a new
-    answer that starts with it, in any case and spacing, is written with one space after its colon."""
-    if entry.label:
-        new = re.sub(rf"^{re.escape(entry.label.rstrip(': '))}\s*[:：]\s*", "", new, flags=re.I)
+    answer that starts with it or another name for it (`tool:` for `tools:`), in any case and spacing, is written with
+    one space after its colon."""
+    name = entry.label.rstrip(": ")
+    if name:
+        names = {name} | {alias for alias, canonical in EXTRA_NAME.items() if canonical == name}
+        spelled = "|".join(r"\s+".join(map(re.escape, n.split())) for n in sorted(names, key=len, reverse=True))
+        new = re.sub(rf"^(?:{spelled})\s*[:：]\s*", "", new, flags=re.I)
     lines = text.split("\n")
     for i in rows_of(lines, entry):
         lines[i] = f"{lines[i][0]} {entry.label}{new}"
     return "\n".join(lines)
+
+
+def dropped(text, gone):
+    """The decisions text without the lines that hold each entry in `gone`."""
+    lines = text.split("\n")
+    rows = {i for entry in gone for i in rows_of(lines, entry)}
+    return "\n".join(line for i, line in enumerate(lines) if i not in rows)
 
 
 def has_error(entry, text):
@@ -875,23 +902,26 @@ def merged(first, second):
 
 
 def settle(text, answers):
-    """(steps, yes, swapped) for the replacement answers. The latest line for a slot and value wins.
+    """(steps, yes, swapped, stale) for the answers. The latest line for a slot and value wins.
 
     steps is the decisions text after each replacement, in confirmed.md order, so the last one is what the mapper maps.
-    yes is the (slot, value) of each latest yes. swapped is the (slot, value) of each replacement made. The new answer
-    sits where the old value was, so a later line can answer it, and the order of the lines in decisions.md does not
-    matter. Each line applies once, to every line with that slot and value it finds then. A replacement only answers
-    an item: it never replaces a value with a format error.
+    yes is the (slot, value) of each latest yes whose value is in the text when that yes applies. stale is each other
+    latest yes: it clears nothing, not even a value a later line writes. swapped is the (slot, value) of each
+    replacement made. The new answer sits where the old value was, so a later line can answer it, and the order of the
+    lines in decisions.md does not matter. Each line applies once, to every line with that slot and value it finds
+    then. A replacement only answers an item: it never replaces a value with a format error.
     """
     latest = {}
     for slot, value, answer in answers:
         latest.pop((slot, value), None)
         latest[(slot, value)] = answer
-    steps, swapped = [text], []
+    steps, yes, swapped, stale = [text], [], [], []
     for key, answer in latest.items():
+        here = [e for e in entries(sections_of(steps[-1])) if (e.slot, e.value) == key]
         if answer == "yes":
+            (yes if here else stale).append(key)
             continue
-        found = [e for e in entries(sections_of(steps[-1])) if (e.slot, e.value) == key and listed(e, steps[-1])]
+        found = [e for e in here if listed(e, steps[-1])]
         if not found:
             continue
         swapped.append(key)
@@ -899,7 +929,7 @@ def settle(text, answers):
         for entry in found:
             new = replaced(new, entry, answer)
         steps.append(new)
-    return steps, [key for key, answer in latest.items() if answer == "yes"], swapped
+    return steps, yes, swapped, stale
 
 
 Result = namedtuple("Result", "code results pending notes used text broken")
@@ -916,7 +946,7 @@ def verdict(text, confirmed_text=""):
     answers, confirm_fails = read_confirmed(confirmed_text)
     # The format checks read decisions.md as written, so no answer clears a format error. Each new answer is read again
     # in its place, at every step, so it can add an error or an item, and a later answer never removes one.
-    steps, yes, swapped = settle(text, answers)
+    steps, yes, swapped, stale = settle(text, answers)
     results = check(text)
     for step in steps[1:]:
         results = merged(results, check(step))
@@ -927,14 +957,19 @@ def verdict(text, confirmed_text=""):
     keys = {(item.slot, item.value) for item in found}
     pending = [item for item in found if not (item.clears and (item.slot, item.value) in yes)]
     used = [key for key in yes if key in keys]
+    # A yes that comes before the line that writes its value. A yes for a value no line ever writes matches nothing.
+    early = set(stale) & {(e.slot, e.value) for step in steps for e in entries(sections_of(step))}
     named = {(slot, value) for slot, value, _ in answers} | {(item.slot, item.value) for item in pending}
     broken = {(e.slot, e.value) for step in steps for e in entries(sections_of(step))
               if (e.slot, e.value) in named and has_error(e, step)}
     notes = [f"NOTE: confirmed.md line '- {slot}: {bar(value)} | {bar(answer)}' "
              + ("names a value with a format error. Fix it in decisions.md, because no answer clears it"
-                if (slot, value) in broken else "matches nothing in decisions.md now; remove it")
+                if (slot, value) in broken else "comes before the line that writes that value, so it clears nothing."
+                " Move it below that line" if (slot, value) in early and answer == "yes"
+                else "matches nothing in decisions.md now; remove it")
              for slot, value, answer in dict.fromkeys(answers)
-             if (slot, value) in broken or (slot, value) not in keys | set(swapped)]
+             if (slot, value) in broken or (slot, value) not in keys | set(swapped)
+             or (slot, value) in early and answer == "yes"]
     if not failed and not pending:
         # Once every item is answered, the brief must pass check_brief whole. A value it still asks about here is a
         # gap in the shared check, so it fails, and a yes cannot hide it.
