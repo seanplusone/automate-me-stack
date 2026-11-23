@@ -648,6 +648,10 @@ def item19():
                (code, mcode) == (0, 0) and not found and value in slot_entries(brief, "Verification")
                and brief_exit(brief) == 0, seen(code, mcode, found, said) + brief[-300:])
     value = "Should fail if the required email address is missing"
+    code, mcode, found, brief, said = flow(swap(OUT, f"- output: {value}"))
+    expect("item19 an Output line that starts with the phrase passes",
+           (code, mcode) == (0, 0) and not found and slot_entries(brief, "Output") == [value]
+           and brief_exit(brief) == 0, seen(code, mcode, found, said) + brief[-300:])
     text = swap(LAST, f"{LAST}\n- evals: {value}")
     for confirmed in (None, answer("Evals", value, "yes")):
         code, mcode, found, _, said = flow(text, confirmed)
@@ -692,10 +696,17 @@ def item21():
            seen(code, mcode, found, said))
     notes = [line for line in said.splitlines() if line.startswith("NOTE")]
     expect("item21 the stale yes is a NOTE, and only it",
-           len(notes) == 1 and notes[0].startswith(f"NOTE: confirmed.md line '{stale.strip()}'"),
+           len(notes) == 1 and notes[0].startswith(f"NOTE: confirmed.md line '{stale.strip()}'")
+           and "comes before the line that writes that value" in notes[0]
+           and "Move it below that line" in notes[0] and "remove it" not in notes[0],
            seen(code, mcode, found, said))
     code, mcode, found, brief, said = flow(text, swapped + stale)
     expect("item21 the same yes after the line that writes its value clears it",
+           (code, mcode) == (0, 0) and not found and "NOTE" not in said and slot_entries(brief, "Output") == [flyer]
+           and poster not in brief and brief_exit(brief) == 0, seen(code, mcode, found, said) + brief[-400:])
+    # A later yes for the same key wins, even when an earlier yes for it was stale.
+    code, mcode, found, brief, said = flow(text, stale + swapped + stale)
+    expect("item21 a later yes for the same value, after the line that writes it, clears it",
            (code, mcode) == (0, 0) and not found and "NOTE" not in said and slot_entries(brief, "Output") == [flyer]
            and poster not in brief and brief_exit(brief) == 0, seen(code, mcode, found, said) + brief[-400:])
     # Free Done lines, in either order in decisions.md. A yes for a value there from the start clears it.
@@ -720,7 +731,8 @@ def item22():
         ("tool", "Tools", "Maybe use a spreadsheet", "Use a local spreadsheet",
          ("Tool:Use a local spreadsheet", "TOOLS ：Use a local spreadsheet", "tools:  Use a local spreadsheet")),
         ("agents", "Agents and roles", "maybe a parent runs the stall", "A parent runs the stall",
-         ("Agent: A parent runs the stall", "Agents and roles: A parent runs the stall")),
+         ("Agent: A parent runs the stall", "Agents and roles: A parent runs the stall",
+          "aGeNtS  AND  ROLES ：A parent runs the stall")),
         ("agent", "Agents and roles", "maybe a parent runs the stall", "A parent runs the stall",
          ("agents:A parent runs the stall",)),
         ("evals", "Evals", "maybe pass: a signed form; fail: a blank form", "pass: a signed form; fail: a blank form",
@@ -741,7 +753,9 @@ def item23():
     done = subprocess.run([sys.executable, CHECK, "--help"], capture_output=True, text=True, encoding="utf-8")
     expect("item23 --help exits 0", done.returncode == 0, done.stderr)
     expect("item23 --help says the one unescaped bar", "the one unescaped bar" in done.stdout
-           and "no backslash before it" not in done.stdout, done.stdout[-1500:])
+           and "no backslash before it" not in done.stdout
+           and "in `\\\\|` the bar is" in done.stdout,
+           done.stdout[-1500:])
 
 
 ITEMS = {f"item{n}": globals()[f"item{n}"] for n in range(1, 24)}
