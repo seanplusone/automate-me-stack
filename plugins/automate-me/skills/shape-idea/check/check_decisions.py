@@ -171,6 +171,7 @@ HEDGES = re.compile(r"(?<![^\W_])(?:maybe|perhaps|possibly|probably|might|unsure
                     r"|for now|depends|idk|dunno|tbh)(?![^\W_])")
 TRAPS = re.compile(r"(?<![^\W_])(?:" + "|".join(sorted(TRAP)) + r")(?![^\W_])")
 BRIEF_CHECK = "the mapped brief passes outcome's brief check"
+EXTRA_CHECK = "tools, agents, evals, and decide lines are usable"
 CONFIRMED_CHECK = "confirmed.md lines are `- <Slot>: <value> | <answer>`"
 # The words of outcome's fixed placeholder list that are also everyday words. Only placeholder_in() reads this.
 EVERYDAY = {"none", "later", "pending", "placeholder"}
@@ -260,16 +261,21 @@ def untouched(value):
     return core(value) in TEMPLATE or judge(rest)[0] == "fail"
 
 
-# A value that is only a slot or line label, with an optional colon, once * and _ are gone: `**Tool:**` says nothing.
+# A confirmation answer that is only a slot or line label, with an optional colon, once * and _ are gone: `**Tool:**`
+# answers nothing. A value in decisions.md is never read this way: `- Output: **Done**` is a value.
 LABEL_ONLY = re.compile(r"^(?:" + "|".join(r"\s+".join(map(re.escape, name.split())) for name in sorted(
     set(EXTRA_NAME) | set(BRIEF_SLOT) | {slot.lower() for slot in BRIEF_SLOT.values()}, key=len, reverse=True))
     + r")\s*[:：]?$", NAMES)
 
 
 def blank(value):
-    """True when nothing is left once markup, punctuation and one leading tag go, as check_brief's core() reads it, or
-    when the value is only a label: with * and _ gone, a slot or line name and an optional colon."""
-    return not core(value or "") or bool(LABEL_ONLY.match(re.sub(r"[*_]", "", value or "").strip()))
+    """True when nothing is left once markup, punctuation and one leading tag go, as check_brief's core() reads it."""
+    return not core(value or "")
+
+
+def answer_blank(answer):
+    """True when a new answer in confirmed.md is blank, or is only a label once * and _ are gone. See LABEL_ONLY."""
+    return blank(answer) or bool(LABEL_ONLY.match(re.sub(r"[*_]", "", answer).strip()))
 
 
 def has_question(text):
@@ -500,7 +506,7 @@ def check(text):
         seen_extra.add(name)
     extra_fails += [f"{entry.label[:-2]}: needs a value" for entry, error, _ in judged
                     if error == "blank" and entry.kind == "extra"]
-    add("tools, agents, evals, and decide lines are usable", extra_fails)
+    add(EXTRA_CHECK, extra_fails)
 
     add("every line has a value", [f"{entry.section} line {entry.row!r} has no value once its labels are gone; write"
                                    " the value or drop the line" for entry, error, _ in judged
@@ -717,7 +723,7 @@ def case_pieces(text):
     value with no case is one piece."""
     plain, marks = case_marks(text)
     cases, lead = eval_cases(text), eval_lead(text)
-    pieces = [lead] * (not blank(lead)) + [body for _, body in cases]
+    pieces = [lead] * bool(core(lead)) + [body for _, body in cases]
     rest = [plain[start:after[0] if after else len(plain)]
             for (start, _, _, colon), after in zip(marks, marks[1:] + [None]) if not colon and (not after or after[3])]
     return pieces or [text], {kind for kind, _ in cases}, rest
@@ -898,20 +904,21 @@ def merged(first, second):
 
 
 def settle(text, answers):
-    """(steps, yes, swapped, stale) for the answers. The latest line for a slot and value wins.
+    """(steps, yes, swapped, stale, hollow) for the answers. The latest line for a slot and value wins.
 
     steps is the decisions text after each replacement, in confirmed.md order, so the last one is what the mapper maps.
     yes is the (slot, value) of each latest yes whose value is in the text when that yes applies. stale is each other
     latest yes: it clears nothing, not even a value a later line writes. swapped is the (slot, value) of each
     replacement made. The new answer sits where the old value was, so a later line can answer it, and the order of the
     lines in decisions.md does not matter. Each line applies once, to every line with that slot and value it finds
-    then. A replacement only answers an item: it never replaces a value with a format error.
+    then. A replacement only answers an item: it never replaces a value with a format error. hollow is the `needs a
+    value` fail for each line a new answer replaces with only a label or nothing. See answer_blank().
     """
     latest = {}
     for slot, value, answer in answers:
         latest.pop((slot, value), None)
         latest[(slot, value)] = answer
-    steps, yes, swapped, stale = [text], [], [], []
+    steps, yes, swapped, stale, hollow = [text], [], [], [], []
     for key, answer in latest.items():
         here = [e for e in entries(sections_of(steps[-1])) if (e.slot, e.value) == key]
         if answer == "yes":
@@ -921,11 +928,12 @@ def settle(text, answers):
         if not found:
             continue
         swapped.append(key)
+        hollow += [f"{entry.label[:-2] or entry.slot.lower()}: needs a value" for entry in found if answer_blank(answer)]
         new = steps[-1]
         for entry in found:
             new = replaced(new, entry, answer)
         steps.append(new)
-    return steps, yes, swapped, stale
+    return steps, yes, swapped, stale, hollow
 
 
 Result = namedtuple("Result", "code results pending notes used text broken")
@@ -942,10 +950,11 @@ def verdict(text, confirmed_text=""):
     answers, confirm_fails = read_confirmed(confirmed_text)
     # The format checks read decisions.md as written, so no answer clears a format error. Each new answer is read again
     # in its place, at every step, so it can add an error or an item, and a later answer never removes one.
-    steps, yes, swapped, stale = settle(text, answers)
+    steps, yes, swapped, stale, hollow = settle(text, answers)
     results = check(text)
     for step in steps[1:]:
         results = merged(results, check(step))
+    results = merged(results, [(EXTRA_CHECK, hollow)])
     text = steps[-1]
     results.append((CONFIRMED_CHECK, confirm_fails))
     failed = any(fails for _, fails in results)

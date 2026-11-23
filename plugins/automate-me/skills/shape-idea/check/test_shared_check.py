@@ -1,4 +1,4 @@
-"""Run: python3 check/test_shared_check.py [item1 ... item29]
+"""Run: python3 check/test_shared_check.py [item1 ... item30]
 
 Every value goes through one shared check, so a fix reaches every slot. Each item below is one rule of that check.
 With no argument every item runs. With names, only those run. The property items use a fixed seed and stay fast.
@@ -20,7 +20,8 @@ sys.path.insert(0, os.path.join(SKILLS, "outcome", "check"))
 sys.path.insert(0, os.path.join(SKILLS, "shared"))
 from check_brief import ask_lines, check as brief_check, core, eval_cases  # noqa: E402
 from check_decisions import (  # noqa: E402
-    BRIEF_SLOT, EXTRA_NAME, blank, case_pieces, entries, judge_value, main as check_main, replaced, sections_of, verdict)
+    BRIEF_SLOT, EXTRA_NAME, answer_blank, blank, case_pieces, entries, judge_value, main as check_main, replaced,
+    sections_of, verdict)
 from check_writing import check_writing  # noqa: E402
 from map_decisions import main as map_main, map_text  # noqa: E402
 
@@ -1007,13 +1008,13 @@ def item29():
         for spelled in {label, label.title(), label.upper()}:
             for new in (f"{wrap}{spelled}{colon}{mirror}", f"{wrap}{spelled}{mirror}{colon}", f"{wrap}{spelled}{mirror}",
                         f"{spelled}{colon}", spelled):
-                ok = blank(new) and judge_value("Tools", new).error == "blank"
+                ok = answer_blank(new)
                 ran += 1
                 failed += not ok
-                expect(f"item29 a label alone is blank: {new}", ok, f"blank {blank(new)}, verdict {judge_value('Tools', new)}")
+                expect(f"item29 a label alone is blank: {new}", ok, f"answer_blank {answer_blank(new)}")
             for value in ("Use a local spreadsheet", "_inventory.csv"):
                 for new in (f"{wrap}{spelled}{colon}{mirror} {value}", f"{wrap}{spelled}{colon} {value}{mirror}"):
-                    ok = not blank(new) and judge_value("Tools", new).error is None
+                    ok = not answer_blank(new) and judge_value("Tools", new).error is None
                     ran += 1
                     failed += not ok
                     expect(f"item29 a label with a value is not blank: {new}", ok, f"verdict {judge_value('Tools', new)}")
@@ -1030,7 +1031,51 @@ def item29():
            (code, mcode) == (0, 0) and slot_entries(brief, "Tools") == ["_inventory.csv"], seen(code, mcode, found, said))
 
 
-ITEMS = {f"item{n}": globals()[f"item{n}"] for n in range(1, 30)}
+def item30():
+    """The label-only rule is for confirmation answers alone. A Decided value is empty only when core() leaves nothing,
+    as check_brief reads it, so `- Output: **Done**` maps as written. Codex's cases run end to end with an empty
+    confirmed.md: both scripts exit 0, the brief holds the exact bytes, and check_brief passes. Generated: every cell of
+    the item29 grid, as a Decided Output value, is blank exactly when core() is empty; a sample runs verdict() and the
+    mapper in process, and a few run both scripts."""
+    wraps = ["".join(w) for n in range(1, 5) for w in itertools.product("*_", repeat=n)]
+    labels = sorted(set(EXTRA_NAME) | set(BRIEF_SLOT) | {name.lower() for name in BRIEF_SLOT.values()})
+    base = swap("- Tool: Maybe use a spreadsheet", "- Tool: LibreOffice Calc", GATE)
+    old = "- Output: A sign-in status message"
+
+    def decided(value):
+        return swap(old, f"- Output: {value}", base)
+
+    def as_written(name, value, confirmed=None):
+        code, mcode, found, brief, said = flow(decided(value), confirmed)
+        expect(f"item30 {name}", (code, mcode) == (0, 0) and slot_entries(brief, "Output") == [value]
+               and brief_exit(brief) == 0, f"Output entries {slot_entries(brief, 'Output')}\n" + seen(code, mcode, found, said))
+
+    for value in ("**Done**", "*Done*", "Done", "**done**", "**Goal**", "**Output**", "**Tools**"):
+        as_written(f"a Decided Output is kept as written: {value}", value, "")
+    as_written("the literal-output fixture maps as written", "**Done**")
+
+    cells = sorted({new for label, wrap, colon in itertools.product(labels, wraps, (":", "\uff1a"))
+                    for spelled in {label, label.title(), label.upper()}
+                    for new in (f"{wrap}{spelled}{colon}{wrap[::-1]}", f"{wrap}{spelled}{wrap[::-1]}{colon}",
+                                f"{wrap}{spelled}{wrap[::-1]}", f"{spelled}{colon}", spelled)})
+    failed = 0
+    for i, new in enumerate(cells):
+        empty = not core(new)
+        ok = blank(new) == empty and (judge_value("Output", new).error == "blank") == empty
+        why = f"core {core(new)!r}, blank {blank(new)}, verdict {judge_value('Output', new)}"
+        if ok and i % 40 == 0:
+            text = decided(new)
+            result = verdict(text, "")
+            ok = result.code == (1 if empty else 0) and (empty or f"- Output: {new}" in map_text(result.text).splitlines())
+            why += f", verdict code {result.code}"
+        failed += not ok
+        expect(f"item30 a Decided Output is blank only when core() is empty: {new}", ok, why)
+    print(f"item30 grid: {len(cells)} cells, {failed} failed")
+    for new in ("**Tool:**", "*Tool:*", "__Tool__:", "***Tool:***", "**Tools:**"):
+        as_written(f"a label-shaped Decided Output is kept as written: {new}", new, "")
+
+
+ITEMS = {f"item{n}": globals()[f"item{n}"] for n in range(1, 31)}
 
 if __name__ == "__main__":
     for name in sys.argv[1:] or ITEMS:
