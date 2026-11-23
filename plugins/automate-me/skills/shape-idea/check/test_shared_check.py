@@ -1,4 +1,4 @@
-"""Run: python3 check/test_shared_check.py [item1 ... item23]
+"""Run: python3 check/test_shared_check.py [item1 ... item25]
 
 Every value goes through one shared check, so a fix reaches every slot. Each item below is one rule of that check.
 With no argument every item runs. With names, only those run. The property items use a fixed seed and stay fast.
@@ -17,10 +17,10 @@ SKILLS = os.path.normpath(os.path.join(HERE, "..", ".."))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(SKILLS, "outcome", "check"))
 sys.path.insert(0, os.path.join(SKILLS, "shared"))
-from check_brief import ask_lines, check as brief_check  # noqa: E402
-from check_decisions import entries, main as check_main, sections_of, verdict  # noqa: E402
+from check_brief import ask_lines, check as brief_check, core, eval_cases  # noqa: E402
+from check_decisions import case_pieces, entries, main as check_main, sections_of, verdict  # noqa: E402
 from check_writing import check_writing  # noqa: E402
-from map_decisions import main as map_main  # noqa: E402
+from map_decisions import main as map_main, map_text  # noqa: E402
 
 CHECK = os.path.join(HERE, "check_decisions.py")
 MAP = os.path.join(SKILLS, "outcome", "check", "map_decisions.py")
@@ -758,7 +758,89 @@ def item23():
            done.stdout[-1500:])
 
 
-ITEMS = {f"item{n}": globals()[f"item{n}"] for n in range(1, 24)}
+def evals_line(value):
+    return swap(LAST, f"{LAST}\n- evals: {value}")
+
+
+def case_parity(value):
+    """Why check_brief and the shared check split `value` differently, or '' when they agree on its cases."""
+    cases, (pieces, kinds, _) = eval_cases(value), case_pieces(value)
+    blanks = [body for _, body in cases if not core(body)] + [piece for piece in pieces if not core(piece)]
+    if {kind for kind, _ in cases} != kinds or blanks:
+        return f"eval_cases {cases}, case_pieces kinds {sorted(kinds)}, pieces {pieces}"
+    return ""
+
+
+def end_to_end(name, text, slot, value):
+    """A value the shared check passes maps to a brief that passes. One it lists for missing cases is no format
+    error in the brief: check_brief asks for the cases too, and never reads a blank case body."""
+    code, mcode, found, brief, said = flow(text)
+    expect(f"{name}: never format invalid", code in (0, 2) and mcode == code, seen(code, mcode, found, said))
+    if code == 0:
+        expect(f"{name}: the brief holds it and passes",
+               mcode == 0 and value in (slot_entries(brief, slot) or []) and brief_exit(brief) == 0,
+               seen(code, mcode, found, said) + brief[-400:])
+    elif any(i["Why"].startswith("Evals needs one case that should pass") for i in found):
+        fails = [f for _, fs in brief_check(map_text(text)) for f in fs]
+        expect(f"{name}: the brief asks for the cases, with no blank case", not fails
+               and "ASK: Evals: Is there a pass case and a fail case here?" in ask_lines(map_text(text)), fails)
+
+
+def item24():
+    """A should pass or should fail phrase with a blank body is not a case, in check_brief and the shared check alike."""
+    value = ("Should fail if the required email address is missing. "
+             "A registered user should pass, a suspended user should fail.")
+    for slot, text in (("Evals", evals_line(value)), ("Output", swap(OUT, f"- output: {value}"))):
+        code, mcode, found, brief, said = flow(text)
+        expect(f"item24 a leading phrase beside a pass and a fail case passes in {slot}",
+               (code, mcode) == (0, 0) and not found and slot_entries(brief, slot) == [value]
+               and brief_exit(brief) == 0, seen(code, mcode, found, said) + brief[-400:])
+    for value in ("must fail if the price list is blank. A signed form should pass, a blank form should fail.",
+                  "Should pass if the form has a name. A blank form should fail, a signed form should pass."):
+        code, mcode, found, brief, said = flow(evals_line(value))
+        expect(f"item24 a leading phrase beside real cases passes: {value}",
+               (code, mcode) == (0, 0) and not found and slot_entries(brief, "Evals") == [value]
+               and brief_exit(brief) == 0, seen(code, mcode, found, said) + brief[-400:])
+    # The sweep: short pieces in a fixed list of orders. Both parsers read the same cases from every value, and the
+    # brief check agrees with the shared check on it.
+    lead, good, bad = "Should fail if the price list is blank", "a signed form should pass", "a blank form should fail"
+    hedge, colon = "maybe log both", "pass: a signed form; fail: a blank form"
+    orders = [(lead, good, bad), (lead, bad, good), (good, lead, bad), (good, bad, lead), (lead, good),
+              (lead, bad), (good, lead), (lead, good, bad, hedge), (lead, colon), (lead, good, colon),
+              (colon, lead), (good, bad), (lead,), (good, bad, lead, hedge), (bad, lead, good)]
+    for order in orders:
+        value = ". ".join(order) + "."
+        why = case_parity(value)
+        expect(f"item24 both parsers read the same cases: {value}", not why, why)
+        end_to_end(f"item24 Evals {value}", evals_line(value), "Evals", value)
+    for order in ((lead, good, bad), (good, lead, bad)):
+        value = ". ".join(order) + "."
+        end_to_end(f"item24 Output {value}", swap(OUT, f"- output: {value}"), "Output", value)
+
+
+def item25():
+    """A new answer that repeats the line's label in bold or italic keeps one label and no leftover mark."""
+    cases = [
+        ("tool", "Tools", "Maybe use a spreadsheet", "Use a local spreadsheet",
+         ("**Tool:** Use a local spreadsheet", "*Tool:* Use a local spreadsheet", "__Tool__: Use a local spreadsheet",
+          "_Tools：_ Use a local spreadsheet")),
+        ("agents", "Agents and roles", "maybe a parent runs the stall", "A parent runs the stall",
+         ("*Agent:* A parent runs the stall", "**Agents and roles:** A parent runs the stall",
+          "__agents__ ：A parent runs the stall")),
+        ("evals", "Evals", "maybe pass: a signed form; fail: a blank form", "pass: a signed form; fail: a blank form",
+         ("**Eval:** pass: a signed form; fail: a blank form",)),
+    ]
+    for label, slot, old, clean, news in cases:
+        for new in news:
+            code, mcode, found, brief, said = flow(swap(LAST, f"{LAST}\n- {label}: {old}"), answer(slot, old, new))
+            got = slot_entries(brief, slot) or []
+            expect(f"item25 a bold or italic label is written once: {label}: | {new}",
+                   (code, mcode) == (0, 0) and got == [clean] and brief_exit(brief) == 0
+                   and not any(re.search(r"(?i)[*_]|\b(tools?|agents?|eval)\s*[:：]", e) for e in got),
+                   f"{slot} entries {got}\n" + seen(code, mcode, found, said))
+
+
+ITEMS = {f"item{n}": globals()[f"item{n}"] for n in range(1, 26)}
 
 if __name__ == "__main__":
     for name in sys.argv[1:] or ITEMS:

@@ -592,11 +592,7 @@ def check(text):
         if handoff_ready and writing != ["pass"] else [])
     add("prose passes the writing check", prose_fails(visible if not hidden else visible + "\n" + hidden))
     if not any(fails for _, fails in results):
-        # An Evals line with no pass or no fail case is already listed, and no answer clears it, so the brief check
-        # reads the brief without it and a blank case body there is not a second, format error.
-        held = [(entry, judge_value(entry.slot, entry.text, entry.role).item) for entry, _, _ in judged]
-        gaps = [entry for entry, item in held if item and not item.clears]
-        add(BRIEF_CHECK, [fail for _, fails in check_brief(mapped(dropped(text, gaps))) for fail in fails])
+        add(BRIEF_CHECK, [fail for _, fails in check_brief(mapped(text)) for fail in fails])
     return results
 
 
@@ -709,18 +705,15 @@ Verdict = namedtuple("Verdict", "error piece item")
 
 def case_pieces(text):
     """(pieces, kinds, rest) of one Evals value. pieces are what check_brief reads: the text before the first colon
-    label, and each case body. kinds holds pass and fail for the cases found. A should pass or should fail phrase with
-    a blank body is not a case. rest is the text from each phrase to the next colon label or the end, which no case
-    body holds, read with its phrase so it is never blank. A value with no case is one piece."""
+    label, and each case body of eval_cases. kinds holds pass and fail for those cases. rest is the text from each
+    phrase to the next colon label or the end, which no case body holds, read with its phrase so it is never blank. A
+    value with no case is one piece."""
     plain, marks = case_marks(text)
-    pieces, kinds, rest = [eval_lead(text)] * bool(core(eval_lead(text))), set(), []
-    for i, ((start, _, kind, colon), (_, body)) in enumerate(zip(marks, eval_cases(text))):
-        if colon or not blank(body):
-            pieces, kinds = pieces + [body], kinds | {kind}
-        after = marks[i + 1] if i + 1 < len(marks) else None
-        if not colon and (not after or after[3]):
-            rest.append(plain[start:after[0] if after else len(plain)])
-    return pieces or [text], kinds, rest
+    cases, lead = eval_cases(text), eval_lead(text)
+    pieces = [lead] * bool(core(lead)) + [body for _, body in cases]
+    rest = [plain[start:after[0] if after else len(plain)]
+            for (start, _, _, colon), after in zip(marks, marks[1:] + [None]) if not colon and (not after or after[3])]
+    return pieces or [text], {kind for kind, _ in cases}, rest
 
 
 def read_piece(text, role):
@@ -860,24 +853,17 @@ def rows_of(lines, entry):
 
 def replaced(text, entry, new):
     """The decisions text with the line of `entry` holding `new` in place of its value. The label stays, once: a new
-    answer that starts with it or another name for it (`tool:` for `tools:`), in any case and spacing, is written with
-    one space after its colon."""
+    answer that starts with it or another name for it (`tool:` for `tools:`), in any case and spacing, bold or italic
+    as the parser reads a label (`**Tool:**`), is written with one space after its colon."""
     name = entry.label.rstrip(": ")
     if name:
         names = {name} | {alias for alias, canonical in EXTRA_NAME.items() if canonical == name}
         spelled = "|".join(r"\s+".join(map(re.escape, n.split())) for n in sorted(names, key=len, reverse=True))
-        new = re.sub(rf"^(?:{spelled})\s*[:：]\s*", "", new, flags=re.I)
+        new = re.sub(rf"^[*_]*(?:{spelled})[*_]*\s*[:：][*_]*\s*", "", new, flags=re.I)
     lines = text.split("\n")
     for i in rows_of(lines, entry):
         lines[i] = f"{lines[i][0]} {entry.label}{new}"
     return "\n".join(lines)
-
-
-def dropped(text, gone):
-    """The decisions text without the lines that hold each entry in `gone`."""
-    lines = text.split("\n")
-    rows = {i for entry in gone for i in rows_of(lines, entry)}
-    return "\n".join(line for i, line in enumerate(lines) if i not in rows)
 
 
 def has_error(entry, text):

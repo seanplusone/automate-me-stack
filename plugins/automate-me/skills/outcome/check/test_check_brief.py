@@ -5,7 +5,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from check_brief import asks, check, classify, parse  # noqa: E402
+from check_brief import asks, check, classify, eval_cases, parse  # noqa: E402
 
 FAILS = []
 RAN = []
@@ -462,6 +462,17 @@ RAN.append("cli Evals case ASK line format")
 ran = run_cli(slot("Evals", "- Evals: Pass: keep a row."))
 if "ASK: Evals: Is there a pass case and a fail case here?" not in ran.stdout.splitlines() or ran.returncode != 2:
     FAILS.append(f"cli Evals case ASK line format:\n{ran.stdout}")
+
+
+# A should pass or should fail phrase with a blank body is not a case, so a leading phrase adds no empty case.
+LEAD = "Should fail if the email is missing. A signed form should pass, a blank form should fail."
+RAN.append("a leading phrase with nothing before it is not a case")
+if [(kind, body.strip(" ,.")) for kind, body in eval_cases(LEAD)] != [
+        ("pass", "if the email is missing. A signed form"), ("fail", "a blank form")]:
+    FAILS.append(f"a leading phrase with nothing before it is not a case: {eval_cases(LEAD)}")
+expect_outcome("a leading phrase beside a pass and a fail case passes", slot("Evals", f"- Evals: {LEAD}"), "pass")
+expect_outcome("a leading should pass is no pass case; asks, not fails",
+               slot("Evals", "- Evals: Should pass if the form is signed. A blank form should fail."), "ask")
 
 
 if __name__ == "__main__":

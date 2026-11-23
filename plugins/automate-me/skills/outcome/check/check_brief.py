@@ -61,8 +61,9 @@ Fails (exit 1) when:
 
 Evals cases: a label is the whole word `pass` or `fail` followed by `:`, or `should|must pass|fail`,
 anywhere in an item outside code spans. A colon label's body runs to the next label, and a phrase's
-body is the text before it. In an item that starts with a colon label, a phrase counts only when it
-ends the item, so `Fail: a row that should pass the price rule is dropped.` has no pass case. Text
+body is the text before it. A phrase whose body is blank, as one that starts the item or follows another
+label, is not a case, so `Should fail if the price is missing.` alone has no case. In an item that
+starts with a colon label, a phrase counts only when it ends the item, so `Fail: a row that should pass the price rule is dropped.` has no pass case. Text
 before an item's first colon label is judged too.
 `Fail-safe:` is not a fail case.
 
@@ -301,7 +302,8 @@ def eval_cases(item):
         if colon:
             found_cases.append((kind, text[end:marks[i + 1][0] if i + 1 < len(marks) else len(text)]))
         else:
-            found_cases.append((kind, text[marks[i - 1][1] if i else 0:start]))
+            body = text[marks[i - 1][1] if i else 0:start]
+            found_cases += [(kind, body)] * bool(core(body))
     return found_cases
 
 
