@@ -854,12 +854,14 @@ def rows_of(lines, entry):
 def replaced(text, entry, new):
     """The decisions text with the line of `entry` holding `new` in place of its value. The label stays, once: a new
     answer that starts with it or another name for it (`tool:` for `tools:`), in any case and spacing, bold or italic
-    as the parser reads a label (`**Tool:**`), is written with one space after its colon."""
+    as the parser reads a label (`**Tool:**`, `__Tool__:`), is written with one space after its colon. Only the closing
+    mark that matches the opening one goes, before or after the colon, so `Tool:_inventory.csv` keeps its `_`."""
     name = entry.label.rstrip(": ")
     if name:
         names = {name} | {alias for alias, canonical in EXTRA_NAME.items() if canonical == name}
         spelled = "|".join(r"\s+".join(map(re.escape, n.split())) for n in sorted(names, key=len, reverse=True))
-        new = re.sub(rf"^[*_]*(?:{spelled})[*_]*\s*[:：][*_]*\s*", "", new, flags=re.I)
+        new = re.sub(rf"^(?P<wrap>\*\*|__|\*|_)?(?:{spelled})(?:(?P=wrap)\s*[:：]|\s*[:：](?P=wrap)?)\s*", "", new,
+                     flags=re.I)
     lines = text.split("\n")
     for i in rows_of(lines, entry):
         lines[i] = f"{lines[i][0]} {entry.label}{new}"

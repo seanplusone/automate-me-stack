@@ -1,4 +1,4 @@
-"""Run: python3 check/test_shared_check.py [item1 ... item25]
+"""Run: python3 check/test_shared_check.py [item1 ... item26]
 
 Every value goes through one shared check, so a fix reaches every slot. Each item below is one rule of that check.
 With no argument every item runs. With names, only those run. The property items use a fixed seed and stay fast.
@@ -840,7 +840,44 @@ def item25():
                    f"{slot} entries {got}\n" + seen(code, mcode, found, said))
 
 
-ITEMS = {f"item{n}": globals()[f"item{n}"] for n in range(1, 26)}
+def item26():
+    """A repeated label loses only the closing mark that matches its opening one, so a value that starts with _ or * is
+    kept exactly as written."""
+    def tools(new):
+        return flow(swap(LAST, f"{LAST}\n- tool: Maybe use a spreadsheet"), answer("Tools", "Maybe use a spreadsheet", new))
+
+    def kept(name, new, value):
+        """Exit 0 from both scripts and the brief maps exactly `value` to Tools."""
+        code, mcode, found, brief, said = tools(new)
+        got = slot_entries(brief, "Tools")
+        expect(f"item26 {name}: Tools: | {new}",
+               (code, mcode) == (0, 0) and got == [value] and brief_exit(brief) == 0,
+               f"Tools entries {got}, want [{value!r}]\n" + seen(code, mcode, found, said))
+
+    def listed(new, value):
+        """Both scripts list exactly `value` for Tools, never the value with its first mark eaten."""
+        code, mcode, found, brief, said = tools(new)
+        mapped = items(mapper_out(swap(LAST, f"{LAST}\n- tool: Maybe use a spreadsheet"),
+                                  answer("Tools", "Maybe use a spreadsheet", new)))
+        mine = [[i["value"] for i in got if i["slot"] == "Tools"] for got in (found, mapped)]
+        expect(f"item26 a short value is listed as written: Tools: | {new}",
+               (code, mcode) == (2, 2) and mine == [[value], [value]],
+               f"Tools items {mine}, want [{value!r}] from each\n" + seen(code, mcode, found, said))
+
+    for new, value in (("Tool:_inventory.csv", "_inventory.csv"), ("Tool:*notes.txt", "*notes.txt"),
+                       ("**Tool:**_inventory.csv", "_inventory.csv")):
+        kept("a reported value keeps its first mark", new, value)
+    for new, value in (("Tool:*x", "*x"), ("**Tool:**_x", "_x"), ("Tool: *x", "*x"), ("Tool:_x", "_x")):
+        listed(new, value)
+    for value in ("_inventory.csv", "*notes.txt"):
+        for space in ("", " "):
+            kept("no wrap", f"Tool:{space}{value}", value)
+            for wrap in ("*", "**", "_", "__"):
+                kept(f"wrap {wrap} closed after the colon", f"{wrap}Tool:{wrap}{space}{value}", value)
+                kept(f"wrap {wrap} closed before the colon", f"{wrap}Tool{wrap}:{space}{value}", value)
+
+
+ITEMS = {f"item{n}": globals()[f"item{n}"] for n in range(1, 27)}
 
 if __name__ == "__main__":
     for name in sys.argv[1:] or ITEMS:
