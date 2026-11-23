@@ -260,9 +260,16 @@ def untouched(value):
     return core(value) in TEMPLATE or judge(rest)[0] == "fail"
 
 
+# A value that is only a slot or line label, with an optional colon, once * and _ are gone: `**Tool:**` says nothing.
+LABEL_ONLY = re.compile(r"^(?:" + "|".join(r"\s+".join(map(re.escape, name.split())) for name in sorted(
+    set(EXTRA_NAME) | set(BRIEF_SLOT) | {slot.lower() for slot in BRIEF_SLOT.values()}, key=len, reverse=True))
+    + r")\s*[:：]?$", NAMES)
+
+
 def blank(value):
-    """True when nothing is left once markup, punctuation and one leading tag go, as check_brief's core() reads it."""
-    return not core(value or "")
+    """True when nothing is left once markup, punctuation and one leading tag go, as check_brief's core() reads it, or
+    when the value is only a label: with * and _ gone, a slot or line name and an optional colon."""
+    return not core(value or "") or bool(LABEL_ONLY.match(re.sub(r"[*_]", "", value or "").strip()))
 
 
 def has_question(text):
@@ -710,7 +717,7 @@ def case_pieces(text):
     value with no case is one piece."""
     plain, marks = case_marks(text)
     cases, lead = eval_cases(text), eval_lead(text)
-    pieces = [lead] * bool(core(lead)) + [body for _, body in cases]
+    pieces = [lead] * (not blank(lead)) + [body for _, body in cases]
     rest = [plain[start:after[0] if after else len(plain)]
             for (start, _, _, colon), after in zip(marks, marks[1:] + [None]) if not colon and (not after or after[3])]
     return pieces or [text], {kind for kind, _ in cases}, rest

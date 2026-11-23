@@ -1,4 +1,4 @@
-"""Run: python3 check/test_shared_check.py [item1 ... item28]
+"""Run: python3 check/test_shared_check.py [item1 ... item29]
 
 Every value goes through one shared check, so a fix reaches every slot. Each item below is one rule of that check.
 With no argument every item runs. With names, only those run. The property items use a fixed seed and stay fast.
@@ -19,7 +19,8 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(SKILLS, "outcome", "check"))
 sys.path.insert(0, os.path.join(SKILLS, "shared"))
 from check_brief import ask_lines, check as brief_check, core, eval_cases  # noqa: E402
-from check_decisions import case_pieces, entries, main as check_main, replaced, sections_of, verdict  # noqa: E402
+from check_decisions import (  # noqa: E402
+    BRIEF_SLOT, EXTRA_NAME, blank, case_pieces, entries, judge_value, main as check_main, replaced, sections_of, verdict)
 from check_writing import check_writing  # noqa: E402
 from map_decisions import main as map_main, map_text  # noqa: E402
 
@@ -878,6 +879,27 @@ def item26():
                     kept(f"wrap {wrap} is kept as typed", new, new)
 
 
+GATE = """# Decisions: Registration gate
+## Decided
+- Goal: Gate access to the volunteer portal
+- Done: Registered volunteers can sign in
+- Output: A sign-in status message
+- Tool: Maybe use a spreadsheet
+- Verify: Test the sign-in form using two sample accounts
+- Constraints: Use only the staging server
+## Open
+- none
+## Parked
+- none
+## Handoff
+- next: /automate-me:outcome
+- stop: done
+- turns: 3
+- writing: pass
+- map: Use the standard slot mapping
+"""
+
+
 STYLED_SLOTS = (("tool", "Tools", "Maybe use a spreadsheet", ("tool", "tools", "Tool", "TOOLS"),
                  ("_inventory.csv", "*notes.txt", "a printed price list")),
                 ("agents", "Agents and roles", "maybe a parent runs the stall",
@@ -949,25 +971,7 @@ def item28():
                and brief.splitlines().count(f"- {slot}: {value}") == 1,
                f"{slot} entries {got}, want [{value!r}]\n" + seen(code, mcode, found, said))
     # The round-14 fixture: a Decided Tool line and a whole-answer bold italic confirmation.
-    text = """# Decisions: Registration gate
-## Decided
-- Goal: Gate access to the volunteer portal
-- Done: Registered volunteers can sign in
-- Output: A sign-in status message
-- Tool: Maybe use a spreadsheet
-- Verify: Test the sign-in form using two sample accounts
-- Constraints: Use only the staging server
-## Open
-- none
-## Parked
-- none
-## Handoff
-- next: /automate-me:outcome
-- stop: done
-- turns: 3
-- writing: pass
-- map: Use the standard slot mapping
-"""
+    text = GATE
     confirmed = "- Tools: Maybe use a spreadsheet | ***Tool: Use a local spreadsheet***\n"
     code, mcode, found, brief, said = flow(text, confirmed)
     lines = [line for line in brief.splitlines() if line.startswith("- Tools:")]
@@ -977,7 +981,56 @@ def item28():
            f"Tools lines {lines}\n" + seen(code, mcode, found, said))
 
 
-ITEMS = {f"item{n}": globals()[f"item{n}"] for n in range(1, 29)}
+def item29():
+    """A confirmed answer that is only a label, styled or not, needs a value: with * and _ gone, nothing but a slot
+    label and an optional colon is left. Both scripts exit 1 with `tools: needs a value` and print no brief. Generated:
+    every wrap of * and _ of length 1 to 4, every known label, colon inside the wrap, outside it, or none. An answer
+    with text after the label is not empty, and a sample is kept as typed by both scripts."""
+    wraps = ["".join(w) for n in range(1, 5) for w in itertools.product("*_", repeat=n)]
+    labels = sorted(set(EXTRA_NAME) | set(BRIEF_SLOT) | {name.lower() for name in BRIEF_SLOT.values()})
+    old = "Maybe use a spreadsheet"
+    tools = swap(LAST, f"{LAST}\n- tool: {old}")
+
+    def needs_value(name, text, confirmed):
+        code, mcode, found, _, said = flow(text, confirmed)
+        out = mapper_out(text, confirmed)
+        expect(f"item29 {name}", (code, mcode) == (1, 1) and "tools: needs a value" in said and "# Brief" not in out,
+               seen(code, mcode, found, said) + "\nmapper: " + out[-300:])
+
+    for new in ("**Tool:**", "*Tool:*", "__Tool__:", "***Tool:***", "**Tools:**", "Tool:"):
+        needs_value(f"a label alone needs a value: Tools: | {new}", tools, answer("Tools", old, new))
+    needs_value("the round-16 fixture needs a value", GATE, f"- Tools: {old} | **Tool:**\n")
+
+    ran = failed = 0
+    for label, wrap, colon in itertools.product(labels, wraps, (":", "：")):
+        mirror = wrap[::-1]
+        for spelled in {label, label.title(), label.upper()}:
+            for new in (f"{wrap}{spelled}{colon}{mirror}", f"{wrap}{spelled}{mirror}{colon}", f"{wrap}{spelled}{mirror}",
+                        f"{spelled}{colon}", spelled):
+                ok = blank(new) and judge_value("Tools", new).error == "blank"
+                ran += 1
+                failed += not ok
+                expect(f"item29 a label alone is blank: {new}", ok, f"blank {blank(new)}, verdict {judge_value('Tools', new)}")
+            for value in ("Use a local spreadsheet", "_inventory.csv"):
+                for new in (f"{wrap}{spelled}{colon}{mirror} {value}", f"{wrap}{spelled}{colon} {value}{mirror}"):
+                    ok = not blank(new) and judge_value("Tools", new).error is None
+                    ran += 1
+                    failed += not ok
+                    expect(f"item29 a label with a value is not blank: {new}", ok, f"verdict {judge_value('Tools', new)}")
+    print(f"item29 grid: {ran} cells, {failed} failed")
+
+    for new in ("**Tool:** Use a local spreadsheet", "***Tool: Use a local spreadsheet***", "__Tool__: _inventory.csv",
+                "*_Tools_*： Use a local spreadsheet"):
+        code, mcode, found, brief, said = flow(tools, answer("Tools", old, new))
+        expect(f"item29 a label with a value is kept as typed: Tools: | {new}",
+               (code, mcode) == (0, 0) and slot_entries(brief, "Tools") == [new] and brief_exit(brief) == 0,
+               f"Tools entries {slot_entries(brief, 'Tools')}\n" + seen(code, mcode, found, said))
+    code, mcode, found, brief, said = flow(tools, answer("Tools", old, "Tool:_inventory.csv"))
+    expect("item29 a plain label still goes: Tools: | Tool:_inventory.csv",
+           (code, mcode) == (0, 0) and slot_entries(brief, "Tools") == ["_inventory.csv"], seen(code, mcode, found, said))
+
+
+ITEMS = {f"item{n}": globals()[f"item{n}"] for n in range(1, 30)}
 
 if __name__ == "__main__":
     for name in sys.argv[1:] or ITEMS:
