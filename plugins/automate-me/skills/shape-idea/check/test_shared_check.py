@@ -1,10 +1,11 @@
-"""Run: python3 check/test_shared_check.py [item1 ... item26]
+"""Run: python3 check/test_shared_check.py [item1 ... item27]
 
 Every value goes through one shared check, so a fix reaches every slot. Each item below is one rule of that check.
 With no argument every item runs. With names, only those run. The property items use a fixed seed and stay fast.
 """
 import contextlib
 import io
+import itertools
 import os
 import random
 import re
@@ -18,7 +19,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(SKILLS, "outcome", "check"))
 sys.path.insert(0, os.path.join(SKILLS, "shared"))
 from check_brief import ask_lines, check as brief_check, core, eval_cases  # noqa: E402
-from check_decisions import case_pieces, entries, main as check_main, sections_of, verdict  # noqa: E402
+from check_decisions import case_pieces, entries, main as check_main, replaced, sections_of, verdict  # noqa: E402
 from check_writing import check_writing  # noqa: E402
 from map_decisions import main as map_main, map_text  # noqa: E402
 
@@ -877,7 +878,70 @@ def item26():
                 kept(f"wrap {wrap} closed before the colon", f"{wrap}Tool{wrap}:{space}{value}", value)
 
 
-ITEMS = {f"item{n}": globals()[f"item{n}"] for n in range(1, 27)}
+def item27():
+    """A repeated label in any wrap of * and _ goes with the closer that mirrors its opening run, before or after the
+    colon or missing, and the value is kept exactly, so the brief writes the slot label once. Generated: every wrap of
+    length 0 to 4, every closer position, with and without a space, every name for the slot, values that start with
+    _, * or a letter. The grid reads what replaced() writes; a few cells run through both scripts."""
+    slots = (("tool", "Tools", "Maybe use a spreadsheet", ("tool", "tools"),
+              ("_inventory.csv", "*notes.txt", "a printed price list")),
+             ("agents", "Agents and roles", "maybe a parent runs the stall", ("agent", "agents", "agents and roles"),
+              ("_A parent runs the stall", "*A parent runs the stall", "A parent runs the stall")),
+             ("evals", "Evals", "maybe pass: a signed form; fail: a blank form", ("eval", "evals"),
+              ("pass: a signed form; fail: a blank form", "*pass: a signed form; fail: a blank form")))
+    wraps = [""] + ["".join(w) for n in range(1, 5) for w in itertools.product("*_", repeat=n)]
+    assert len(wraps) == 31
+
+    def cells(alias, value):
+        """(how, new answer) for each wrap, closer position and space. A missing closer with no space before a value
+        that starts with the mirror is the text of a closer after the colon, so that one cell is left out."""
+        for wrap in wraps:
+            mirror = wrap[::-1]
+            for space in ("", " "):
+                if not wrap:
+                    yield f"no wrap, space {space!r}", f"{alias}:{space}{value}"
+                    continue
+                yield f"{wrap} closed before the colon, space {space!r}", f"{wrap}{alias}{mirror}:{space}{value}"
+                yield f"{wrap} closed after the colon, space {space!r}", f"{wrap}{alias}:{mirror}{space}{value}"
+                if space or not value.startswith(mirror):
+                    yield f"{wrap} not closed, space {space!r}", f"{wrap}{alias}:{space}{value}"
+
+    ran = failed = 0
+    for label, slot, old, aliases, values in slots:
+        text = swap(LAST, f"{LAST}\n- {label}: {old}")
+        entry = next(e for e in entries(sections_of(text)) if e.slot == slot)
+        for alias, value in itertools.product(aliases, values):
+            for how, new in cells(alias, value):
+                after = replaced(text, entry, new)
+                got = [e.value for e in entries(sections_of(after)) if e.slot == slot]
+                line = f"- {slot}: {got[0]}" if len(got) == 1 else None
+                brief = map_text(after, [(slot, value)])
+                ok = (got == [value] and line in brief.splitlines() and slot_entries(brief, slot) == [value]
+                      and not re.match(rf"(?i)[*_]*\s*{re.escape(alias)}\s*[*_]*\s*[:：]", got[0]))
+                ran += 1
+                failed += not ok
+                expect(f"item27 {how}: {slot}: | {new}", ok,
+                       f"{slot} values {got}, brief entries {slot_entries(brief, slot)}, want [{value!r}]")
+    print(f"item27 grid: {ran} cells, {failed} failed")
+
+    sample = (("Tools", "Tool:_inventory.csv", "_inventory.csv"), ("Tools", "**Tool:**_inventory.csv", "_inventory.csv"),
+              ("Tools", "***Tool***: Use a local spreadsheet", "Use a local spreadsheet"),
+              ("Tools", "*_Tool_*: Use a local spreadsheet", "Use a local spreadsheet"),
+              ("Tools", "**_Tool_**: a printed price list", "a printed price list"),
+              ("Tools", "**Tool:_inventory.csv", "_inventory.csv"),
+              ("Agents and roles", "**Agents and roles:** A parent runs the stall", "A parent runs the stall"))
+    for slot, new, value in sample:
+        label, _, old, aliases, _ = next(s for s in slots if s[1] == slot)
+        code, mcode, found, brief, said = flow(swap(LAST, f"{LAST}\n- {label}: {old}"), answer(slot, old, new))
+        got = slot_entries(brief, slot)
+        expect(f"item27 both scripts: {slot}: | {new}",
+               (code, mcode) == (0, 0) and got == [value] and brief_exit(brief) == 0
+               and brief.count(f"- {slot}: {value}") == 1
+               and not any(re.search(rf"(?i){re.escape(a)}\s*[*_]*\s*[:：]", e) for e in got for a in aliases),
+               f"{slot} entries {got}, want [{value!r}]\n" + seen(code, mcode, found, said))
+
+
+ITEMS = {f"item{n}": globals()[f"item{n}"] for n in range(1, 28)}
 
 if __name__ == "__main__":
     for name in sys.argv[1:] or ITEMS:
