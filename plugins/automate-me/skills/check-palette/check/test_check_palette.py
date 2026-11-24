@@ -1,8 +1,5 @@
-"""Run: python3 check/test_check_palette.py
-
-Runs check_palette.py on every case, then proves each rule matters: a copy of the script with one
-rule broken must fail the table on the case that guards that rule. Prints SKIP without Playwright.
-"""
+"""Run: python3 check/test_check_palette.py. Runs every case, then breaks one rule at a time in a
+copy of the script and fails if the copy still passes. Prints SKIP without Playwright."""
 import os
 import shutil
 import subprocess
@@ -16,18 +13,19 @@ sys.path.insert(0, HERE)
 import check_palette as cp  # noqa: E402
 
 PAL = ["--palette", os.path.join(CASES, "palette.json")]
-OK = "CHECK-PALETTE: OK"
+OK, ERR = "CHECK-PALETTE: OK", "CHECK-PALETTE: ERROR"
 TMP = tempfile.mkdtemp()
 BRIEF = os.path.join(TMP, "brief.md")
-open(BRIEF, "w").write("# Brief\n- Allow Beige: yes\n")
-for name, text in [("empty-list", "[]"), ("empty-dict", "{}"), ("blue", '["#3A6EA5"]')]:
-    open(os.path.join(TMP, name + ".json"), "w").write(text)
-ERR = "CHECK-PALETTE: ERROR"
+for name, text in [("brief.md", "# Brief\n- Allow Beige: yes\n"), ("empty-list.json", "[]"), ("empty-dict.json", "{}"), ("blue.json", '["#3A6EA5"]')]:
+    open(os.path.join(TMP, name), "w").write(text)
+shutil.copy(os.path.join(CASES, "beige-card.html"), os.path.join(TMP, "x#y.html"))
 
 # label, case, args, exit code, substring in output
 TABLE = [
     ("beige-card", "beige-card", [], 1, "beige (H="),
     ("beige-section", "beige-section", [], 1, "#F2EBD6 beige (H="),
+    ("hash-in-path", f"{TMP}/x#y", [], 1, "beige (H="),
+    ("faded", "faded", [], 1, "beige (H="),
     ("beige-allowed", "beige-allowed", ["--allow-beige"], 0, OK),
     ("beige-allowed-brief", "beige-allowed", ["--brief", BRIEF], 0, OK),
     ("beige-unallowed", "beige-allowed", [], 1, "beige (H="),
@@ -40,7 +38,7 @@ TABLE = [
     ("hidden", "hidden", [], 0, OK),
     ("empty-list", "palette-ok", ["--palette", f"{TMP}/empty-list.json"], 2, ERR),
     ("empty-dict", "palette-ok", ["--palette", f"{TMP}/empty-dict.json"], 2, ERR),
-    *[(f"delta-{d}", "palette-ok", [*PAL, "--max-delta", d], 2, ERR) for d in ("nan", "inf", "-1")],
+    *[(f"{o}={d}", "palette-ok", [*PAL, o, d], 2, ERR) for o in ("--max-delta", "--min-area") for d in ("nan", "inf", "-1")],
     ("neutral", "neutral", [], 0, OK),
     ("missing-page", "no-such-page", [], 2, ERR),
 ]
@@ -54,9 +52,10 @@ MUTANTS = [
     ("delta-huge", "MAX_DELTA_DEFAULT = 5 ", "MAX_DELTA_DEFAULT = 1000 ", "off-palette"),
     ("delta-zero", "MAX_DELTA_DEFAULT = 5 ", "MAX_DELTA_DEFAULT = 0 ", "near-palette"),
     ("body-only", 'ELEMENTS = "*"', 'ELEMENTS = "html, body"', "beige-card"),
-    ("alpha-ignored", "for (const c of layers)", "ctx.globalCompositeOperation = 'copy'; for (const c of layers)", "beige-section"),
+    ("alpha-ignored", "for (const [c, o] of layers)", "ctx.globalCompositeOperation = 'copy'; for (const [c, o] of layers)", "beige-section"),
     ("canvas-body-ignored", "bg(body) ? body : html", "html", "blue-canvas"),
-    ("opacity-ignored", "opacity !== '0'", "opacity !== 'none'", "hidden"),
+    ("opacity-ignored", "o = op(x);", "o = 1;", "faded"),
+    ("all-painted", "const painted = s =>", "const painted = s => true ||", "neutral"),
 ]
 
 
@@ -68,7 +67,6 @@ def run(script, row):
 
 
 def table(script):
-    """Returns {label: (code, output, problem or None)}."""
     with ThreadPoolExecutor(8) as ex:
         results = list(ex.map(lambda r: run(script, r), TABLE))
     out = {}
@@ -83,7 +81,7 @@ def table(script):
 
 def self_check():
     fails = []
-    for h in ["#FAF9F5", "#F0EEE6", "#F1E9D2", "#F5F5DC", "#FFFDD0", "#FFF8F0", "#FFF1E7"]:
+    for h in ["#FAF9F5", "#F0EEE6", "#F1E9D2", "#F5F5DC", "#FFFDD0", "#FFF8F0", "#FFF1E7", "#F6F5F4"]:
         if not cp.is_beige(cp.parse_hex(h)):
             fails.append(f"{h} should be beige")
     for h in ["#FFFFFF", "#F5F5F5", "#EEEEEE", "#E8F0FE", "#1F2937", "#FFE0B2"]:
@@ -114,8 +112,7 @@ def main():
         if mutated == src:
             fails.append(f"mutant {name} did not change the script")
             continue
-        path = os.path.join(TMP, name, "check_palette.py")
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        path = os.path.join(TMP, name + ".py")
         open(path, "w").write(mutated)
         got, text, bad = table(path)[row]
         if bad and got in (0, 1) and "Traceback" not in text:

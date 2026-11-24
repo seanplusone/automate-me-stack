@@ -20,13 +20,13 @@ python3 "$SKILL_DIR"/check/check_palette.py <url> --palette palette.json   # als
 
 - `--allow-beige`, or `--brief FILE` with a line `allow beige: yes`, allows beige. Allow it only when the user asked for it.
 - `--palette` takes a JSON list of `#RRGGBB` colors, or an object of name to color. Each background must be within `--max-delta` (default 5, CIEDE2000) of one of them. White and gray count too, so list them if the page uses them. A beige palette color does not allow beige.
-- `--min-area` (default 10000 px2) sets the smallest box checked. The page canvas is always checked: the `html` background, else the `body` background, else white. When `html` has its own background, `body` is checked like any other element. Boxes with `opacity: 0`, or inside one, are skipped.
+- `--min-area` (default 10000 px2) sets the smallest box checked. The page canvas is always checked: the `html` background, else the `body` background, else white. When `html` has its own background, `body` is checked like any other element.
 
 ## Reading the output
 
-Each failure is one line, `FAIL <selector> <#hex> <reason>`. The reason is `beige (H=.. S=..% L=..%)` or `off-palette (nearest <#hex>, deltaE=..)`. The last line is `CHECK-PALETTE: OK` or `CHECK-PALETTE: FAIL (n)`. Exit 0 is OK and exit 1 is FAIL. Exit 2 means the check could not run, and it is never a pass. A missing page, a bad or empty palette file, a `--max-delta` that is negative or not finite, and a missing Playwright all exit 2. Fix the setup and run it again.
+Each failure is one line, `FAIL <selector> <#hex> <reason>`. The reason is `beige (H=.. S=..% L=..%)` or `off-palette (nearest <#hex>, deltaE=..)`. The last line is `CHECK-PALETTE: OK` or `CHECK-PALETTE: FAIL (n)`. Exit 0 is OK and exit 1 is FAIL. Exit 2 means the check could not run, and it is never a pass. A missing page, a bad or empty palette file, a `--max-delta` or `--min-area` that is negative or not finite, and a missing Playwright all exit 2. Fix the setup and run it again.
 
-A translucent background is mixed over its ancestors' backgrounds.
+Each background is judged as it renders: mixed over its ancestors' backgrounds and scaled by the opacity of its box and its ancestors. Boxes at `opacity: 0` are skipped. An ancestor with `display: contents` or that is not visible paints no background.
 
 ## The beige bounds
 
@@ -34,7 +34,7 @@ Beige is a hue of 25 to 60 degrees, a saturation of at least 10% and a lightness
 
 ## What it does not check
 
-Text color, borders, images, gradients and their stops, hover and focus states, and anything drawn after a click. It checks one viewport width only. Look at those yourself, or say they were not checked.
+Text color, borders, images, gradients and their stops, `contain: paint`, `mix-blend-mode`, `filter`, `backdrop-filter`, hover and focus states, and anything drawn after a click. It checks one viewport width only. Look at those yourself, or say they were not checked.
 
 ## Tests
 

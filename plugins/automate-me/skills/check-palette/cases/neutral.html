@@ -2,4 +2,6 @@
 body { margin: 0; background: transparent; }
 section, .card { height: 300px; margin: 20px; }
 .card { width: 400px; } .gray { background: #F5F5F5; } .warm-gray { background: #F2F1F0; } .tiny { background: #F0EEE6; height: 20px; width: 20px; }
-</style><body><div class="card gray">Gray</div><div class="card warm-gray">Warm gray</div><div class="tiny"></div></body>
+.hid, .con { background: #F0EEE6; } .hid { visibility: hidden; } .con { display: contents; } .glass { visibility: visible; background: #FFFFFF80; }
+</style><body><div class="card gray">Gray</div><div class="card warm-gray">Warm gray</div><div class="tiny"></div>
+<div class="hid"><div class="card glass"></div></div><div class="con"><div class="card glass"></div></div></body>

@@ -8,7 +8,7 @@ import argparse
 import colorsys
 import json
 import math
-import os
+import pathlib
 import re
 import sys
 
@@ -24,7 +24,8 @@ ALLOW_LINE = re.compile(r"^\s*(?:[-*]\s*)?allow beige:[ \t]*yes\b", re.I | re.M)
 INSTALL = "SKIP: Playwright or Chromium missing. Install: pip install playwright && python3 -m playwright install chromium"
 
 # Returns [selector, [r, g, b]] per checked element, first the page canvas: the html background,
-# else the body background, else white. A translucent layer is mixed over its ancestors.
+# else the body background, else white. Each painted layer is mixed over its ancestors, scaled by
+# the opacity of its element and ancestors; display: contents and invisible ancestors paint nothing.
 JS = """([sel, minArea]) => {
   const ctx = document.createElement('canvas').getContext('2d', {willReadFrequently: true});
   const alpha = c => { ctx.fillStyle = '#000'; ctx.fillStyle = c; ctx.clearRect(0, 0, 1, 1); ctx.fillRect(0, 0, 1, 1);
@@ -33,22 +34,22 @@ JS = """([sel, minArea]) => {
     const same = e.parentElement ? [...e.parentElement.children].filter(x => x.localName === e.localName) : [e];
     return same.length > 1 ? s + ':nth-of-type(' + (same.indexOf(e) + 1) + ')' : s; };
   const path = e => { const out = []; for (let x = e; x && out.length < 4; x = x.parentElement) out.unshift(part(x)); return out.join('>'); };
+  const op = e => { let o = 1; for (let x = e; x; x = x.parentElement) o *= getComputedStyle(x).opacity; return o; };
+  const painted = s => s.display !== 'contents' && s.visibility === 'visible';
   const effective = e => { const layers = [];
-    for (let x = e; x; x = x.parentElement) { const c = getComputedStyle(x).backgroundColor;
-      const a = alpha(c); if (a > 0) layers.unshift(c); if (a === 255) break; }
+    for (let x = e; x; x = x.parentElement) { const s = getComputedStyle(x), a = painted(s) ? alpha(s.backgroundColor) : 0, o = op(x);
+      if (a > 0) layers.unshift([s.backgroundColor, o]); if (a === 255 && o === 1) break; }
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 1, 1);
-    for (const c of layers) { ctx.fillStyle = c; ctx.fillRect(0, 0, 1, 1); }
-    return [...ctx.getImageData(0, 0, 1, 1).data.slice(0, 3)]; };
+    for (const [c, o] of layers) { ctx.globalAlpha = o; ctx.fillStyle = c; ctx.fillRect(0, 0, 1, 1); }
+    ctx.globalAlpha = 1; return [...ctx.getImageData(0, 0, 1, 1).data.slice(0, 3)]; };
   const html = document.documentElement, body = document.body, bg = e => e ? alpha(getComputedStyle(e).backgroundColor) : 0;
   const canvas = bg(html) ? html : bg(body) ? body : html;
   const out = [[path(html), effective(canvas)]];
   for (const e of document.querySelectorAll(sel)) {
     if (e === html || e === canvas) continue;
     const st = getComputedStyle(e), r = e.getBoundingClientRect();
-    if (alpha(st.backgroundColor) === 0 || st.visibility !== 'visible') continue;
-    if (r.width * r.height < minArea || r.width === 0 || r.height === 0) continue;
-    let x = e; while (x && getComputedStyle(x).opacity !== '0') x = x.parentElement;
-    if (!x) out.push([path(e), effective(e)]);
+    if (!alpha(st.backgroundColor) || st.visibility !== 'visible' || !r.width || !r.height || r.width * r.height < minArea) continue;
+    if (op(e) > 0) out.push([path(e), effective(e)]);
   }
   return out; }"""
 
@@ -66,7 +67,7 @@ def parse_hex(s):
 
 def hsl(rgb):
     h, l, s = colorsys.rgb_to_hls(*(c / 255 for c in rgb))
-    return round(h * 360, 4), s * 100, l * 100
+    return round(h * 360, 4), round(s * 100, 4), round(l * 100, 4)
 
 
 def is_beige(rgb):
@@ -156,15 +157,16 @@ def main():
     ap.add_argument("--min-area", type=float, default=MIN_AREA_DEFAULT)
     args = ap.parse_args()
     try:
-        if not math.isfinite(args.max_delta) or args.max_delta < 0:
-            raise ValueError(f"--max-delta must be a finite number >= 0, got {args.max_delta}")
+        for name, v in [("--max-delta", args.max_delta), ("--min-area", args.min_area)]:
+            if not math.isfinite(v) or v < 0:
+                raise ValueError(f"{name} must be a finite number >= 0, got {v}")
         allow = args.allow_beige or bool(args.brief and ALLOW_LINE.search(open(args.brief).read()))
         palette = load_palette(args.palette) if args.palette else None
         target = args.target
         if not re.match(r"^[a-z]+://", target):
-            if not os.path.isfile(target):
+            if not pathlib.Path(target).is_file():
                 raise FileNotFoundError(f"no such page: {target}")
-            target = "file://" + os.path.abspath(target)
+            target = pathlib.Path(target).resolve().as_uri()
         fails = failures(render(target, args.min_area), allow, palette, args.max_delta)
     except Exception as e:
         print(f"CHECK-PALETTE: ERROR {type(e).__name__}: {e}")
