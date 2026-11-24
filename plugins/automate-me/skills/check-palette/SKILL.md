@@ -20,13 +20,13 @@ python3 "$SKILL_DIR"/check/check_palette.py <url> --palette palette.json   # als
 
 - `--allow-beige`, or `--brief FILE` with a line `allow beige: yes`, allows beige. Allow it only when the user asked for it.
 - `--palette` takes a JSON list of `#RRGGBB` colors, or an object of name to color. Each background must be within `--max-delta` (default 5, CIEDE2000) of one of them. White and gray count too, so list them if the page uses them. A beige palette color does not allow beige.
-- `--min-area` (default 10000 px2) sets the smallest box checked. `html` and `body` are always checked.
+- `--min-area` (default 10000 px2) sets the smallest box checked. The page canvas is always checked: the `html` background, else the `body` background, else white. When `html` has its own background, `body` is checked like any other element. Boxes with `opacity: 0`, or inside one, are skipped.
 
 ## Reading the output
 
-Each failure is one line, `FAIL <selector> <#hex> <reason>`. The reason is `beige (H=.. S=..% L=..%)` or `off-palette (nearest <#hex>, deltaE=..)`. The last line is `CHECK-PALETTE: OK` or `CHECK-PALETTE: FAIL (n)`. Exit 0 is OK and exit 1 is FAIL. Exit 2 means the check could not run, and it is never a pass. A missing page, a bad palette file and a missing Playwright all exit 2. Fix the setup and run it again.
+Each failure is one line, `FAIL <selector> <#hex> <reason>`. The reason is `beige (H=.. S=..% L=..%)` or `off-palette (nearest <#hex>, deltaE=..)`. The last line is `CHECK-PALETTE: OK` or `CHECK-PALETTE: FAIL (n)`. Exit 0 is OK and exit 1 is FAIL. Exit 2 means the check could not run, and it is never a pass. A missing page, a bad or empty palette file, a `--max-delta` that is negative or not finite, and a missing Playwright all exit 2. Fix the setup and run it again.
 
-A translucent background is mixed over the elements behind it. A page with no background color counts as white.
+A translucent background is mixed over its ancestors' backgrounds.
 
 ## The beige bounds
 

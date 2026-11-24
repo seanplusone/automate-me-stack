@@ -20,11 +20,11 @@ MAX_DELTA_DEFAULT = 5       # CIEDE2000
 MIN_AREA_DEFAULT = 10000    # px2
 ELEMENTS = "*"              # CSS selector of the candidate elements
 VIEWPORT = {"width": 1280, "height": 800}
-ALLOW_LINE = re.compile(r"^\s*(?:[-*]\s*)?allow beige:\s*yes\b", re.I | re.M)
+ALLOW_LINE = re.compile(r"^\s*(?:[-*]\s*)?allow beige:[ \t]*yes\b", re.I | re.M)
 INSTALL = "SKIP: Playwright or Chromium missing. Install: pip install playwright && python3 -m playwright install chromium"
 
-# Returns [selector, [r, g, b]] per checked element. The canvas composites each
-# translucent layer over its ancestors, starting from white.
+# Returns [selector, [r, g, b]] per checked element, first the page canvas: the html background,
+# else the body background, else white. A translucent layer is mixed over its ancestors.
 JS = """([sel, minArea]) => {
   const ctx = document.createElement('canvas').getContext('2d', {willReadFrequently: true});
   const alpha = c => { ctx.fillStyle = '#000'; ctx.fillStyle = c; ctx.clearRect(0, 0, 1, 1); ctx.fillRect(0, 0, 1, 1);
@@ -39,14 +39,16 @@ JS = """([sel, minArea]) => {
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 1, 1);
     for (const c of layers) { ctx.fillStyle = c; ctx.fillRect(0, 0, 1, 1); }
     return [...ctx.getImageData(0, 0, 1, 1).data.slice(0, 3)]; };
-  const out = [[path(document.documentElement), effective(document.documentElement)]];
+  const html = document.documentElement, body = document.body, bg = e => e ? alpha(getComputedStyle(e).backgroundColor) : 0;
+  const canvas = bg(html) ? html : bg(body) ? body : html;
+  const out = [[path(html), effective(canvas)]];
   for (const e of document.querySelectorAll(sel)) {
-    if (e === document.documentElement) continue;
+    if (e === html || e === canvas) continue;
     const st = getComputedStyle(e), r = e.getBoundingClientRect();
     if (alpha(st.backgroundColor) === 0 || st.visibility !== 'visible') continue;
-    if (e !== document.body && r.width * r.height < minArea) continue;
-    if (r.width === 0 || r.height === 0) continue;
-    out.push([path(e), effective(e)]);
+    if (r.width * r.height < minArea || r.width === 0 || r.height === 0) continue;
+    let x = e; while (x && getComputedStyle(x).opacity !== '0') x = x.parentElement;
+    if (!x) out.push([path(e), effective(e)]);
   }
   return out; }"""
 
@@ -64,7 +66,7 @@ def parse_hex(s):
 
 def hsl(rgb):
     h, l, s = colorsys.rgb_to_hls(*(c / 255 for c in rgb))
-    return h * 360, s * 100, l * 100
+    return round(h * 360, 4), s * 100, l * 100
 
 
 def is_beige(rgb):
@@ -105,6 +107,8 @@ def delta_e(lab1, lab2):
 def load_palette(path):
     data = json.load(open(path))
     values = data.values() if isinstance(data, dict) else data
+    if not values:
+        raise ValueError(f"palette is empty: {path}")
     return [parse_hex(v) for v in values]
 
 
@@ -152,6 +156,8 @@ def main():
     ap.add_argument("--min-area", type=float, default=MIN_AREA_DEFAULT)
     args = ap.parse_args()
     try:
+        if not math.isfinite(args.max_delta) or args.max_delta < 0:
+            raise ValueError(f"--max-delta must be a finite number >= 0, got {args.max_delta}")
         allow = args.allow_beige or bool(args.brief and ALLOW_LINE.search(open(args.brief).read()))
         palette = load_palette(args.palette) if args.palette else None
         target = args.target

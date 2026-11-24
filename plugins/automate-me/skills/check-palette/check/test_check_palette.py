@@ -20,11 +20,14 @@ OK = "CHECK-PALETTE: OK"
 TMP = tempfile.mkdtemp()
 BRIEF = os.path.join(TMP, "brief.md")
 open(BRIEF, "w").write("# Brief\n- Allow Beige: yes\n")
+for name, text in [("empty-list", "[]"), ("empty-dict", "{}"), ("blue", '["#3A6EA5"]')]:
+    open(os.path.join(TMP, name + ".json"), "w").write(text)
+ERR = "CHECK-PALETTE: ERROR"
 
 # label, case, args, exit code, substring in output
 TABLE = [
     ("beige-card", "beige-card", [], 1, "beige (H="),
-    ("beige-section", "beige-section", [], 1, "beige (H="),
+    ("beige-section", "beige-section", [], 1, "#F2EBD6 beige (H="),
     ("beige-allowed", "beige-allowed", ["--allow-beige"], 0, OK),
     ("beige-allowed-brief", "beige-allowed", ["--brief", BRIEF], 0, OK),
     ("beige-unallowed", "beige-allowed", [], 1, "beige (H="),
@@ -32,8 +35,14 @@ TABLE = [
     ("near-palette", "near-palette", PAL, 0, OK),
     ("off-palette", "off-palette", PAL, 1, "off-palette (nearest #"),
     ("off-palette-no-palette", "off-palette", [], 0, OK),
+    ("blue-canvas", "blue-canvas", ["--palette", f"{TMP}/blue.json"], 0, OK),
+    ("beige-canvas", "beige-canvas", [], 1, "FAIL html #FAF9F5 beige"),
+    ("hidden", "hidden", [], 0, OK),
+    ("empty-list", "palette-ok", ["--palette", f"{TMP}/empty-list.json"], 2, ERR),
+    ("empty-dict", "palette-ok", ["--palette", f"{TMP}/empty-dict.json"], 2, ERR),
+    *[(f"delta-{d}", "palette-ok", [*PAL, "--max-delta", d], 2, ERR) for d in ("nan", "inf", "-1")],
     ("neutral", "neutral", [], 0, OK),
-    ("missing-page", "no-such-page", [], 2, "CHECK-PALETTE: ERROR"),
+    ("missing-page", "no-such-page", [], 2, ERR),
 ]
 
 # name, old text, new text, the row that must catch it
@@ -45,6 +54,9 @@ MUTANTS = [
     ("delta-huge", "MAX_DELTA_DEFAULT = 5 ", "MAX_DELTA_DEFAULT = 1000 ", "off-palette"),
     ("delta-zero", "MAX_DELTA_DEFAULT = 5 ", "MAX_DELTA_DEFAULT = 0 ", "near-palette"),
     ("body-only", 'ELEMENTS = "*"', 'ELEMENTS = "html, body"', "beige-card"),
+    ("alpha-ignored", "for (const c of layers)", "ctx.globalCompositeOperation = 'copy'; for (const c of layers)", "beige-section"),
+    ("canvas-body-ignored", "bg(body) ? body : html", "html", "blue-canvas"),
+    ("opacity-ignored", "opacity !== '0'", "opacity !== 'none'", "hidden"),
 ]
 
 
@@ -71,12 +83,14 @@ def table(script):
 
 def self_check():
     fails = []
-    for h in ["#FAF9F5", "#F0EEE6", "#F1E9D2", "#F5F5DC", "#FFFDD0", "#FFF8F0"]:
+    for h in ["#FAF9F5", "#F0EEE6", "#F1E9D2", "#F5F5DC", "#FFFDD0", "#FFF8F0", "#FFF1E7"]:
         if not cp.is_beige(cp.parse_hex(h)):
             fails.append(f"{h} should be beige")
     for h in ["#FFFFFF", "#F5F5F5", "#EEEEEE", "#E8F0FE", "#1F2937", "#FFE0B2"]:
         if cp.is_beige(cp.parse_hex(h)):
             fails.append(f"{h} should not be beige")
+    if cp.ALLOW_LINE.search("allow beige:\nyes"):
+        fails.append("the allow line must not span a newline")
     d = cp.delta_e((50, 2.6772, -79.7751), (50, 0, -82.7485))  # Sharma 2005 pair 1
     if abs(d - 2.0425) > 1e-3:
         fails.append(f"CIEDE2000 pair 1 gave {d:.4f}, want 2.0425")
@@ -97,7 +111,9 @@ def main():
     for name, old, new, row in MUTANTS:
         src = open(script).read()
         mutated = src.replace(old, new, 1)
-        assert mutated != src, f"mutant {name} did not change the script"
+        if mutated == src:
+            fails.append(f"mutant {name} did not change the script")
+            continue
         path = os.path.join(TMP, name, "check_palette.py")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         open(path, "w").write(mutated)
