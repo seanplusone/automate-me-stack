@@ -34,7 +34,7 @@ Beige is a hue of 25 to 60 degrees, a saturation of at least 10% and a lightness
 
 ## What it does not check
 
-Text color, borders, images, gradients and their stops, `contain: paint`, `mix-blend-mode`, `filter`, `backdrop-filter`, hover and focus states, and anything drawn after a click. It checks one viewport width only. Look at those yourself, or say they were not checked.
+Text color, borders, images, gradients and their stops, `contain: paint`, `mix-blend-mode`, `filter`, `backdrop-filter`, hover and focus states, and anything drawn after a click. It checks one viewport width only. It also flags a beige background that another element fully covers, and it can misjudge a translucent group nested inside another one. Look at those yourself, or say they were not checked.
 
 ## Tests
 
