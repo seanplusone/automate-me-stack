@@ -19,6 +19,7 @@ These need `.claude/project-profile.md`, which `/automate-me:setup` writes. Tick
 | Carry on in a new session | `/automate-me:working-rules pickup PROJ-123` | Where the ticket stands, from its worktree's `RESUME.md`, then it continues. |
 | Stop for now | "pause safely" | The step finished, a `wip:` commit, and `RESUME.md` updated for the next pickup. |
 | Test in the browser | `/automate-me:verify-web` | A health check of your local app, then the change driven in the real app, with screenshots kept as evidence. Needs `.claude/verify-web.yaml` (from `/automate-me:setup`). |
+| Check a page's colors | `/automate-me:check-palette <url or page.html>` | One line per large background that is beige or off your palette, then OK or FAIL. Needs Python Playwright. |
 | Look at data | `/automate-me:query-db` | A read-only query on the default (non-prod) environment, or the database and environment you name, e.g. `/automate-me:query-db analytics prod`. Needs `.claude/query-db.json`. |
 | Open the PR | `/automate-me:open-pr` | The prose check, one confirmation, then a draft PR linked to the ticket. |
 
