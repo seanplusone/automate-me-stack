@@ -2,7 +2,7 @@
 
 Usage: python3 check_palette.py <url or .html file> [--allow-beige] [--brief FILE]
                                 [--palette palette.json] [--max-delta 5] [--min-area 10000]
-Exit 0 OK, 1 FAIL, 2 cannot run (missing page, bad input, Playwright or Chromium missing, crash).
+Exit 0 is OK and 1 is FAIL. Exit 2 means it could not run: a missing page, bad input, no Playwright or Chromium, or a crash.
 """
 import argparse
 import colorsys
@@ -14,17 +14,19 @@ import sys
 
 CHECK_BEIGE = True
 BEIGE_HUE = (25, 60)        # degrees
-BEIGE_MIN_SAT = 10          # percent; below this it reads as gray
-BEIGE_LIGHT = (88, 98)      # percent; below is a chosen tan, above is white
+BEIGE_MIN_SAT = 10          # percent, below this it looks gray
+BEIGE_LIGHT = (88, 98)      # percent, below is a deliberate tan, above is white
 MAX_DELTA_DEFAULT = 5       # CIEDE2000
-MIN_AREA_DEFAULT = 10000    # px2
+MIN_AREA_DEFAULT = 10000    # square pixels
 ELEMENTS = "*"              # CSS selector of the candidate elements
 VIEWPORT = {"width": 1280, "height": 800}
 ALLOW_LINE = re.compile(r"^\s*(?:[-*]\s*)?allow beige:[ \t]*yes\b", re.I | re.M)
 INSTALL = "SKIP: Playwright or Chromium missing. Install: pip install playwright && python3 -m playwright install chromium"
 
-# Returns [selector, [r, g, b]] per visible element, first the page canvas (html, else body, else white).
-# Each element is a group: its background, then its descendants, times its own opacity, then over white.
+# Returns one [selector, [r, g, b]] per visible element. The page canvas comes first. Its color is the html
+# background, or the body background, or white. Each color is built from the element up through its ancestors.
+# At each box, its background goes under the color so far, and the result is multiplied by that box's opacity.
+# The last step mixes the color over white.
 # A box is skipped when an opaque element covers all 9 sample points of its part in the viewport.
 JS = """([sel, minArea]) => {
   const ctx = document.createElement('canvas').getContext('2d', {willReadFrequently: true});

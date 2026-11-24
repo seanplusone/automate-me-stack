@@ -1,5 +1,5 @@
-"""Run: python3 check/test_check_palette.py. Runs every case, then breaks one rule at a time in a
-copy of the script and fails if the copy still passes. Prints SKIP without Playwright."""
+"""Run: python3 check/test_check_palette.py. It runs every case, then breaks one rule at a time in a
+copy of the script. It fails if a broken copy still passes. It prints SKIP without Playwright and Chromium."""
 import os
 import shutil
 import subprocess
@@ -20,7 +20,7 @@ for name, text in [("brief.md", "# Brief\n- Allow Beige: yes\n"), ("empty-list.j
     open(os.path.join(TMP, name), "w").write(text)
 shutil.copy(os.path.join(CASES, "beige-card.html"), os.path.join(TMP, "x#y.html"))
 
-# label, case, args, exit code, substring in output
+# Each row is a label, a case, its arguments, the exit code and a string the output must contain.
 TABLE = [
     ("beige-card", "beige-card", [], 1, "beige (H="),
     ("beige-section", "beige-section", [], 1, "#F2EBD6 beige (H="),
@@ -45,7 +45,7 @@ TABLE = [
     ("missing-page", "no-such-page", [], 2, ERR),
 ]
 
-# name, old text, new text, the row that must catch it
+# Each mutant is a name, the old text, the new text and the row that must catch it.
 MUTANTS = [
     ("beige-disabled", "CHECK_BEIGE = True", "CHECK_BEIGE = False", "beige-card"),
     ("hue-moved", "BEIGE_HUE = (25, 60)", "BEIGE_HUE = (180, 220)", "beige-card"),
