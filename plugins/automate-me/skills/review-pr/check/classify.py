@@ -14,7 +14,9 @@ import sys
 HASHED = re.compile(r"-(?:(?=[\w-]{0,7}\d)|(?=[\w-]{0,7}[A-Z])(?=[\w-]{0,7}[a-z]))[\w-]{8}\.[a-z0-9]+$")
 ASSET_EXT = {"png", "jpg", "jpeg", "gif", "svg", "webp", "ico", "woff", "woff2", "ttf", "eot", "pdf"}
 DOC_EXT = {"md", "rst", "txt"}
-TEST_DIRS = {"tests", "test", "__tests__"}
+# `tests` and `__tests__` count in any directory. `test` counts only as the repo root,
+# so a route like app/api/test/foo/route.ts stays source.
+TEST_DIRS = {"tests", "__tests__"}
 TEST_NAME = re.compile(r"(Test\.php|\.test\.tsx?|\.spec\.tsx?|_test\.py)$|^test_.*\.py$")
 LONG_LINE = 1000
 READ_CAP = 2 * 1024 * 1024
@@ -29,7 +31,8 @@ def label(path, longest_line=None, binary=False):
         return "generated"
     if binary or ext in ASSET_EXT:
         return "asset"
-    if TEST_DIRS & set(path.split("/")[:-1]) or TEST_NAME.search(name):
+    dirs = path.split("/")[:-1]
+    if dirs[:1] == ["test"] or TEST_DIRS & set(dirs) or TEST_NAME.search(name):
         return "test"
     if ext in DOC_EXT:
         return "docs"
