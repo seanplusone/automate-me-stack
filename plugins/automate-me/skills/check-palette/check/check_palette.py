@@ -23,33 +23,39 @@ VIEWPORT = {"width": 1280, "height": 800}
 ALLOW_LINE = re.compile(r"^\s*(?:[-*]\s*)?allow beige:[ \t]*yes\b", re.I | re.M)
 INSTALL = "SKIP: Playwright or Chromium missing. Install: pip install playwright && python3 -m playwright install chromium"
 
-# Returns [selector, [r, g, b]] per checked element, first the page canvas: the html background,
-# else the body background, else white. Each painted layer is mixed over its ancestors, scaled by
-# the opacity of its element and ancestors; display: contents and invisible ancestors paint nothing.
+# Returns [selector, [r, g, b]] per visible element, first the page canvas (html, else body, else white).
+# Each element is a group: its background, then its descendants, times its own opacity, then over white.
+# A box is skipped when an opaque element covers all 9 sample points of its part in the viewport.
 JS = """([sel, minArea]) => {
   const ctx = document.createElement('canvas').getContext('2d', {willReadFrequently: true});
-  const alpha = c => { ctx.fillStyle = '#000'; ctx.fillStyle = c; ctx.clearRect(0, 0, 1, 1); ctx.fillRect(0, 0, 1, 1);
-                       return ctx.getImageData(0, 0, 1, 1).data[3]; };
+  const rgba = c => { ctx.fillStyle = '#000'; ctx.fillStyle = c; ctx.clearRect(0, 0, 1, 1); ctx.fillRect(0, 0, 1, 1);
+                      const d = ctx.getImageData(0, 0, 1, 1).data, a = d[3] / 255; return [d[0] * a, d[1] * a, d[2] * a, a]; };
+  const alpha = c => rgba(c)[3];
   const part = e => { let s = e.localName + (e.id ? '#' + e.id : '') + [...e.classList].slice(0, 2).map(c => '.' + c).join('');
     const same = e.parentElement ? [...e.parentElement.children].filter(x => x.localName === e.localName) : [e];
     return same.length > 1 ? s + ':nth-of-type(' + (same.indexOf(e) + 1) + ')' : s; };
   const path = e => { const out = []; for (let x = e; x && out.length < 4; x = x.parentElement) out.unshift(part(x)); return out.join('>'); };
   const op = e => { let o = 1; for (let x = e; x; x = x.parentElement) o *= getComputedStyle(x).opacity; return o; };
   const painted = s => s.display !== 'contents' && s.visibility === 'visible';
-  const effective = e => { const layers = [];
-    for (let x = e; x; x = x.parentElement) { const s = getComputedStyle(x), a = painted(s) ? alpha(s.backgroundColor) : 0, o = op(x);
-      if (a > 0) layers.unshift([s.backgroundColor, o]); if (a === 255 && o === 1) break; }
-    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 1, 1);
-    for (const [c, o] of layers) { ctx.globalAlpha = o; ctx.fillStyle = c; ctx.fillRect(0, 0, 1, 1); }
-    ctx.globalAlpha = 1; return [...ctx.getImageData(0, 0, 1, 1).data.slice(0, 3)]; };
+  const scale = (c, k) => c.map(v => v * k), over = (top, b) => top.map((v, i) => v + b[i] * (1 - top[3]));
+  const effective = e => { let c = [0, 0, 0, 0];
+    for (let x = e; x; x = x.parentElement) { const s = getComputedStyle(x), o = +s.opacity, b = painted(s) ? rgba(s.backgroundColor) : [0, 0, 0, 0];
+      c = scale(over(c, b), o); }
+    return over(c, [255, 255, 255, 1]).slice(0, 3).map(Math.round); };
   const html = document.documentElement, body = document.body, bg = e => e ? alpha(getComputedStyle(e).backgroundColor) : 0;
-  const canvas = bg(html) ? html : bg(body) ? body : html;
-  const out = [[path(html), effective(canvas)]];
+  const canvas = bg(html) ? html : bg(body) ? body : html, W = html.clientWidth, H = html.clientHeight;
+  const covers = x => painted(getComputedStyle(x)) && alpha(getComputedStyle(x).backgroundColor) === 1 && op(x) === 1;
+  const seen = (e, r, skip) => { const x0 = Math.max(r.left, 0), x1 = Math.min(r.right, W), y0 = Math.max(r.top, 0), y1 = Math.min(r.bottom, H);
+    if (x0 >= x1 || y0 >= y1) return false;
+    for (let i = 0; i < 9; i++) { const st = document.elementsFromPoint(x0 + (x1 - x0) * (i % 3 + .5) / 3, y0 + (y1 - y0) * ((i / 3 | 0) + .5) / 3);
+      const k = st.indexOf(e); if (k < 0 || !st.slice(0, k).some(x => x !== skip && covers(x))) return true; }
+    return false; };
+  const out = seen(html, {left: 0, top: 0, right: W, bottom: H}, canvas) ? [[path(html), effective(canvas)]] : [];
   for (const e of document.querySelectorAll(sel)) {
     if (e === html || e === canvas) continue;
     const st = getComputedStyle(e), r = e.getBoundingClientRect();
     if (!alpha(st.backgroundColor) || st.visibility !== 'visible' || !r.width || !r.height || r.width * r.height < minArea) continue;
-    if (op(e) > 0) out.push([path(e), effective(e)]);
+    if (op(e) > 0 && seen(e, r)) out.push([path(e), effective(e)]);
   }
   return out; }"""
 

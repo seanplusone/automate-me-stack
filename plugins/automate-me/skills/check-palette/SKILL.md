@@ -26,7 +26,7 @@ python3 "$SKILL_DIR"/check/check_palette.py <url> --palette palette.json   # als
 
 Each failure is one line, `FAIL <selector> <#hex> <reason>`. The reason is `beige (H=.. S=..% L=..%)` or `off-palette (nearest <#hex>, deltaE=..)`. The last line is `CHECK-PALETTE: OK` or `CHECK-PALETTE: FAIL (n)`. Exit 0 is OK and exit 1 is FAIL. Exit 2 means the check could not run, and it is never a pass. A missing page, a bad or empty palette file, a `--max-delta` or `--min-area` that is negative or not finite, and a missing Playwright all exit 2. Fix the setup and run it again.
 
-Each background is judged as it renders: mixed over its ancestors' backgrounds and scaled by the opacity of its box and its ancestors. Boxes at `opacity: 0` are skipped. An ancestor with `display: contents` or that is not visible paints no background.
+Each background is judged as it renders, mixed over its ancestors' backgrounds. An ancestor's opacity applies to the element and its descendants as one group, the way the browser paints it. A box at `opacity: 0`, or fully covered by another opaque element, is skipped. An ancestor with `display: contents` or that is not visible paints no background.
 
 ## The beige bounds
 
@@ -34,7 +34,7 @@ Beige is a hue of 25 to 60 degrees, a saturation of at least 10% and a lightness
 
 ## What it does not check
 
-Text color, borders, images, gradients and their stops, `contain: paint`, `mix-blend-mode`, `filter`, `backdrop-filter`, hover and focus states, and anything drawn after a click. It checks one viewport width only. It also flags a beige background that another element fully covers, and it can misjudge a translucent group nested inside another one. Look at those yourself, or say they were not checked.
+Text color, borders, images, gradients and their stops, `contain: paint`, `mix-blend-mode`, `filter`, `backdrop-filter`, hover and focus states, and anything drawn after a click. It checks only the first 1280x800 viewport, so boxes below it are skipped. An overlay with `pointer-events: none` is not treated as covering, so the box under it is still checked. Look at those yourself, or say they were not checked.
 
 ## Tests
 

@@ -40,6 +40,8 @@ TABLE = [
     ("empty-dict", "palette-ok", ["--palette", f"{TMP}/empty-dict.json"], 2, ERR),
     *[(f"{o}={d}", "palette-ok", [*PAL, o, d], 2, ERR) for o in ("--max-delta", "--min-area") for d in ("nan", "inf", "-1")],
     ("neutral", "neutral", [], 0, OK),
+    ("covered", "covered", [], 0, OK),
+    ("group", "group", [], 0, OK),
     ("missing-page", "no-such-page", [], 2, ERR),
 ]
 
@@ -52,9 +54,11 @@ MUTANTS = [
     ("delta-huge", "MAX_DELTA_DEFAULT = 5 ", "MAX_DELTA_DEFAULT = 1000 ", "off-palette"),
     ("delta-zero", "MAX_DELTA_DEFAULT = 5 ", "MAX_DELTA_DEFAULT = 0 ", "near-palette"),
     ("body-only", 'ELEMENTS = "*"', 'ELEMENTS = "html, body"', "beige-card"),
-    ("alpha-ignored", "for (const [c, o] of layers)", "ctx.globalCompositeOperation = 'copy'; for (const [c, o] of layers)", "beige-section"),
+    ("alpha-ignored", "a = d[3] / 255", "a = d[3] && 1", "beige-section"),
     ("canvas-body-ignored", "bg(body) ? body : html", "html", "blue-canvas"),
-    ("opacity-ignored", "o = op(x);", "o = 1;", "faded"),
+    ("opacity-ignored", "o = +s.opacity", "o = 1", "faded"),
+    ("group-ignored", "scale(over(c, b), o)", "over(c, scale(b, op(x)))", "group"),
+    ("cover-ignored", "const seen = (e, r, skip) => {", "const seen = () => true, unused = (e, r, skip) => {", "covered"),
     ("all-painted", "const painted = s =>", "const painted = s => true ||", "neutral"),
 ]
 
