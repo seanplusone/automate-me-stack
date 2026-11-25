@@ -10,6 +10,7 @@ Fails when:
 - a verdict is not VERIFIED, CONTRADICTED or `NOT RUN: <why>`;
 - a VERIFIED or CONTRADICTED scenario lists no evidence file, or a listed file is not in the folder;
 - a VERIFIED scenario lacks `Persist: reload`, `fresh-context` or `none`, or (for `reload` or `fresh-context`) lacks distinct, listed, existing `Before screenshot:` and `Persist screenshot:` files where the persist screenshot is a real image with different bytes;
+- a VERIFIED scenario repeats `Persist:`, `Persist screenshot:`, or `Before screenshot:`;
 - the Summary line does not match the verdicts.
 Prints PASS or FAIL and exits 1 on FAIL.
 """
@@ -20,6 +21,7 @@ import sys
 FIELDS = ("Claimed", "Steps", "Base", "Head", "Evidence", "Verdict")
 SHA = re.compile(r"\b[0-9a-f]{7,40}\b")
 PERSIST_VALUES = ("reload", "fresh-context", "none")
+PERSIST_FIELDS = ("Persist", "Persist screenshot", "Before screenshot")
 
 
 def is_image(path):
@@ -35,25 +37,20 @@ def is_image(path):
     return len(hdr) >= 12 and hdr[:4] == b"RIFF" and hdr[8:12] == b"WEBP"
 
 
-def field_names(s, key):
-    raws = s.get(key + " all", [s.get(key, "")])
-    return [n.strip() for raw in raws for n in raw.split(",") if n.strip()]
-
-
 def parse(text):
     head, scenarios, cur = {}, [], None
     for line in text.splitlines():
         m = re.match(r"^## (S\d+)\.\s+(.+)$", line)
         if m:
-            cur = {"id": m.group(1), "title": m.group(2)}
+            cur = {"id": m.group(1), "title": m.group(2), "_counts": {}}
             scenarios.append(cur)
             continue
         m = re.match(r"^(\w[\w ]*?):\s*(.*)$", line)
         if m:
             target = cur if cur is not None else head
             key, val = m.group(1), m.group(2).strip()
-            if key in ("Before screenshot", "Persist screenshot"):
-                target.setdefault(key + " all", []).append(val)
+            if cur is not None and key in PERSIST_FIELDS:
+                cur["_counts"][key] = cur["_counts"].get(key, 0) + 1
             target[key] = val
             if key == "Summary":
                 head["Summary"] = val
@@ -85,47 +82,45 @@ def check(path):
                 if not os.path.exists(os.path.join(folder, x)):
                     fails.append(f"{sid}: evidence file not in the folder: {x}")
             if v == "VERIFIED":
-                persist = s.get("Persist", "")
-                if persist not in PERSIST_VALUES:
-                    fails.append(f"{sid}: VERIFIED needs Persist: reload, fresh-context or none, got {persist!r}")
-                elif persist in ("reload", "fresh-context"):
-                    shot = s.get("Persist screenshot", "")
-                    before = s.get("Before screenshot", "")
-                    shot_path = None
-                    if not shot or "/" in shot or "\\" in shot:
-                        fails.append(f"{sid}: VERIFIED needs Persist screenshot: <filename in folder>, got {shot!r}")
-                    else:
-                        p = os.path.join(folder, shot)
-                        if not os.path.isfile(p):
-                            fails.append(f"{sid}: Persist screenshot not in the folder: {shot}")
+                dups = [k for k in PERSIST_FIELDS if s["_counts"].get(k, 0) > 1]
+                for k in dups:
+                    fails.append(f"{sid}: duplicate {k}:")
+                if not dups:
+                    persist = s.get("Persist", "")
+                    if persist not in PERSIST_VALUES:
+                        fails.append(f"{sid}: VERIFIED needs Persist: reload, fresh-context or none, got {persist!r}")
+                    elif persist in ("reload", "fresh-context"):
+                        shot = s.get("Persist screenshot", "")
+                        before = s.get("Before screenshot", "")
+                        shot_path = None
+                        before_path = None
+                        if not shot or "/" in shot or "\\" in shot:
+                            fails.append(f"{sid}: VERIFIED needs Persist screenshot: <filename in folder>, got {shot!r}")
                         else:
-                            shot_path = p
-                    if not before or "/" in before or "\\" in before:
-                        fails.append(f"{sid}: VERIFIED needs Before screenshot: <filename in folder>, got {before!r}")
-                    elif not os.path.isfile(os.path.join(folder, before)):
-                        fails.append(f"{sid}: Before screenshot not in the folder: {before}")
-                    if shot and shot not in files:
-                        fails.append(f"{sid}: Persist screenshot not listed in Evidence: {shot}")
-                    if before and before not in files:
-                        fails.append(f"{sid}: Before screenshot not listed in Evidence: {before}")
-                    shot_names = field_names(s, "Persist screenshot")
-                    before_names = field_names(s, "Before screenshot")
-                    reused = sorted(set(shot_names) & set(before_names))
-                    if reused:
-                        fails.append(f"{sid}: Persist screenshot must not reuse Before screenshot: {', '.join(reused)}")
-                    if shot_path and not is_image(shot_path):
-                        fails.append(f"{sid}: Persist screenshot must be a non-empty png, jpg, jpeg or webp image: {shot}")
-                    if shot_path and not reused:
-                        shot_bytes = open(shot_path, "rb").read()
-                        seen = set()
-                        for name in before_names:
-                            if name in seen:
-                                continue
-                            seen.add(name)
-                            bp = os.path.join(folder, name)
-                            if os.path.isfile(bp) and open(bp, "rb").read() == shot_bytes:
+                            p = os.path.join(folder, shot)
+                            if not os.path.isfile(p):
+                                fails.append(f"{sid}: Persist screenshot not in the folder: {shot}")
+                            else:
+                                shot_path = p
+                        if not before or "/" in before or "\\" in before:
+                            fails.append(f"{sid}: VERIFIED needs Before screenshot: <filename in folder>, got {before!r}")
+                        else:
+                            bp = os.path.join(folder, before)
+                            if not os.path.isfile(bp):
+                                fails.append(f"{sid}: Before screenshot not in the folder: {before}")
+                            else:
+                                before_path = bp
+                        if shot and shot not in files:
+                            fails.append(f"{sid}: Persist screenshot not listed in Evidence: {shot}")
+                        if before and before not in files:
+                            fails.append(f"{sid}: Before screenshot not listed in Evidence: {before}")
+                        if shot and before and shot == before:
+                            fails.append(f"{sid}: Persist screenshot must not reuse Before screenshot: {shot}")
+                        if shot_path and not is_image(shot_path):
+                            fails.append(f"{sid}: Persist screenshot must be a non-empty png, jpg, jpeg or webp image: {shot}")
+                        if shot_path and before_path and shot != before:
+                            if open(shot_path, "rb").read() == open(before_path, "rb").read():
                                 fails.append(f"{sid}: Persist screenshot has the same bytes as Before screenshot: {shot}")
-                                break
         elif re.match(r"^NOT RUN: \S", v):
             counts["NOT RUN"] += 1
         elif v:

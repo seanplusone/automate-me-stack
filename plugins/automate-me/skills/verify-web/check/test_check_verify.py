@@ -229,7 +229,19 @@ run_files(write_case(before="s1.png", evidence="s1-persist.png, s2.png"),
 run_files(s1(evidence="s1.png, s2.png, s1-persist.png",
              extra="Persist: reload\nPersist screenshot: s1.png\nBefore screenshot: s1.png\nBefore screenshot: s2.png\n"),
           {"s1.png": RED, "s2.png": BLUE, "s1-persist.png": BLUE},
-          needle="Persist screenshot", name="reuse of s1.png hidden by a second Before screenshot fails VERIFIED")
+          needle="duplicate Before screenshot", name="reuse of s1.png hidden by a second Before screenshot fails VERIFIED")
+run_files(s1(evidence="s1.png, s1-persist.png",
+             extra="Persist: reload\nPersist: reload\nPersist screenshot: s1-persist.png\nBefore screenshot: s1.png\n"),
+          GOOD,
+          needle="duplicate", name="a repeated Persist line fails VERIFIED")
+run_files(s1(evidence="s1.png, s2.png, s1-persist.png",
+             extra="Persist: reload\nPersist screenshot: s1-persist.png\nBefore screenshot: s1.png\nBefore screenshot: s2.png\n"),
+          {"s1.png": RED, "s2.png": png_bytes((0, 255, 0)), "s1-persist.png": BLUE},
+          needle="duplicate", name="a repeated Before screenshot line fails VERIFIED")
+run_files(s1(evidence="s1.png, notes.txt, s1-persist.png",
+             extra="Persist: reload\nPersist screenshot: notes.txt\nPersist screenshot: s1-persist.png\nBefore screenshot: s1.png\n"),
+          {**GOOD, "notes.txt": b"not an image"},
+          needle="duplicate", name="a duplicate Persist screenshot hides a bad earlier value and fails VERIFIED")
 
 print(f"\n{'FAIL' if FAILS else 'PASS'} test_check_verify ({len(FAILS)} failing)")
 shutil.rmtree(os.path.join(HERE, "__pycache__"), ignore_errors=True)
