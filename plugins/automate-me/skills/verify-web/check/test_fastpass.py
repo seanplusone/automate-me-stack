@@ -326,6 +326,22 @@ def test_serve_lifecycle():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_serve_empty_fingerprint():
+    tmp, root, state_dir, cfg = make_env("serve-empty-fp")
+    try:
+        write_file(os.path.join(root, "src.txt"), "v1\n")
+        write_config(cfg, state_dir, fingerprint="[]")
+        _, lines, out = run_fastpass("serve", cfg, root)
+        pid1, _, _ = parse_started(lines)
+        write_file(os.path.join(root, "src.txt"), "v2\n")
+        code, lines, out = run_fastpass("serve", cfg, root)
+        check("serve: an empty fingerprint reuses the server after a file changes",
+              code == 0 and pid1 is not None and parse_reuse(lines) == pid1 and counter_lines(root) == 1, out)
+    finally:
+        run_fastpass("stop", cfg, root)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_stop_and_unrelated_process():
     tmp, root, state_dir, cfg = make_env("stop")
     sleeper = subprocess.Popen(["sleep", "60"])
@@ -896,6 +912,7 @@ if __name__ == "__main__":
     test_select_git()
     test_select_no_journeys()
     test_serve_lifecycle()
+    test_serve_empty_fingerprint()
     test_stop_and_unrelated_process()
     test_serve_build_fail()
     test_serve_not_ready()

@@ -88,6 +88,7 @@ config. Restart after those regardless, if a restart is pre-authorized.
 
 A slow pass rebuilds the app, starts a new server, runs unit tests, drives every screen, and reads
 passing screenshots. When the config has `fast` and `journeys` blocks, `fastpass.py` cuts each one.
+Run the doctor first, as above. The fast pass does not replace it.
 
 ```bash
 python3 "$SKILL_DIR"/fastpass.py select [--paths <p> ...] [--base <ref>]
@@ -99,6 +100,8 @@ python3 "$SKILL_DIR"/fastpass.py stop   [--root <dir>]
 - `fastpass.py serve` hashes the files matched by `fast.fingerprint`. It builds once per
   fingerprint and reuses one server per worktree. When a fingerprinted file changes, it stops only
   its own server, rebuilds, and starts a new one.
+- A dev server that reloads on every edit needs no restart. Leave `fast.fingerprint` empty and
+  `serve` reuses that server as it is.
 - `fastpass.py select` maps changed paths to journeys with `journeys:` in the config. It falls back
   to all journeys when no path maps, or when one changed path is unmapped and not in
   `journey_ignore`.
