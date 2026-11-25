@@ -57,7 +57,13 @@ Fails (exit 1) when:
 - there are unknowns but no Questions block, or the block has more than 3 numbered questions,
   or a numbered question has no question mark;
 - an item is only trap adjectives (modern, clean, good, better, correct, valid, nice) and names no
-  visible signal. A digit is a visible signal.
+  visible signal. A digit is a visible signal;
+- parallel-shared-record: Agents and roles has a `how:` item that says `in parallel`, one sentence
+  in Evals or Verification names a record (a code span or double-quoted name next to a record noun,
+  or a record noun followed by a number) and says a journey writes to it, and no slot in the brief
+  mentions a seed, copy, clone or duplicate step (a Reset line is not a seed). When in doubt it
+  does not fail. Limits: it reads words, not meaning; it reads only Evals and Verification; it does
+  not follow links to recipe files.
 
 Evals cases: a label is the whole word `pass` or `fail` followed by `:`, or `should|must pass|fail`,
 anywhere in an item outside code spans. A colon label's body runs to the next label, and a phrase's
@@ -132,6 +138,31 @@ PLACEHOLDERS = ["to be determined", "to be decided", "to be confirmed", "fill in
                 "pending", "placeholder", "later"]
 HEDGE_WORDS = {"maybe", "perhaps", "possibly", "probably", "not", "sure", "unsure", "unclear", "depends", "depending",
                "it", "idk", "dunno", "we", "ll", "will", "well", "see", "yet", "tbh", "hmm", "let", "s"}
+
+# Agents and roles `how:` item marking parallel execution.
+PARALLEL_HOW = re.compile(r"^how:.*\bin\s+parallel\b", re.I)
+# Sentence boundary used to keep record name and write verb in the same sentence.
+SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+# Record nouns that name a single writeable entity in Evals or Verification.
+RECORD_NOUNS = "note|record|row|entry|document|order|account|user|ticket|project|thread|notebook|item|page|file"
+# Code-span or double-quoted record name, excluding spaces, slashes and dots.
+RECORD_NAME = r"""(?:`([^\s`/.]+)`|"([^\s"/.]+)")"""
+# Record reference: name near a record noun (at most one word between), or a noun plus a number.
+RECORD_REF = re.compile(
+    rf"{RECORD_NAME}\s+(?:\w+\s+)?\b(?:{RECORD_NOUNS})\b"
+    rf"|\b(?:{RECORD_NOUNS}):?\s+(?:\w+\s+)?{RECORD_NAME}"
+    rf"|\b((?:{RECORD_NOUNS})\s+#?\d+)\b",
+    re.I,
+)
+# Write verbs (with common endings) that signal a journey mutates a record.
+WRITE_VERB = re.compile(
+    r"\b(?:writ(?:es?|ing|ten|e?able)|edit(?:s|ed|ing)?|add(?:s|ed|ing)?|post(?:s|ed|ing)?"
+    r"|sav(?:es?|ed|ing)|delet(?:es?|ed|ing)|updat(?:es?|ed|ing)|creat(?:es?|ed|ing)"
+    r"|comment(?:s|ed|ing)?|append(?:s|ed|ing)?|renam(?:es?|ed|ing)|modif(?:y|ies|ied|ying))\b",
+    re.I,
+)
+# Words anywhere in the brief that signal a seed, copy, clone or duplicate step.
+SEED_WORD = re.compile(r"\b(?:seed(?:s|ed|ing)?|cop(?:y|ies|ied|ying)|clon(?:e|es|ed|ing)|duplicat(?:e|es|ed|ing))\b", re.I)
 
 
 def unwrap(text):
@@ -400,6 +431,30 @@ def is_none(items):
     return len(items) == 1 and items[0].strip().rstrip(".").lower() == "none"
 
 
+def parallel_shared_record(slots):
+    """Flags a parallel brief whose Evals or Verification writes to a fixed record with no seed or copy step."""
+    if not any(PARALLEL_HOW.match(item) for item in slots.get("Agents and roles", [])):
+        return []
+    if any(SEED_WORD.search(item) for items in slots.values() for item in items):
+        return []
+    fails, seen = [], set()
+    for slot_name in ("Evals", "Verification"):
+        for item in slots.get(slot_name, []):
+            for sentence in SENTENCE_SPLIT.split(item):
+                if not WRITE_VERB.search(sentence):
+                    continue
+                for match in RECORD_REF.finditer(sentence):
+                    record = next(g for g in match.groups() if g)
+                    key = (slot_name, record.casefold())
+                    if key not in seen:
+                        seen.add(key)
+                        fails.append(
+                            f"{slot_name}: a journey writes to the fixed record `{record}`."
+                            " Add a seed or copy step that makes a fresh record for each build."
+                        )
+    return fails
+
+
 def check(text):
     slots, questions, counts, _ = parse(text)
     values = judged(slots)
@@ -468,6 +523,7 @@ def check(text):
 
     add("no bare trap adjective", [f"{s}: {i!r} names no visible signal" for s, items in slots.items()
                                    for i in items if is_bare_trap(i)])
+    add("parallel-shared-record", parallel_shared_record(slots))
     return results
 
 
