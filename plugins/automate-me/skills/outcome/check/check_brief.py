@@ -58,11 +58,11 @@ Fails (exit 1) when:
   or a numbered question has no question mark;
 - an item is only trap adjectives (modern, clean, good, better, correct, valid, nice) and names no
   visible signal. A digit is a visible signal;
-- parallel-shared-record: Agents and roles has a `how:` item that says `in parallel`, one sentence
-  in Evals or Verification names a record (a code span or double-quoted name next to a record noun,
-  or a record noun followed by a number) and says a journey writes to it, and no slot in the brief
-  mentions a seed, copy, clone or duplicate step (a Reset line is not a seed). When in doubt it
-  does not fail. Limits: it reads words, not meaning; it reads only Evals and Verification; it does
+- parallel-shared-record, when all three of these hold. Agents and roles has a `how:` item that says `in parallel`.
+  One sentence in Evals or Verification says a journey writes to a named record. A record is a code
+  span or double-quoted name next to a record noun, or a record noun followed by a number. No slot in
+  the brief mentions a seed, copy, clone or duplicate step. A Reset line is not a seed. When in doubt
+  it does not fail. Limits: it reads words, not meaning; it reads only Evals and Verification; it does
   not follow links to recipe files.
 
 Evals cases: a label is the whole word `pass` or `fail` followed by `:`, or `should|must pass|fail`,
@@ -147,7 +147,7 @@ SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 RECORD_NOUNS = "note|record|row|entry|document|order|account|ticket|project|thread|notebook"
 # Code-span or double-quoted record name, excluding spaces, slashes and dots.
 RECORD_NAME = r"""(?:`([^\s`/.]+)`|"([^\s"/.]+)")"""
-# Record reference: name near a record noun (at most one word between), or a noun plus a number.
+# A record reference is a name near a record noun (at most one word between), or a noun plus a number.
 RECORD_REF = re.compile(
     rf"{RECORD_NAME}\s+(?:\w+\s+)?\b(?:{RECORD_NOUNS})\b"
     rf"|\b(?:{RECORD_NOUNS}):?\s+(?:\w+\s+)?{RECORD_NAME}"

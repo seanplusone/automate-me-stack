@@ -169,7 +169,7 @@ Run `python3 "$SKILL_DIR"/check/check_brief.py <brief.md>`. It has three outcome
 
 The rule is deliberately narrow. check_brief FAILs only what is unambiguous. When in doubt it ASKs (exit 2, one ASK line each), and the agent stops and asks the person. Asking is cheap, and a wrong FAIL blocks a real brief. The read-back catches the rest.
 
-The checker also fails a parallel brief (`how: in parallel`) when Evals or Verification writes to one fixed writeable record with no seed or copy step. For example, a parallel brief whose journey adds a comment to the `demo` note needs a step that seeds or copies a fresh note for each build. A Reset line alone does not count.
+The checker also fails a parallel brief (`how: in parallel`) when a journey in Evals or Verification writes to one fixed writeable record with no seed or copy step. For example, a parallel brief whose journey adds a comment to the `demo` note needs a step that seeds or copies a fresh note for each build. A Reset line alone does not count.
 
 ### Limits
 
