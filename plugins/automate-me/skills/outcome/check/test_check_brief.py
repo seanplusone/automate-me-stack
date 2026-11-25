@@ -2,6 +2,7 @@
 import os
 import subprocess
 import sys
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -136,6 +137,27 @@ expect("id with underscore and hyphen passes",
             swap("  - m1: `python3 check_listings.py`", "  - bed_3-ok: `python3 check_listings.py`")), set())
 expect("hedged rule with Verify passes",
        swap("  - [m1] 3 bed. Proof is the listing.", "  - [m1] 3 bed (hedged, confirm). Proof is the listing."), set())
+
+
+def expect_fast(name, text, want, limit=1.0):
+    RAN.append(name)
+    start = time.perf_counter()
+    results = check(text)
+    elapsed = time.perf_counter() - start
+    got = {check_name for check_name, fails in results if fails}
+    reasons = []
+    if got != want:
+        reasons.append(f"wanted {sorted(want)}, got {sorted(got)}")
+    if elapsed >= limit:
+        reasons.append(f"took {elapsed:.3f}s, limit {limit:.1f}s")
+    if reasons:
+        FAILS.append(f"{name}: {'; '.join(reasons)}")
+
+
+expect_fast("unclosed backtick in Verify line does not backtrack",
+            swap("  - m1: `python3 check_listings.py`", "  - m1: `" + "a" * 100000), {HAS_CMD})
+expect_fast("long whitespace backticks in Verify line do not backtrack",
+            swap("  - m1: `python3 check_listings.py`", "  - m1: `" + " " * 100000 + "`"), {HAS_CMD})
 
 FIXTURES = os.path.join(HERE, "fixtures")
 CHECK = os.path.join(HERE, "check_brief.py")
