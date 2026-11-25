@@ -137,6 +137,16 @@ expect("id with underscore and hyphen passes",
             swap("  - m1: `python3 check_listings.py`", "  - bed_3-ok: `python3 check_listings.py`")), set())
 expect("hedged rule with Verify passes",
        swap("  - [m1] 3 bed. Proof is the listing.", "  - [m1] 3 bed (hedged, confirm). Proof is the listing."), set())
+expect("code span after prose in Verify line fails",
+       swap("  - m1: `python3 check_listings.py`", "  - m1: The status is `example`."), {HAS_CMD})
+expect("leading spaces before the command pass",
+       swap("  - m1: `python3 check_listings.py`", "  - m1:  `python3 check_listings.py`"), set())
+expect("empty span at the start of a Verify line fails",
+       swap("  - m1: `python3 check_listings.py`", "  - m1: `` then a note"), {HAS_CMD})
+expect("whitespace-only span then a note fails",
+       swap("  - m1: `python3 check_listings.py`", "  - m1: `   ` then a note"), {HAS_CMD})
+expect("command first with a later code span in the note passes",
+       swap("  - m1: `python3 check_listings.py`", "  - m1: `python3 check_listings.py` see `listings.csv`"), set())
 
 
 def expect_fast(name, text, want, limit=1.0):
