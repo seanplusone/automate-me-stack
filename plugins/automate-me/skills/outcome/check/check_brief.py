@@ -22,7 +22,7 @@ Fails when:
   visible signal named;
 - a Must-haves rule (not `investigate:`, `out of scope:` or `unknown`) has no `[id]` prefix;
 - a Must-have id has no Verify line, or a Verify line names no id or an unknown id;
-- a Verify line has no backticked command;
+- a Verify line has no backticked command, or the command is not first in the value;
 - an id is used more than once among Must-haves or among Verify lines.
 Prints a PASS or FAIL line per check and exits 1 on any FAIL.
 """
@@ -47,7 +47,7 @@ TAGS = {"investigate": ["Must-haves"], "out of scope": ["Must-haves"], "how": ["
 TAG = re.compile(r"^(" + "|".join(map(re.escape, TAGS)) + r"):", re.I)
 RULE_ID = re.compile(r"^\[([A-Za-z][A-Za-z0-9_-]*)\]\s+\S")
 VERIFY_ID = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*):\s*(.*)$")
-BACKTICK_CMD = re.compile(r"`\s*[^`\s][^`]*`")
+BACKTICK_CMD = re.compile(r"^\s*`\s*[^`\s][^`]*`")
 
 
 def canon(label):
