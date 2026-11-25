@@ -47,7 +47,7 @@ TAGS = {"investigate": ["Must-haves"], "out of scope": ["Must-haves"], "how": ["
 TAG = re.compile(r"^(" + "|".join(map(re.escape, TAGS)) + r"):", re.I)
 RULE_ID = re.compile(r"^\[([A-Za-z][A-Za-z0-9_-]*)\]\s+\S")
 VERIFY_ID = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*):\s*(.*)$")
-BACKTICK_CMD = re.compile(r"`[^`]*[^\s`][^`]*`")
+BACKTICK_CMD = re.compile(r"`\s*[^`\s][^`]*`")
 
 
 def canon(label):
