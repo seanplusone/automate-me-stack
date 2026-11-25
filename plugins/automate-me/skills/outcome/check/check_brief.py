@@ -58,7 +58,7 @@ Fails (exit 1) when:
   or a numbered question has no question mark;
 - an item is only trap adjectives (modern, clean, good, better, correct, valid, nice) and names no
   visible signal. A digit is a visible signal;
-- parallel-shared-record, when all three of these hold. Agents and roles has a `how:` item that says `in parallel`.
+- parallel-shared-record, when all three of these hold. Agents and roles has a `how:` item that says `in parallel`. A negated mark such as `never in parallel` does not count. The word comment is not a write.
   One sentence in Evals or Verification says a journey writes to a named record. A record is a code
   span or double-quoted name next to a record noun, or a record noun followed by a number. No slot in
   the brief mentions a seed, copy, clone or duplicate step. A Reset line is not a seed. When in doubt
@@ -140,7 +140,9 @@ HEDGE_WORDS = {"maybe", "perhaps", "possibly", "probably", "not", "sure", "unsur
                "it", "idk", "dunno", "we", "ll", "will", "well", "see", "yet", "tbh", "hmm", "let", "s"}
 
 # Agents and roles `how:` item marking parallel execution.
+# A negated mark such as "never in parallel" or "no parallel" does not count.
 PARALLEL_HOW = re.compile(r"^how:.*\bin\s+parallel\b", re.I)
+PARALLEL_NEGATED = re.compile(r"\b(?:never|not)\s+in\s+parallel\b|\bno\s+parallel\b", re.I)
 # Sentence boundary used to keep record name and write verb in the same sentence.
 SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 # Nouns for a stored record, not actors, items in a cart or navigation.
@@ -155,10 +157,11 @@ RECORD_REF = re.compile(
     re.I,
 )
 # Write verbs (with common endings) that signal a journey mutates a record.
+# The word comment is not a write verb; a journey may only be reading comments.
 WRITE_VERB = re.compile(
     r"\b(?:writ(?:es?|ing|ten|e?able)|edit(?:s|ed|ing)?|add(?:s|ed|ing)?|post(?:s|ed|ing)?"
     r"|sav(?:es?|ed|ing)|delet(?:es?|ed|ing)|updat(?:es?|ed|ing)|creat(?:es?|ed|ing)"
-    r"|comment(?:s|ed|ing)?|append(?:s|ed|ing)?|renam(?:es?|ed|ing)|modif(?:y|ies|ied|ying))\b",
+    r"|append(?:s|ed|ing)?|renam(?:es?|ed|ing)|modif(?:y|ies|ied|ying))\b",
     re.I,
 )
 # Words anywhere in the brief that signal a seed, copy, clone or duplicate step.
@@ -433,7 +436,10 @@ def is_none(items):
 
 def parallel_shared_record(slots):
     """Flags a parallel brief whose Evals or Verification writes to a fixed record with no seed or copy step."""
-    if not any(PARALLEL_HOW.match(item) for item in slots.get("Agents and roles", [])):
+    if not any(
+        PARALLEL_HOW.match(item) and not PARALLEL_NEGATED.search(item)
+        for item in slots.get("Agents and roles", [])
+    ):
         return []
     if any(SEED_WORD.search(item) for items in slots.values() for item in items):
         return []

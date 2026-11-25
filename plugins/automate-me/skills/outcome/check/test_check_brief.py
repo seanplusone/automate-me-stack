@@ -578,6 +578,14 @@ expect("parallel held-out orders app",
 expect("parallel actor is not a record", parallel_case("The user adds `hello` to the cart and checks the total."), set())
 expect("parallel page number is not a record", parallel_case("The journey updates the filter, then opens page 2."), set())
 expect("parallel read only record passes", parallel_case("A journey reads the `demo` note and checks the title."), set())
+expect("parallel never in parallel",
+       swap("how: in parallel, one agent per build", "how: one agent builds, never in parallel", PARALLEL_BAD_SHARED), set())
+expect("parallel not in parallel",
+       swap("how: in parallel, one agent per build", "how: not in parallel", PARALLEL_BAD_SHARED), set())
+expect("parallel no parallel",
+       swap("how: in parallel, one agent per build", "how: no parallel", PARALLEL_BAD_SHARED), set())
+expect("parallel reads comments is not a write",
+       parallel_case("A journey reads the comments on the `demo` note and checks the title."), set())
 
 
 if __name__ == "__main__":
