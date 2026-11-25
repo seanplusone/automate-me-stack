@@ -244,7 +244,7 @@ class RenderPlan(unittest.TestCase):
         from check_brief import check
         out = render_plan.render_prompt(GOOD, "B")
         for slot in ("Never say done", "Review:", "Waits for:", "not proof", "RESUME.md", "- Goal:", "- Done:",
-                     "- Output: One file.", "- Constraints:", "- Tools:", "- Agents and roles:", "- Evals:",
+                     "- Output: One file.", "- Constraints:", "- Tools:", "- Agents and roles:", "- Run mode: one-at-a-time", "- Evals:",
                      "- Verification:", "Uses the output of:"):
             self.assertIn(slot, out)
         self.assertNotIn("The person reads it in the reply.", out)

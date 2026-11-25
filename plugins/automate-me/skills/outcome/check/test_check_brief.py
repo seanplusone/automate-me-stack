@@ -1,5 +1,6 @@
 """Run: python3 check/test_check_brief.py"""
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -24,6 +25,7 @@ GOOD = """# Brief: t
 - Constraints: Stop after one peek. Report only.
 - Tools: A browser that opens photos. Write first: none.
 - Agents and roles: One agent searches. A second person checks the list.
+- Run mode: one-at-a-time
 - Evals:
   - Pass: a listing with 3 beds and a photo is kept.
   - Fail: a listing with no photo is dropped.
@@ -46,6 +48,7 @@ MIN = """# Brief: t
 - Constraints: Stop after one peek.
 - Tools: A browser. Write first: none.
 - Agents and roles: One agent searches.
+- Run mode: one-at-a-time
 - Evals:
   - Pass: keep a 3 bed listing.
   - Fail: drop a listing with no photo.
@@ -160,7 +163,7 @@ expect("adjective with a signal passes", swap("- Taste: Modern, flag don't filte
 expect("check is filler, so a bare correct fails", swap("- Taste: Modern, flag don't filter. Signal is the kitchen photo.", "- Taste: Check it is correct."), {TRAP})
 
 PLACE = "no placeholder"
-REQUIRED = ["Goal", "Done", "Output", "Constraints", "Tools", "Agents and roles", "Evals", "Verification"]
+REQUIRED = ["Goal", "Done", "Output", "Constraints", "Tools", "Agents and roles", "Run mode", "Evals", "Verification"]
 TBD = "# Brief: t\n" + "".join(f"- {s}: TBD\n" for s in REQUIRED)
 RAN.append("every slot TBD names each required slot")
 tbd_msgs = [f for _, fails in check(TBD) for f in fails]
@@ -272,7 +275,7 @@ with open(SKILL_MD) as handle:
     template = handle.read().split("```\n# Brief: <short title>\n", 1)[1].split("```", 1)[0]
 RAN.append("SKILL.md template pasted unfilled fails every required slot, the holes and Kind")
 got = failed("# Brief: t\n" + template)
-want = {PLACE, "no template hole", "Kind is one kind"}
+want = {PLACE, "no template hole", "Kind is one kind", "Run mode is one mode"}
 if not want <= got:
     FAILS.append(f"SKILL.md template: wanted {sorted(want)} within {sorted(got)}")
 msgs = [m for _, fs in check("# Brief: t\n" + template) for m in fs]
@@ -552,7 +555,7 @@ parallel_verification_only = slot(
     PARALLEL_BAD_SHARED,
 )
 expect("parallel verification only", parallel_verification_only, {SHARED_REC})
-expect("parallel no mark", swap("how: in parallel, one agent per build", "how: one agent builds", PARALLEL_BAD_SHARED), set())
+expect("parallel no mark", swap("- Run mode: parallel\n", "- Run mode: one-at-a-time\n", PARALLEL_BAD_SHARED), set())
 RAN.append("cli parallel bad shared note exits 1")
 ran = run_cli(PARALLEL_BAD_SHARED)
 if ran.returncode != 1 or "FAIL parallel-shared-record" not in ran.stdout:
@@ -578,22 +581,48 @@ expect("parallel held-out orders app",
 expect("parallel actor is not a record", parallel_case("The user adds `hello` to the cart and checks the total."), set())
 expect("parallel page number is not a record", parallel_case("The journey updates the filter, then opens page 2."), set())
 expect("parallel read only record passes", parallel_case("A journey reads the `demo` note and checks the title."), set())
-expect("parallel never in parallel",
-       swap("how: in parallel, one agent per build", "how: one agent builds, never in parallel", PARALLEL_BAD_SHARED), set())
-expect("parallel not in parallel",
-       swap("how: in parallel, one agent per build", "how: not in parallel", PARALLEL_BAD_SHARED), set())
-expect("parallel no parallel",
-       swap("how: in parallel, one agent per build", "how: no parallel", PARALLEL_BAD_SHARED), set())
-expect("parallel never run in parallel",
-       swap("how: in parallel, one agent per build", "how: never run in parallel", PARALLEL_BAD_SHARED), set())
-expect("parallel not run in parallel",
-       swap("how: in parallel, one agent per build", "how: not run in parallel", PARALLEL_BAD_SHARED), set())
-expect("parallel don't run in parallel",
-       swap("how: in parallel, one agent per build", "how: don't run in parallel", PARALLEL_BAD_SHARED), set())
-expect("parallel do not run in parallel",
-       swap("how: in parallel, one agent per build", "how: do not run in parallel", PARALLEL_BAD_SHARED), set())
+expect("parallel how never in parallel is not read",
+       swap("how: one agent per build", "how: never in parallel", PARALLEL_BAD_SHARED), {SHARED_REC})
+expect("parallel how never run in parallel is not read",
+       swap("how: one agent per build", "how: never run in parallel", PARALLEL_BAD_SHARED), {SHARED_REC})
 expect("parallel reads comments is not a write",
        parallel_case("A journey reads the comments on the `demo` note and checks the title."), set())
+
+
+def without_run_mode(text):
+    return re.sub(r"- Run mode:[^\n]*\n", "", text)
+
+
+def with_run_mode(value, text):
+    text = without_run_mode(text)
+    return swap("- Goal:", f"- Run mode: {value}\n- Goal:", text)
+
+
+def without_parallel_how(text):
+    old = "how: in parallel, one agent per build"
+    return swap(old, "how: one agent per build", text) if old in text else text
+
+
+RUN_MODE = "Run mode is one mode"
+expect("run mode missing", without_run_mode(MIN), {PRESENT, RUN_MODE})
+expect("run mode bad value", with_run_mode("sometimes", MIN), {RUN_MODE})
+expect("run mode parallel shared write",
+       with_run_mode("parallel", without_parallel_how(PARALLEL_BAD_SHARED)), {SHARED_REC})
+expect("run mode parallel with seed",
+       with_run_mode("parallel", without_parallel_how(PARALLEL_GOOD_SEEDED)), set())
+expect("run mode one-at-a-time shared write",
+       with_run_mode("one-at-a-time", without_parallel_how(PARALLEL_BAD_SHARED)), set())
+expect("run mode not guessed from never run in parallel",
+       without_run_mode(swap("how: one agent per build", "how: never run in parallel", PARALLEL_BAD_SHARED)),
+       {PRESENT, RUN_MODE})
+RAN.append("run mode missing names the allowed values")
+ran = run_cli(without_run_mode(MIN))
+if ran.returncode != 1 or "one-at-a-time" not in ran.stdout or "parallel" not in ran.stdout:
+    FAILS.append(f"run mode missing names the allowed values: exit {ran.returncode}\n{ran.stdout}")
+RAN.append("run mode bad value names the allowed values")
+ran = run_cli(with_run_mode("sometimes", MIN))
+if ran.returncode != 1 or "FAIL Run mode is one mode" not in ran.stdout or "sometimes" not in ran.stdout:
+    FAILS.append(f"run mode bad value names the allowed values: exit {ran.returncode}\n{ran.stdout}")
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
 
 - Kind: build
 - Plan first: none needed
+- Run mode: parallel
 - Goal: Show the comment timestamp in the notes app.
 - Done:
   - Each comment shows its timestamp below the comment body.
@@ -16,7 +17,7 @@
   - write first: none.
 - Agents and roles:
   - Two agents build two features at the same time.
-  - how: in parallel, one agent per build
+  - how: one agent per build
 - Evals:
   - Pass: a new comment shows its timestamp below the body.
   - Fail: a new comment hides its timestamp.

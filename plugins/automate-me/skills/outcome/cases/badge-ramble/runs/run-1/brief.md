@@ -19,6 +19,7 @@
   - A browser at a few widths. Check it opens the app first.
   - write first: the list of counts and widths to screenshot.
 - Agents and roles: One agent builds it. The speaker checks the screenshots.
+- Run mode: one-at-a-time
 - Evals:
   - Pass: at 150 the badge shows 99+ and sits under the open dropdown.
   - Fail: the badge draws over the open dropdown.

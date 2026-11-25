@@ -180,6 +180,7 @@ def render_prompt(p, iid):
         f'- Constraints: {s["limits"]} At most {lp.get("max")} tries. {lp.get("exit_when", "")} {guard}',
         f'- Tools: {", ".join(s.get("tools", [])) or "none named"}. Waits for: {waits}. Read only {", ".join(s.get("context", [])) or "nothing else"}. Ask before reading anything else.',
         f'- Agents and roles: worker {s.get("model")} at {s.get("effort")} effort. The verifier is a fresh agent that did not do the work.',
+        "- Run mode: one-at-a-time",
         *([REVIEW] if changes_code else []),
         "- Evals:",
         "  - unknown: What is one case that should pass, and one that should fail?",

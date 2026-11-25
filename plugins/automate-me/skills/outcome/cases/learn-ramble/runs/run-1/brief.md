@@ -19,6 +19,7 @@
   - The database is Postgres. Use the Postgres docs and a throwaway local database. Check the database starts.
   - write first: the example query, before the explanation.
 - Agents and roles: One agent explains. The speaker answers the check. No split.
+- Run mode: one-at-a-time
 - Evals:
   - Pass: the explanation uses the orders query and cites a source.
   - Fail: it names a Postgres version the speaker did not give.

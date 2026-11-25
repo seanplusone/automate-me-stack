@@ -7,7 +7,7 @@ A slot is a top-level line `- <Label>: <value>`. A note in brackets after the la
 The labels are fixed (see REQUIRED and OPTIONAL). Questions go in a block headed
 `## Questions`, as numbered lines `1. <question>?`.
 
-Required: Goal, Done, Output, Constraints, Tools, Agents and roles, Evals, Verification.
+Required: Goal, Done, Output, Constraints, Tools, Agents and roles, Run mode, Evals, Verification.
 Optional: Kind, Plan first, Taste, Skills, Parking lot, Unknowns.
 
 Each value gets one of three outcomes from classify(value). core(value) is the value as classify sees
@@ -58,12 +58,14 @@ Fails (exit 1) when:
   or a numbered question has no question mark;
 - an item is only trap adjectives (modern, clean, good, better, correct, valid, nice) and names no
   visible signal. A digit is a visible signal;
-- parallel-shared-record, when all three of these hold. Agents and roles has a `how:` item that says `in parallel`. A negated mark such as `never in parallel` or `never run in parallel` does not count. The word comment is not a write.
-  One sentence in Evals or Verification says a journey writes to a named record. A record is a code
-  span or double-quoted name next to a record noun, or a record noun followed by a number. No slot in
-  the brief mentions a seed, copy, clone or duplicate step. A Reset line is not a seed. When in doubt
-  it does not fail. Limits: it reads words, not meaning; it reads only Evals and Verification; it does
-  not follow links to recipe files.
+- Run mode is missing, or is not exactly `parallel` or `one-at-a-time`. The checker does not infer
+  the mode from prose. When in doubt this field fails;
+- parallel-shared-record, when all three of these hold. Run mode is `parallel`. One sentence in Evals
+  or Verification says a journey writes to a named record. A record is a code span or double-quoted
+  name next to a record noun, or a record noun followed by a number. No slot in the brief mentions a
+  seed, copy, clone or duplicate step. A Reset line is not a seed. The word comment is not a write.
+  When in doubt this check does not fail. Limits: it reads words, not meaning; it reads only Evals
+  and Verification; it does not follow links to recipe files.
 
 Evals cases: a label is the whole word `pass` or `fail` followed by `:`, or `should|must pass|fail`,
 anywhere in an item outside code spans. A colon label's body runs to the next label, and a phrase's
@@ -95,7 +97,7 @@ import re
 import sys
 import unicodedata
 
-REQUIRED = ["Goal", "Done", "Output", "Constraints", "Tools", "Agents and roles", "Evals", "Verification"]
+REQUIRED = ["Goal", "Done", "Output", "Constraints", "Tools", "Agents and roles", "Run mode", "Evals", "Verification"]
 OPTIONAL = ["Kind", "Plan first", "Taste", "Skills", "Parking lot", "Unknowns"]
 LABELS = REQUIRED + OPTIONAL
 NONE_OK = {"Skills", "Parking lot", "Unknowns"}
@@ -114,6 +116,7 @@ TAGS = {"investigate": ["Done"], "out of scope": ["Constraints"], "how": ["Agent
 TAG = re.compile(r"^(" + "|".join(map(re.escape, TAGS)) + r"):", re.I)
 FENCE_MARK = re.compile(r"^(```+|~~~+)")
 KINDS = {"build", "review", "design", "learn", "search/decide"}
+RUN_MODES = ("one-at-a-time", "parallel")
 CASE_LABEL = re.compile(r"(?<![\w-])(pass|fail)\s*:", re.I)
 CASE_PHRASE = re.compile(r"\b(?:should|must)\s+(pass|fail)\b", re.I)
 ITEM_END = re.compile(r"[\s.!]*$")
@@ -139,14 +142,6 @@ PLACEHOLDERS = ["to be determined", "to be decided", "to be confirmed", "fill in
 HEDGE_WORDS = {"maybe", "perhaps", "possibly", "probably", "not", "sure", "unsure", "unclear", "depends", "depending",
                "it", "idk", "dunno", "we", "ll", "will", "well", "see", "yet", "tbh", "hmm", "let", "s"}
 
-# Agents and roles `how:` item marking parallel execution.
-# A negation word before "in parallel", with at most two words between, does not count.
-# "no parallel" also counts as a negation.
-PARALLEL_HOW = re.compile(r"^how:.*\bin\s+parallel\b", re.I)
-PARALLEL_NEGATED = re.compile(
-    r"\b(?:never|not|don't|dont|do\s+not|no)\s+(?:\w+\s+){0,2}(?:in\s+)?parallel\b",
-    re.I,
-)
 # Sentence boundary used to keep record name and write verb in the same sentence.
 SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 # Nouns for a stored record, not actors, items in a cart or navigation.
@@ -438,12 +433,22 @@ def is_none(items):
     return len(items) == 1 and items[0].strip().rstrip(".").lower() == "none"
 
 
+def run_mode_fails(slots, counts):
+    """Fails when Run mode is missing or is not one of the two allowed values."""
+    allowed = ", ".join(RUN_MODES)
+    if "Run mode" not in counts or not slots.get("Run mode"):
+        return [f"Run mode is missing; write one of {allowed}"]
+    items = slots["Run mode"]
+    value = items[0] if len(items) == 1 else "; ".join(items)
+    if len(items) != 1 or core(items[0]) not in {core(v) for v in RUN_MODES}:
+        return [f"Run mode is {value!r}; write one of {allowed}"]
+    return []
+
+
 def parallel_shared_record(slots):
-    """Flags a parallel brief whose Evals or Verification writes to a fixed record with no seed or copy step."""
-    if not any(
-        PARALLEL_HOW.match(item) and not PARALLEL_NEGATED.search(item)
-        for item in slots.get("Agents and roles", [])
-    ):
+    """Flags a brief with Run mode parallel whose Evals or Verification writes to a fixed record with no seed or copy step."""
+    modes = slots.get("Run mode", [])
+    if len(modes) != 1 or core(modes[0]) != core("parallel"):
         return []
     if any(SEED_WORD.search(item) for items in slots.values() for item in items):
         return []
@@ -473,7 +478,12 @@ def check(text):
     def add(name, fails):
         results.append((name, fails))
 
-    add("every required slot present", [f"missing slot: {s}" for s in REQUIRED if s not in counts])
+    def missing_slot_msg(s):
+        if s == "Run mode":
+            return "missing slot: Run mode; write one of " + ", ".join(RUN_MODES)
+        return f"missing slot: {s}"
+
+    add("every required slot present", [missing_slot_msg(s) for s in REQUIRED if s not in counts])
     add("no unknown slot", [f"unknown slot: {s}. Use only {', '.join(LABELS)}. Indent a slot's items under it" for s in counts if s not in LABELS])
     add("no slot repeated", [f"slot {s} appears {n} times" for s, n in counts.items() if n > 1])
     add("no empty slot", [f"slot {s} is empty" for s, items in slots.items() if not items])
@@ -490,6 +500,7 @@ def check(text):
     kind = slots.get("Kind", [])
     add("Kind is one kind", [f"Kind is {kind[0]!r}; write one of {', '.join(sorted(KINDS))}"
                              for _ in [0] if kind and core(kind[0]) not in KINDS])
+    add("Run mode is one mode", run_mode_fails(slots, counts))
 
     bad_unknown = [f"{s}: {i!r} is not 'unknown: <question>?'" for s, items in slots.items() for i in items
                    if UNKNOWN_START.match(i) and not UNKNOWN_OK.match(i)]

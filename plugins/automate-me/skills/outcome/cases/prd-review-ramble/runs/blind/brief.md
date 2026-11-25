@@ -26,6 +26,7 @@
 - Agents and roles:
   - how: single pass
   - One reviewer drafts the questions. The PM reads them.
+- Run mode: one-at-a-time
 - Evals:
   - Pass: a question names a PRD section and offers no answer.
   - Fail: a question states what billing does.
