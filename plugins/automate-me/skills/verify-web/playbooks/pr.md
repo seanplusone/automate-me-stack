@@ -62,13 +62,22 @@ evidence, and cleanup.
    Note the ids. A scenario that ran on a fresh record on one side and a used one on the other
    compares nothing.
 
-7. **Run each scenario on base, then on head.** Same persona, same steps, same data. Save the
-   evidence as `s<N>-base-*` and `s<N>-head-*`: screenshots, snapshots, the console messages,
-   non-2xx network requests, and the second-way check (a JSON response, a query result, the record
-   reopened in a fresh page). Write down what you saw, not what you expected.
+7. **Run each scenario on base, then on head.** Same persona, same steps, same data. Headless is a
+   setup flag, not a switch during a run (see SKILL.md). Do not run the project's full unit-test
+   suite. Save the evidence as `s<N>-base-*` and
+   `s<N>-head-*`: screenshots and snapshots before and after each step with the URL visible, a
+   reload or fresh-context persistence check when the claim is a change (a write), the console
+   messages, non-2xx network requests, and the second-way check (a JSON response, a query result,
+   the record reopened in a fresh page).
+   With Playwright MCP, start a trace before driving and keep it in the evidence folder if a step
+   fails or the verdict is CONTRADICTED; otherwise you may discard it. Record video only when
+   motion or timing matters. With the chrome-devtools MCP, screenshots are the evidence; no trace
+   is required. Write down what you saw, not what you expected.
 
 8. **Give each scenario a verdict.**
-   - `VERIFIED`: on head the screen shows the claim, and the second-way check agrees.
+   - `VERIFIED`: on head the screen shows the claim, and the second-way check agrees. When the
+     claim is a change (a write), the change still shows after a reload or in a fresh context.
+     A read-only claim, such as no Refund button, needs no persist step.
    - `CONTRADICTED`: on head the screen or the second-way check shows the claim is false. When it
      looks like a timing issue, run head once more. If the two runs differ, it is
      `NOT RUN: flaky, <what differed>`, not CONTRADICTED.
