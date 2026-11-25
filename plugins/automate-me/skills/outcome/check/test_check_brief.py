@@ -184,7 +184,10 @@ CHECK = os.path.join(HERE, "check_brief.py")
 def expect_fixture(filename, want_fail, not_fail=(), want_pattern=None, want_skip=(), name=None):
     name = name or f"fixture {filename}"
     RAN.append(name)
-    proc = subprocess.run([sys.executable, CHECK, os.path.join(FIXTURES, filename)],
+    path = os.path.join(FIXTURES, filename)
+    if not os.path.exists(path):
+        path = os.path.join(HERE, filename)
+    proc = subprocess.run([sys.executable, CHECK, path],
                           capture_output=True, text=True)
     lines = proc.stdout.splitlines()
     if want_fail is None:

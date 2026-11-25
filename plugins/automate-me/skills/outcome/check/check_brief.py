@@ -25,10 +25,11 @@ Fails when:
 - a Must-have id has no Verify line, or a Verify line names no id or an unknown id;
 - a Verify line has no backticked command, or the command is not first in the value;
 - an id is used more than once among Must-haves or among Verify lines;
-- given a file path, no ancestor `briefs/WORKSTREAMS` file is found (walking up from the brief's
-  folder), Workstream is not listed in the nearest `briefs/WORKSTREAMS`, or the parent folder name
-  does not match Workstream (all three are skipped when no path is given).
-Prints a PASS or FAIL line per check and exits 1 on any FAIL.
+- given a file path, no `briefs/WORKSTREAMS` file is found (starting at the path if it is a
+  directory or its parent folder, at each directory look for `briefs/WORKSTREAMS`), Workstream is
+  not listed in the nearest `briefs/WORKSTREAMS`, or the parent folder name does not match
+  Workstream (omitted when no path is given; path checks that cannot run print SKIP, not PASS).
+Prints a PASS, FAIL, or SKIP line per check and exits 1 only on FAIL.
 """
 import os
 import re
@@ -111,12 +112,12 @@ def is_none(items):
 
 
 def find_workstreams(path):
-    d = os.path.dirname(os.path.abspath(path))
+    abs_path = os.path.abspath(path)
+    d = abs_path if os.path.isdir(abs_path) else os.path.dirname(abs_path)
     while True:
-        if os.path.basename(d) == "briefs":
-            candidate = os.path.join(d, "WORKSTREAMS")
-            if os.path.isfile(candidate):
-                return candidate
+        candidate = os.path.join(d, "briefs", "WORKSTREAMS")
+        if os.path.isfile(candidate):
+            return candidate
         up = os.path.dirname(d)
         if up == d:
             return None
@@ -130,7 +131,15 @@ def check(text, path=None):
     def add(name, fails):
         results.append((name, fails))
 
-    add("every required slot present", [f"missing slot: {s}" for s in REQUIRED if s not in counts])
+    parent = os.path.basename(os.path.dirname(os.path.abspath(path))) if path is not None else None
+    missing_slots = []
+    for s in REQUIRED:
+        if s not in counts:
+            if s == "Workstream" and parent:
+                missing_slots.append(f"missing slot: Workstream; add `- Workstream: {parent}`")
+            else:
+                missing_slots.append(f"missing slot: {s}")
+    add("every required slot present", missing_slots)
     add("no slot repeated", [f"slot {s} appears {n} times" for s, n in counts.items() if n > 1])
     add("no empty slot", [f"slot {s} is empty" for s, items in slots.items() if not items])
 
@@ -220,20 +229,22 @@ def check(text, path=None):
 
     if path is not None:
         ws_items = slots.get("Workstream", [])
-        ws_file_fails, ws_listed_fails, ws_folder_fails = [], [], []
-        if ws_items:
+        if not ws_items:
+            ws_file_fails, ws_listed_fails, ws_folder_fails = None, None, None
+        else:
             ws = ws_items[0].strip()
             ws_file = find_workstreams(path)
             if ws_file is None:
-                ws_file_fails.append(
-                    "no briefs/WORKSTREAMS found; create a briefs/WORKSTREAMS file listing the allowed workstreams, one per line"
-                )
+                ws_file_fails = [
+                    "no briefs/WORKSTREAMS found; ask before you create a briefs/WORKSTREAMS file listing the allowed workstreams, one per line"
+                ]
+                ws_listed_fails, ws_folder_fails = None, None
             else:
+                ws_file_fails, ws_listed_fails, ws_folder_fails = [], [], []
                 with open(ws_file) as f:
                     allowed = {line.strip() for line in f.read().splitlines() if line.strip()}
                 if ws not in allowed:
                     ws_listed_fails.append(f"Workstream {ws!r} is not listed in {ws_file}")
-                parent = os.path.basename(os.path.dirname(os.path.abspath(path)))
                 if parent != ws:
                     ws_folder_fails.append(f"parent folder {parent!r} does not match Workstream {ws!r}")
         add("a briefs/WORKSTREAMS file exists", ws_file_fails)
@@ -247,6 +258,9 @@ def main(path):
     with open(path) as f:
         text = f.read()
     for name, fails in check(text, path):
+        if fails is None:
+            print(f"SKIP {name}")
+            continue
         print(f"{'FAIL' if fails else 'PASS'} {name}")
         for fail in fails:
             print(f"  {fail}")
