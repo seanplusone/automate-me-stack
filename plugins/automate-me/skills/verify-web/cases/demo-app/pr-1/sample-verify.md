@@ -12,7 +12,10 @@ Claimed: "disables the Refund button after one click and relabels it Refunded" (
 Steps: admin, Reset demo data, click Refund once on order 1001, reload the order page
 Base: the button stays enabled and still reads Refund. One refund row for order 1001.
 Head: the button is disabled and reads Refunded. One refund row for order 1001.
-Evidence: doctor-base.txt, doctor-head.txt, s1-base-after.png, s1-head-after.png, s1-head-refunds.json
+Evidence: doctor-base.txt, doctor-head.txt, s1-base-after.png, s1-head-after.png, s1-head-after-reload.png, s1-head-refunds.json
+Persist: reload
+Persist screenshot: s1-head-after-reload.png
+Before screenshot: s1-head-after.png
 Verdict: VERIFIED
 
 ## S2. A double-click on Refund makes one refund
@@ -25,10 +28,11 @@ Verdict: CONTRADICTED
 
 ## S3. A read-only user sees no Refund button
 Claimed: "A read-only user still sees no Refund button." (test plan item 3)
-Steps: readonly persona, open Orders
+Steps: readonly persona, open Orders, reload the page
 Base: no Refund button on any row.
-Head: no Refund button on any row. A POST to the refund URL as that user returns 403.
-Evidence: s3-head-orders.png, s3-head-network.txt
+Head: after the reload, no Refund button on any row. A POST to the refund URL as that user returns 403.
+Evidence: s3-head-orders.png, s3-head-after-reload.png, s3-head-network.txt
+Persist: none
 Verdict: VERIFIED
 
 Summary: 1 CONTRADICTED, 2 VERIFIED, 0 NOT RUN
