@@ -36,6 +36,7 @@ Input is one PR, or a set of PRs that link to each other. Output is `drafts.md` 
    - A bot comment names the commit it reviewed. If the head moved, read the current code before repeating it.
    - Size. Run `python3 "$SKILL_DIR"/../split-pr/check/size.py <base> pr-<n>`. When it says split, say so in the chat reply with its numbers. Size is never a comment.
    - Prose. Run `python3 "$SKILL_DIR"/../shared/pr_prose.py <base> pr-<n> --body <dir>/body.md`. It lints the comments and markdown the PR adds, its commit messages and its body. Each hit is a candidate for the one `nit`, on the line it names; the body and commit messages have no line, so they go in the review body.
+   - PR body. Run `python3 "$SKILL_DIR"/check/check_pr_body.py <dir>/body.md`. A FAIL is at least `should fix`, posted at `PR`. The body has to say what changed and why, in a few sentences or one short list. A long write-up, a table, a glossary, or a note about how the review was done fails the check.
 
 2. **Load the references.** Pick by the file types the diff touches, not by the repo name. A PR can load more than one.
    - Shell scripts, CI workflows, Dockerfiles, compose files, IAM policies, infrastructure-as-code or cloud resources: `references/infra.md`. If the repo has its own guardrail skill, load it too.
@@ -43,6 +44,7 @@ Input is one PR, or a set of PRs that link to each other. Output is `drafts.md` 
    - Markdown only (runbooks, ADRs, design docs): `references/docs.md`.
    - `.ts`, `.tsx`, `.js` or `.jsx`, or a `<script>` added to a server-rendered template: `references/frontend.md`.
    - Any file `check/classify.py` labelled `generated` (step 0): `references/bundle.md`, in place of `frontend.md` for those files.
+   - A model registry, a prompt file, a gate on model output, or a profile that names `eval_gate`: `playbooks/eval-gap.md`. Findings from that lens join the candidates in step 6.
    - Backend source with no reference here (Python, Go, PHP, Ruby, Java): read the repo's own `CLAUDE.md`, `CONTRIBUTING` and test setup. They give its conventions and its safe test command. Then apply the steps below.
 
 3. **Attack the frame.**
