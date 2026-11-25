@@ -94,6 +94,7 @@ OPTIONAL = ["Kind", "Plan first", "Taste", "Skills", "Parking lot", "Unknowns"]
 LABELS = REQUIRED + OPTIONAL
 NONE_OK = {"Skills", "Parking lot", "Unknowns"}
 SLOT = re.compile(r"^- (" + "|".join(map(re.escape, LABELS)) + r")(?:\s*\([^)]*\))?:(.*)$", re.I)
+OTHER_SLOT = re.compile(r"^- ([^\W\d_][\w /-]{0,40}?)(?:\s*\([^)]*\))?:(?:\s|$)")
 SUB = re.compile(r"^\s+(?:[-*]|\d+\.)\s+(.*)$")
 NUMBERED = re.compile(r"^(\d+)\.\s+(.*)$")
 UNKNOWN_START = re.compile(r"^unknown(?:\s*:|\W*$)", re.I)
@@ -189,6 +190,8 @@ def canon(label):
 def parse(text):
     """Returns (slots, questions, counts, confirmed). slots maps a label to its list of items.
 
+    counts also holds a top-level `- <Label>:` line whose label is not a known slot, so check can fail it.
+
     confirmed holds a (slot, value) key for each `- <Slot>: <value>` line under `## Confirmed`.
     """
     slots, counts, questions, confirmed = {}, {}, [], set()
@@ -230,6 +233,11 @@ def parse(text):
             if value:
                 slots[current].append(value)
             last_item = value or None
+            continue
+        other = OTHER_SLOT.match(line)
+        if other:
+            current = None
+            counts[other.group(1).strip()] = counts.get(other.group(1).strip(), 0) + 1
             continue
         if current is None:
             continue
@@ -398,6 +406,7 @@ def check(text):
         results.append((name, fails))
 
     add("every required slot present", [f"missing slot: {s}" for s in REQUIRED if s not in counts])
+    add("no unknown slot", [f"unknown slot: {s}. Use only {', '.join(LABELS)}" for s in counts if s not in LABELS])
     add("no slot repeated", [f"slot {s} appears {n} times" for s, n in counts.items() if n > 1])
     add("no empty slot", [f"slot {s} is empty" for s, items in slots.items() if not items])
     place = []

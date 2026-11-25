@@ -479,6 +479,27 @@ if ran.returncode != 0 or "Evals: '' is a placeholder" in ran.stdout:
     FAILS.append(f"cli a leading should fail phrase: exit {ran.returncode}\n{ran.stdout}")
 
 
+# An unknown top-level slot, such as a Sub-goals list, is a failure and not silently skipped.
+UNKNOWN_SLOT = "no unknown slot"
+expect("a Sub-goals slot fails", swap("- Done: 3 bed. Proof is the listing.\n",
+       "- Done: 3 bed. Proof is the listing.\n- Sub-goals:\n  - Pick\n  - Create\n", MIN), {UNKNOWN_SLOT})
+expect("a misspelled slot label fails", MIN.replace("- Goal:", "- Goals:"), {PRESENT, UNKNOWN_SLOT})
+expect("an unknown slot after the last slot fails", MIN + "- Must-haves: tests\n", {UNKNOWN_SLOT})
+expect("a repeated unknown slot fails once for each line", MIN + "- Extra: a\n- Extra: b\n", {UNKNOWN_SLOT, REPEAT})
+expect("an unknown slot with a bracketed note fails", MIN + "- Extra (a note): a\n", {UNKNOWN_SLOT})
+expect("indented sub-items with a colon are not slots", swap("  - Pass: keep a 3 bed listing.\n",
+       "  - Pass: keep a 3 bed listing.\n  - Note: it needs a photo.\n", MIN), set())
+expect("a link bullet is not a slot", MIN + "- https://example.com/spec\n", set())
+expect("a bullet with no colon is not a slot", MIN + "- see the spec\n", set())
+expect("an unknown slot inside a code fence is ignored", MIN + "```\n- Sub-goals: x\n```\n", set())
+expect("an unknown slot in the Questions block is ignored", MIN + "\n## Questions\n\n- Sub-goals: x\n", set())
+expect("an optional slot with a bracketed note still passes", MIN + "- Taste (flag, don't filter): bold. Signal is the photo.\n", set())
+ran = run_cli(MIN + "- Sub-goals:\n  - Pick\n")
+RAN.append("cli names the unknown slot and exits 1")
+if ran.returncode != 1 or "unknown slot: Sub-goals" not in ran.stdout:
+    FAILS.append(f"cli names the unknown slot and exits 1: exit {ran.returncode}\n{ran.stdout}")
+
+
 if __name__ == "__main__":
     for f in FAILS:
         print(f"FAIL {f}")
