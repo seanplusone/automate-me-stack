@@ -1,5 +1,6 @@
 """Run: python3 check/test_check_brief.py"""
 import os
+import re
 import subprocess
 import sys
 import time
@@ -13,6 +14,7 @@ RAN = []
 
 GOOD = """# Brief: t
 
+- Workstream: demo
 - Kind: search/decide
 - Plan first: none needed
 - Goal: Find 10 listings.
@@ -61,8 +63,13 @@ HAS_VERIFY = "every Must-have id has a Verify line"
 HAS_CMD = "every Verify line has a backticked command"
 KNOWN_ID = "every Verify line names a Must-have id"
 UNIQUE_ID = "no id used twice"
+WS_FILE = "a briefs/WORKSTREAMS file exists"
+WS_LISTED = "Workstream is in the nearest WORKSTREAMS"
+WS_FOLDER = "Workstream matches the parent folder"
 
 expect("good brief passes", GOOD, set())
+expect("Workstream is required", swap("- Workstream: demo\n", ""), {PRESENT})
+expect("no path skips workstream path checks", swap("- Workstream: demo", "- Workstream: not-a-real-workstream"), set())
 expect("missing slot", swap("- Output: 10 rows with link and price.\n", ""), {PRESENT})
 expect("repeated slot", swap("- Skills: none.\n", "- Skills: none.\n- Skills: review-prd.\n"), {REPEAT})
 expect("empty slot", swap("- Skills: none.", "- Skills:"), {EMPTY})
@@ -173,26 +180,40 @@ FIXTURES = os.path.join(HERE, "fixtures")
 CHECK = os.path.join(HERE, "check_brief.py")
 
 
-def expect_fixture(filename, want_fail):
+def expect_fixture(filename, want_fail, not_fail=(), want_pattern=None):
     name = f"fixture {filename}"
     RAN.append(name)
     proc = subprocess.run([sys.executable, CHECK, os.path.join(FIXTURES, filename)],
                           capture_output=True, text=True)
+    lines = proc.stdout.splitlines()
     if want_fail is None:
         if proc.returncode != 0:
             FAILS.append(f"{name}: wanted exit 0, got {proc.returncode}")
-    else:
-        line = f"FAIL {want_fail}"
-        if proc.returncode != 1 or line not in proc.stdout.splitlines():
-            FAILS.append(f"{name}: wanted exit 1 with {line!r}, got exit {proc.returncode}")
+        return
+    line = f"FAIL {want_fail}"
+    if proc.returncode != 1 or line not in lines:
+        FAILS.append(f"{name}: wanted exit 1 with {line!r}, got exit {proc.returncode}")
+        return
+    for bad in not_fail:
+        if f"FAIL {bad}" in lines:
+            FAILS.append(f"{name}: did not want FAIL {bad!r}")
+    if want_pattern and not re.search(want_pattern, proc.stdout, re.I):
+        FAILS.append(f"{name}: wanted /{want_pattern}/ in output")
 
 
-expect_fixture("valid.md", None)
-expect_fixture("missing-id.md", HAS_ID)
-expect_fixture("missing-verify.md", HAS_VERIFY)
-expect_fixture("prose-only.md", HAS_CMD)
-expect_fixture("unknown-id.md", KNOWN_ID)
-expect_fixture("duplicate-id.md", UNIQUE_ID)
+expect_fixture("briefs/demo/valid.md", None)
+expect_fixture("briefs/demo/missing-id.md", HAS_ID)
+expect_fixture("briefs/demo/missing-verify.md", HAS_VERIFY)
+expect_fixture("briefs/demo/prose-only.md", HAS_CMD)
+expect_fixture("briefs/demo/unknown-id.md", KNOWN_ID)
+expect_fixture("briefs/demo/duplicate-id.md", UNIQUE_ID)
+expect_fixture("briefs/demo/no-workstream.md", PRESENT)
+# Separate tree with demo-only WORKSTREAMS: unknown-list/briefs/ghost/unknown-workstream.md
+expect_fixture("unknown-list/briefs/ghost/unknown-workstream.md", WS_LISTED, not_fail=(WS_FOLDER,))
+expect_fixture("briefs/demo/folder-mismatch.md", WS_FOLDER, not_fail=(WS_LISTED,))
+expect_fixture("no-list/briefs/demo/brief.md", WS_FILE, not_fail=(WS_LISTED, WS_FOLDER),
+               want_pattern=r"create.*WORKSTREAMS")
+expect_fixture("briefs/demo/no-verify-command.md", HAS_CMD)
 
 if __name__ == "__main__":
     for f in FAILS:

@@ -1,5 +1,6 @@
 # Brief: Find two-bedroom apartments near transit
 
+- Workstream: demo
 - Kind: search/decide
 - Plan first: none needed
 - Goal: Collect 10 two-bedroom rental listings within walking distance of a rail station.
@@ -8,7 +9,6 @@
 - Must-haves:
   - [m1] At least 2 bedrooms and monthly rent at or below 2800.
   - [m2] Walking time to a rail station is 15 minutes or less.
-  - Parking space included in the monthly rent.
   - investigate: Whether the listing allows small dogs.
   - out of scope: Shared rooms and short-term sublets.
 - Taste: Bright kitchen, flag don't filter. Signal is natural light in the kitchen photo.
