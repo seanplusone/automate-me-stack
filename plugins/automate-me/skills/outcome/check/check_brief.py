@@ -143,8 +143,8 @@ HEDGE_WORDS = {"maybe", "perhaps", "possibly", "probably", "not", "sure", "unsur
 PARALLEL_HOW = re.compile(r"^how:.*\bin\s+parallel\b", re.I)
 # Sentence boundary used to keep record name and write verb in the same sentence.
 SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
-# Record nouns that name a single writeable entity in Evals or Verification.
-RECORD_NOUNS = "note|record|row|entry|document|order|account|user|ticket|project|thread|notebook|item|page|file"
+# Nouns for a stored record, not actors, items in a cart or navigation.
+RECORD_NOUNS = "note|record|row|entry|document|order|account|ticket|project|thread|notebook"
 # Code-span or double-quoted record name, excluding spaces, slashes and dots.
 RECORD_NAME = r"""(?:`([^\s`/.]+)`|"([^\s"/.]+)")"""
 # Record reference: name near a record noun (at most one word between), or a noun plus a number.
