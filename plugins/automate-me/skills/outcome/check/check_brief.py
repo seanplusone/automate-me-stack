@@ -19,7 +19,11 @@ Fails when:
 - there are unknowns but no Questions block, or the block has more than 3 numbered questions,
   or a numbered question has no question mark;
 - an item is only trap adjectives (modern, clean, good, better, correct, valid, nice), with no
-  visible signal named.
+  visible signal named;
+- a Must-haves rule (not `investigate:`, `out of scope:` or `unknown`) has no `[id]` prefix;
+- a Must-have id has no Verify line, or a Verify line names no id or an unknown id;
+- a Verify line has no backticked command;
+- an id is used more than once among Must-haves or among Verify lines.
 Prints a PASS or FAIL line per check and exits 1 on any FAIL.
 """
 import re
@@ -41,6 +45,9 @@ MAX_QUESTIONS = 3
 PLAN_OK = re.compile(r"^(yes\b|none needed\b)", re.I)
 TAGS = {"investigate": ["Must-haves"], "out of scope": ["Must-haves"], "how": ["Skills"]}
 TAG = re.compile(r"^(" + "|".join(map(re.escape, TAGS)) + r"):", re.I)
+RULE_ID = re.compile(r"^\[([A-Za-z][A-Za-z0-9_-]*)\]\s+\S")
+VERIFY_ID = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*):\s*(.*)$")
+BACKTICK_CMD = re.compile(r"`[^`]*[^\s`][^`]*`")
 
 
 def canon(label):
@@ -150,6 +157,48 @@ def check(text):
 
     add("no bare trap adjective", [f"{s}: {i!r} names no visible signal" for s, items in slots.items()
                                    for i in items if is_bare_trap(i)])
+
+    rules = [i for i in slots.get("Must-haves", []) if not (TAG.match(i) or UNKNOWN_START.match(i))]
+    rule_ids, no_id = [], []
+    for i in rules:
+        m = RULE_ID.match(i)
+        if m:
+            rule_ids.append(m.group(1))
+        else:
+            no_id.append(f"Must-haves: {i!r} has no '[id]' prefix")
+    add("every Must-have has an id", no_id)
+
+    verify = slots.get("Verify", [])
+    verify_items = [] if is_none(verify) else verify
+    rule_id_set = set(rule_ids)
+    verify_ids, no_cmd, bad_verify_id = [], [], []
+    for v in verify_items:
+        m = VERIFY_ID.match(v)
+        if not m:
+            bad_verify_id.append(f"Verify: {v!r} has no '<id>:' prefix")
+            if rules and not BACKTICK_CMD.search(v):
+                no_cmd.append(f"Verify: {v!r} has no backticked command")
+            continue
+        vid, rest = m.group(1), m.group(2)
+        verify_ids.append(vid)
+        if vid not in rule_id_set:
+            bad_verify_id.append(f"Verify: {vid!r} is not a Must-have id")
+        if rules and not BACKTICK_CMD.search(rest):
+            no_cmd.append(f"Verify: {vid!r} has no backticked command")
+
+    verify_id_set = set(verify_ids)
+    add("every Must-have id has a Verify line",
+        [f"Must-haves: id {i!r} has no Verify line" for i in dict.fromkeys(rule_ids) if i not in verify_id_set])
+    add("every Verify line has a backticked command", no_cmd)
+    add("every Verify line names a Must-have id", bad_verify_id)
+
+    dup_ids = []
+    for label, ids in (("Must-haves", rule_ids), ("Verify", verify_ids)):
+        seen = {}
+        for i in ids:
+            seen[i] = seen.get(i, 0) + 1
+        dup_ids += [f"{label}: id {i!r} appears {n} times" for i, n in seen.items() if n > 1]
+    add("no id used twice", dup_ids)
     return results
 
 
