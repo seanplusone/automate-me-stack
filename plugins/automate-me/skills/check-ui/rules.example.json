@@ -1,0 +1,20 @@
+{
+  "auto": true,
+  "whitespacePx": 16,
+  "paddingPx": 2,
+  "alignPx": 2,
+  "scrollPx": 0,
+  "betweenOverInside": 2,
+  "minWidthRatio": 0.6,
+  "columnAtWidth": 1280,
+  "columnExemptions": ["prose", "signin"],
+  "selectors": {
+    "cards": "[data-ui='card'], [data-ui='tile'], [data-ui='panel']",
+    "groups": "[data-ui='group']",
+    "columns": "[data-ui='column'], [data-ui='main'], main, [role='main']",
+    "headings": "h1, h2, h3, h4, h5, h6",
+    "body": "p, [data-ui='body']",
+    "buttons": "button, [role='button']",
+    "containers": "[data-ui='container']"
+  }
+}

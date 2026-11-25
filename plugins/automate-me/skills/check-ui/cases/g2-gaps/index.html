@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tasks</title>
+<link rel="stylesheet" href="../base.css">
+<style>
+  .stack { gap: 16px; }
+  .group { gap: 24px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Tasks</h1>
+  <p>Four things to do today.</p>
+  <div class="stack">
+    <section class="group" id="group-a" data-ui="group">
+      <article class="card" data-ui="card">
+        <h2>Buy milk</h2>
+        <p>One bottle.</p>
+      </article>
+      <article class="card" data-ui="card">
+        <h2>Walk the dog</h2>
+        <p>Around the block.</p>
+      </article>
+    </section>
+    <section class="group" id="group-b" data-ui="group">
+      <article class="card" data-ui="card">
+        <h2>Read mail</h2>
+        <p>Inbox only.</p>
+      </article>
+      <article class="card" data-ui="card">
+        <h2>Water plants</h2>
+        <p>The fern by the window.</p>
+      </article>
+    </section>
+  </div>
+  <button type="button">Add a task</button>
+</main>
+</body>
+</html>

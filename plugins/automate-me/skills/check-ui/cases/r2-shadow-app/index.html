@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>App</title>
+
+</head>
+<body style="font:16px/24px Arial,sans-serif">
+
+<div id="host"></div>
+<script>
+var root = document.getElementById("host").attachShadow({mode:"open"})
+root.innerHTML = "<main><h1>Inbox</h1><p>Two notes are waiting.</p><button type=button>Save</button></main>"
+</script>
+
+</body>
+</html>

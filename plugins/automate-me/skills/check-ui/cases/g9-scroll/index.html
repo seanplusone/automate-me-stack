@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Filters</title>
+<link rel="stylesheet" href="../base.css">
+<style>
+  .bar { width: 640px; height: 32px; margin: 0 0 16px; background: #eee; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Filters</h1>
+  <p>Show a subset of the list.</p>
+  <div class="bar" id="wide-bar">Open, done, later, archived, snoozed, assigned</div>
+  <div class="stack">
+    <section class="group" data-ui="group">
+      <article class="card" data-ui="card">
+        <h2>Open</h2>
+        <p>Still to do.</p>
+      </article>
+      <article class="card" data-ui="card">
+        <h2>Done</h2>
+        <p>Finished today.</p>
+      </article>
+    </section>
+    <section class="group" data-ui="group">
+      <article class="card" data-ui="card">
+        <h2>Later</h2>
+        <p>Not this week.</p>
+      </article>
+      <article class="card" data-ui="card">
+        <h2>Archived</h2>
+        <p>Kept for the record.</p>
+      </article>
+    </section>
+  </div>
+  <button type="button">Apply filters</button>
+</main>
+</body>
+</html>

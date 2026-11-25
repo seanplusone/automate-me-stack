@@ -72,6 +72,8 @@ expect("a shared skill anchors to its own folder",
        {"shared/skills/blast-radius/SKILL.md": GOOD["shared/skills/blast-radius/SKILL.md"] + 'Run `python3 "$SKILL_DIR"/../../x.py`.\n'}, None)
 expect("a README.md with a bare path is skipped", {"review-pr/README.md": "Run `python3 check/nope.py`.\n"}, None)
 expect("a python path in a case is skipped", {"review-pr/cases/a/key.md": "Run `python3 nope.py`.\n"}, None)
+expect("a markdown file inside node_modules is skipped",
+       {"check-ui/node_modules/playwright/README.md": "See [missing](nope.md).\n"}, None)
 
 _, clean = fails_for({})
 _, broken = fails_for({"review-pr/SKILL.md": "Run `../nope.md`.\n"})
