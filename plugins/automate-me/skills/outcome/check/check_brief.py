@@ -238,6 +238,8 @@ def parse(text):
         if other:
             current = None
             name = re.sub(r"\s*\([^)]*\)$", "", other.group(1))
+            if canon(name):
+                name = f"{name} (write it as '- {canon(name)}:')"
             counts[name] = counts.get(name, 0) + 1
             continue
         if current is None:
