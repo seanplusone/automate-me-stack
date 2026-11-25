@@ -110,6 +110,8 @@ These slots are required. A brief that omits any one of them fails the checker:
 | Evals | One case that should pass and one that should fail. |
 | Verification | How each claim is proved. Every claim names its run, file:line or photo, or says guess. |
 
+A brief has one goal. Any other top-level label, such as `Sub-goals`, fails the checker. If the work has a sub-goal, it is its own brief.
+
 These slots are optional. Write one when the ramble gives you something to put there. Omit it when it would only say none:
 
 | Slot | What it holds |
