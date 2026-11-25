@@ -20,7 +20,7 @@ Status: new. Four synthetic scored cases. The `run-*` briefs were written by han
 - no item is only trap adjectives (modern, clean, good, better, correct, valid, nice);
 - every Must-haves rule (not `investigate:`, `out of scope:` or `unknown`) has an `[id]` prefix;
 - every rule id has one Verify line with a backticked command, and no id is unknown or repeated;
-- given a file path, walks up from the brief's folder to find the nearest `briefs/WORKSTREAMS` file. It checks that Workstream is in that allow-list (one allowed name per line, blank lines ignored) and matches the parent folder. If `briefs/WORKSTREAMS` is missing, it fails with a message to create one listing allowed workstreams, one per line. When called with no path, it still requires the Workstream slot and skips the folder and allow-list checks.
+- given a file path, walks up from the brief's folder and looks for `briefs/WORKSTREAMS` at each directory (so a run from a subfolder finds the project's list). It checks that Workstream is in that allow-list (one allowed name per line, blank lines ignored) and matches the parent folder. If `briefs/WORKSTREAMS` is missing, it fails with a message to ask before creating the file. Path checks that cannot run print SKIP, not PASS. When called with no path, it still requires the Workstream slot and skips the folder and allow-list checks.
 
 The check cannot run the command or know that it passes.
 
