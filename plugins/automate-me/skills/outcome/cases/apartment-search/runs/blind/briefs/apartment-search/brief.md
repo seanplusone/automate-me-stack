@@ -1,5 +1,6 @@
 # Brief: 3 bed 2 bath apartment in Riverton
 
+- Workstream: apartment-search
 - Kind: search/decide
 - Plan first: yes: the search split, the fields per listing, and how photos get checked, before many agents start
 - Goal: find about 10 listings of a 3 bed 2 bath apartment in Riverton

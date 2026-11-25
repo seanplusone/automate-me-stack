@@ -16,7 +16,7 @@ Run 1 was updated for the new SKILL.md rules. Plan first reads `none needed`, an
 
 - `Slot: Context | billing | renewal | twice | annual | support` became `Slot: Must-haves | billing | renewal | twice | annual | support`. The key was wrong, not the brief. These are questions the agent answers by reading the PRD. SKILL.md now puts such questions in Must-haves as `investigate:`, which is where the blind brief already had them.
 
-Output of `python3 check/score_case.py cases/prd-review-ramble/key.md cases/prd-review-ramble/runs/run-1/brief.md` (exit 0):
+Output of `python3 check/score_case.py cases/prd-review-ramble/key.md cases/prd-review-ramble/runs/run-1/briefs/prd-review-ramble/brief.md` (exit 0):
 
 ```
 facts Dana: found

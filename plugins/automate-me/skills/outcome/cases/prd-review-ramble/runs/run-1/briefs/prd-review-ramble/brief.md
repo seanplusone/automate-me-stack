@@ -1,5 +1,6 @@
 # Brief: Review the Pause subscription PRD
 
+- Workstream: prd-review-ramble
 - Kind: review
 - Plan first: none needed. One PRD, one pass; the skill below has its own steps.
 - Goal: Find the gaps in the "Pause subscription" PRD from Dana and draft questions for the PM.

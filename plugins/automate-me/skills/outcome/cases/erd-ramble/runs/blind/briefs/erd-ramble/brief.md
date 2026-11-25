@@ -1,5 +1,6 @@
 # Brief: ERD for Pawpath
 
+- Workstream: erd-ramble
 - Kind: build
 - Plan first: none needed
 - Goal: draw an ERD for Pawpath, the dog walking booking app

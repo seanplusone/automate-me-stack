@@ -1,5 +1,6 @@
 # Brief: Review the Pause subscription PRD
 
+- Workstream: prd-review-ramble
 - Kind: review
 - Plan first: none needed
 - Goal: find the gaps in the "Pause subscription" PRD and write questions for the PM

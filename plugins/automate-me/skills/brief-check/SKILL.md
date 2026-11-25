@@ -29,6 +29,8 @@ Show a small table: ✅ clear, ⚠️ vague, ❌ missing.
    the command or know that it passes.
 6. If stuck: what to do when the goal can't be met. Loops need a cap.
 
+A brief saved under `briefs/` also needs a `Workstream:` field that matches its folder and the project's `briefs/WORKSTREAMS` list. Pasted prompts and breakdown `--prompt` output need no Workstream field.
+
 ## Step 2: Check for traps (one line each, only if present)
 - Adjective with no proof: modern, valid, correct, clean. Turn it
   into a visible signal or an example.

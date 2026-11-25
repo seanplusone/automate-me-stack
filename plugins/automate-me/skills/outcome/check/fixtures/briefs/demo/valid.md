@@ -1,5 +1,6 @@
 # Brief: Find two-bedroom apartments near transit
 
+- Workstream: demo
 - Kind: search/decide
 - Plan first: none needed
 - Goal: Collect 10 two-bedroom rental listings within walking distance of a rail station.
@@ -15,7 +16,6 @@
 - Verify:
   - m1: `awk -F, '$2 >= 2 && $3 <= 2800' listings.csv | grep -c .`
   - m2: `awk -F, '$4 <= 15' listings.csv | grep -c .`
-  - m3: `awk -F, '$5 == "yes"' listings.csv | grep -c .`
 - If stuck: Stop after 2 sources fail and report the gaps.
 - Skills: none.
 - Parking lot: none.

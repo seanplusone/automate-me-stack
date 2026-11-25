@@ -1,5 +1,6 @@
 # Brief: Pawpath ERD
 
+- Workstream: erd-ramble
 - Kind: build
 - Plan first: none needed. The entities are named; the open questions go to the read-back.
 - Goal: Draw an ERD for Pawpath, the dog walking booking app, in Postgres terms.
