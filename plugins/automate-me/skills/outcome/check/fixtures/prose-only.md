@@ -13,7 +13,7 @@
 - Taste: Bright kitchen, flag don't filter. Signal is natural light in the kitchen photo.
 - Output: A CSV table of 10 listings with url, beds, rent, walk_min, and notes.
 - Verify:
-  - m1: `python3 check_listings.py --beds 2 --max-rent 2800 listings.csv`
+  - m1: `awk -F, '$2 >= 2 && $3 <= 2800' listings.csv | grep -c .`
   - m2: Check the map for walking time to the nearest rail station.
 - If stuck: Stop after 2 sources fail and report the gaps.
 - Skills: none.
