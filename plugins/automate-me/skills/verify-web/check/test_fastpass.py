@@ -182,7 +182,8 @@ def make_env(name):
 
 
 def write_config(cfg_path, state_dir, build_command=BUILD_CMD, serve_command=SERVE_CMD,
-                 ready_path="/", fingerprint="[src.txt]", ready_timeout=10, include_fast=True):
+                 ready_path="/", fingerprint="[src.txt]", ready_timeout=10, include_fast=True,
+                 journey_timeout=None, journeys=None, evidence_dir=None, extra_lines=None):
     lines = ["apps:", "  - name: demo", "    base_url: http://127.0.0.1:8000", "    test_data: true"]
     if include_fast:
         lines += ["fast:", f"  serve_command: {serve_command}", f"  ready_path: {ready_path}",
@@ -191,6 +192,20 @@ def write_config(cfg_path, state_dir, build_command=BUILD_CMD, serve_command=SER
             lines.append(f"  build_command: {build_command}")
         if ready_timeout is not None:
             lines.append(f"  ready_timeout: {ready_timeout}")
+        if journey_timeout is not None:
+            lines.append(f"  journey_timeout: {journey_timeout}")
+    if evidence_dir is not None:
+        lines.append(f"evidence_dir: {evidence_dir}")
+    if extra_lines:
+        lines.extend(extra_lines)
+    if journeys is not None:
+        if not journeys:
+            lines.append("journeys: []")
+        else:
+            lines.append("journeys:")
+            for name, cmd, paths in journeys:
+                paths_str = ", ".join(paths)
+                lines += [f"  - name: {name}", f"    command: {cmd}", f"    paths: [{paths_str}]"]
     write_file(cfg_path, "\n".join(lines) + "\n")
 
 
@@ -433,6 +448,252 @@ def test_serve_two_roots():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def write_journey(root, name, exit_code=0, images=(), sleep_s=0):
+    script = os.path.join(root, f"journey_{name}.py")
+    body = (
+        "import json, os, sys, time\n"
+        f"name = {name!r}\n"
+        "seen = {k: os.environ.get(k) for k in ('BASE_URL', 'EVIDENCE_DIR', 'JOURNEY', 'HEADLESS')}\n"
+        "with open(f'seen-{name}.json', 'w') as f:\n"
+        "    json.dump(seen, f)\n"
+        "ev = os.environ.get('EVIDENCE_DIR', '')\n"
+        f"for rel in {list(images)!r}:\n"
+        "    dest = os.path.join(ev, rel)\n"
+        "    os.makedirs(os.path.dirname(dest), exist_ok=True)\n"
+        "    with open(dest, 'wb') as f:\n"
+        "        f.write(b'x')\n"
+        "print(f'journey {name} ran', flush=True)\n"
+        f"if {sleep_s!r}:\n"
+        f"    time.sleep({sleep_s!r})\n"
+        f"sys.exit({exit_code!r})\n"
+    )
+    write_file(script, body)
+    return f"python3 journey_{name}.py"
+
+
+def read_json(path):
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def find_result(data, name):
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict) and (item.get("journey") == name or item.get("name") == name):
+                return item
+    elif isinstance(data, dict):
+        if name in data and isinstance(data[name], dict):
+            return data[name]
+        for key in ("results", "journeys"):
+            if isinstance(data.get(key), list):
+                return find_result(data[key], name)
+    return None
+
+
+def test_run_select_headed_and_all():
+    tmp, root, state_dir, cfg = make_env("run-basic")
+    ev1 = os.path.join(tmp, "ev")
+    ev2 = os.path.join(tmp, "ev-headed")
+    ev3 = os.path.join(tmp, "ev-all")
+    try:
+        write_file(os.path.join(root, "src.txt"), "v1\n")
+        cmd_a = write_journey(root, "a", exit_code=0)
+        cmd_b = write_journey(root, "b", exit_code=0)
+        write_config(cfg, state_dir, journeys=[
+            ("a", cmd_a, ["src/a/**"]),
+            ("b", cmd_b, ["src/b/**"]),
+        ])
+
+        code, lines, out = run_fastpass("run", cfg, root, "--paths", "src/a/file.js", "--evidence-dir", ev1)
+        seen_a = read_json(os.path.join(root, "seen-a.json")) or {}
+        state = read_json(state_path(state_dir, root)) or {}
+        served_url = state.get("url")
+        results = read_json(os.path.join(ev1, "results.json"))
+        res_a = find_result(results, "a") or {}
+        log_ok = os.path.isfile(os.path.join(ev1, "a", "journey.log"))
+        check("run: selected journey passes with expected env, results.json, and log",
+              code == 0
+              and any(l.startswith("a: PASS (") for l in lines)
+              and bool(lines) and lines[-1].startswith("FASTPASS: OK 1 passed")
+              and seen_a.get("HEADLESS") == "1"
+              and bool(served_url) and seen_a.get("BASE_URL") == served_url
+              and (seen_a.get("EVIDENCE_DIR") or "").endswith("/a")
+              and seen_a.get("JOURNEY") == "a"
+              and res_a.get("status") == "PASS"
+              and log_ok,
+              f"{out} | seen_a={seen_a} url={served_url} res_a={res_a} log={log_ok}")
+
+        check("run: only selected journey runs",
+              code == 0 and bool(seen_a) and not os.path.exists(os.path.join(root, "seen-b.json")),
+              out)
+
+        code2, _, out2 = run_fastpass("run", cfg, root, "--paths", "src/a/file.js", "--evidence-dir", ev2, "--headed")
+        seen_a2 = read_json(os.path.join(root, "seen-a.json")) or {}
+        check("run: --headed passes HEADLESS=0",
+              code2 == 0 and seen_a2.get("HEADLESS") == "0",
+              f"{out2} | seen_a={seen_a2}")
+
+        if os.path.exists(os.path.join(root, "seen-a.json")):
+            os.unlink(os.path.join(root, "seen-a.json"))
+        code3, lines3, out3 = run_fastpass("run", cfg, root, "--paths", "src/a/file.js", "--all", "--evidence-dir", ev3)
+        check("run: --all runs every journey despite narrow --paths",
+              code3 == 0
+              and os.path.isfile(os.path.join(root, "seen-a.json"))
+              and os.path.isfile(os.path.join(root, "seen-b.json"))
+              and any(l.startswith("a: PASS (") for l in lines3)
+              and any(l.startswith("b: PASS (") for l in lines3)
+              and bool(lines3) and lines3[-1].startswith("FASTPASS: OK 2 passed"),
+              out3)
+    finally:
+        run_fastpass("stop", cfg, root)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_run_failure_and_screenshots():
+    tmp, root, state_dir, cfg = make_env("run-fail")
+    ev = os.path.join(tmp, "ev")
+    try:
+        write_file(os.path.join(root, "src.txt"), "v1\n")
+        cmd_a = write_journey(root, "a", exit_code=0, images=("ok.png",))
+        cmd_b = write_journey(root, "b", exit_code=1, images=("shot.png", "sub/deep.png"))
+        write_config(cfg, state_dir, journeys=[
+            ("a", cmd_a, ["src/a/**"]),
+            ("b", cmd_b, ["src/b/**"]),
+        ])
+
+        code, lines, out = run_fastpass("run", cfg, root, "--all", "--evidence-dir", ev)
+        shot_lines = [l for l in lines if l.startswith("  screenshot:")]
+        has_shot = any("shot.png" in l for l in shot_lines)
+        has_deep = any("deep.png" in l for l in shot_lines)
+        has_log = any(l.startswith("  log:") for l in lines)
+        no_ok_listed = not any("ok.png" in l for l in lines)
+        files_exist = (
+            os.path.isfile(os.path.join(ev, "a", "ok.png"))
+            and os.path.isfile(os.path.join(ev, "b", "shot.png"))
+            and os.path.isfile(os.path.join(ev, "b", "sub", "deep.png"))
+        )
+        check("run: failing journey lists its screenshots and log, hides passing screenshots",
+              code == 1
+              and any(l.startswith("b: FAIL (exit 1") for l in lines)
+              and len(shot_lines) == 2 and has_shot and has_deep
+              and has_log and no_ok_listed and files_exist
+              and bool(lines) and lines[-1].startswith("FASTPASS: FAIL 1 of 2"),
+              f"{out} | shots={shot_lines} files_exist={files_exist}")
+    finally:
+        run_fastpass("stop", cfg, root)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_run_timeout():
+    tmp, root, state_dir, cfg = make_env("run-timeout")
+    ev = os.path.join(tmp, "ev")
+    try:
+        write_file(os.path.join(root, "src.txt"), "v1\n")
+        cmd_slow = write_journey(root, "slow", exit_code=0, sleep_s=5)
+        write_config(cfg, state_dir, journey_timeout=1, journeys=[
+            ("slow", cmd_slow, ["src/slow/**"]),
+        ])
+
+        code, lines, out = run_fastpass("run", cfg, root, "--paths", "src/slow/x.js", "--evidence-dir", ev)
+        check("run: journey exceeding journey_timeout fails with timeout",
+              code == 1 and any(l.startswith("slow: FAIL") and "timeout" in l.lower() for l in lines),
+              f"{out} (code={code})")
+    finally:
+        run_fastpass("stop", cfg, root)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_run_no_unit_suite():
+    tmp, root, state_dir, cfg = make_env("run-nounit")
+    ev = os.path.join(tmp, "ev")
+    try:
+        write_file(os.path.join(root, "src.txt"), "v1\n")
+        cmd_a = write_journey(root, "a", exit_code=0)
+        write_config(cfg, state_dir,
+                     extra_lines=['test_command: python3 -c "open(\'unit-ran\',\'w\')"'],
+                     journeys=[("a", cmd_a, ["src/a/**"])])
+
+        code, _, out = run_fastpass("run", cfg, root, "--paths", "src/a/x.js", "--evidence-dir", ev)
+        hp = subprocess.run([sys.executable, FASTPASS, "run", "--help"],
+                            capture_output=True, text=True, timeout=30)
+        help_text = hp.stdout + hp.stderr
+        check("run: never runs test_command and --help has no word unit",
+              code == 0 and not os.path.exists(os.path.join(root, "unit-ran"))
+              and hp.returncode == 0 and "unit" not in help_text.lower(),
+              f"run={out} | help={help_text.strip()}")
+    finally:
+        run_fastpass("stop", cfg, root)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_run_reuses_server():
+    tmp, root, state_dir, cfg = make_env("run-reuse")
+    ev1 = os.path.join(tmp, "ev1")
+    ev2 = os.path.join(tmp, "ev2")
+    try:
+        write_file(os.path.join(root, "src.txt"), "v1\n")
+        cmd_a = write_journey(root, "a", exit_code=0)
+        write_config(cfg, state_dir, journeys=[("a", cmd_a, ["src/a/**"])])
+
+        code1, _, out1 = run_fastpass("run", cfg, root, "--paths", "src/a/x.js", "--evidence-dir", ev1)
+        url1 = (read_json(os.path.join(root, "seen-a.json")) or {}).get("BASE_URL")
+        if os.path.exists(os.path.join(root, "seen-a.json")):
+            os.unlink(os.path.join(root, "seen-a.json"))
+        code2, _, out2 = run_fastpass("run", cfg, root, "--paths", "src/a/x.js", "--evidence-dir", ev2)
+        url2 = (read_json(os.path.join(root, "seen-a.json")) or {}).get("BASE_URL")
+        check("run: two runs reuse server without rebuilding",
+              code1 == 0 and code2 == 0 and counter_lines(root) == 1 and bool(url1) and url1 == url2,
+              f"r1={out1} | r2={out2} | counter={counter_lines(root)} url1={url1} url2={url2}")
+    finally:
+        run_fastpass("stop", cfg, root)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_run_default_evidence_dir():
+    tmp, root, state_dir, cfg = make_env("run-evdir")
+    ev_base = os.path.join(tmp, "ev-base")
+    try:
+        write_file(os.path.join(root, "src.txt"), "v1\n")
+        cmd_a = write_journey(root, "a", exit_code=0)
+        write_config(cfg, state_dir, evidence_dir=ev_base, journeys=[("a", cmd_a, ["src/a/**"])])
+
+        code, _, out = run_fastpass("run", cfg, root, "--paths", "src/a/x.js")
+        dirs = (
+            [d for d in os.listdir(ev_base) if d.endswith("-fastpass") and os.path.isdir(os.path.join(ev_base, d))]
+            if os.path.isdir(ev_base) else []
+        )
+        ev_run = os.path.join(ev_base, dirs[0]) if len(dirs) == 1 else ""
+        check("run: default evidence dir uses config evidence_dir with -fastpass suffix",
+              code == 0 and len(dirs) == 1
+              and os.path.isfile(os.path.join(ev_run, "results.json"))
+              and os.path.isfile(os.path.join(ev_run, "a", "journey.log")),
+              f"{out} | dirs={dirs}")
+    finally:
+        run_fastpass("stop", cfg, root)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_run_no_journeys():
+    tmp, root, state_dir, cfg = make_env("run-empty")
+    ev = os.path.join(tmp, "ev")
+    try:
+        write_file(os.path.join(root, "src.txt"), "v1\n")
+        write_config(cfg, state_dir)
+
+        code, lines, out = run_fastpass("run", cfg, root, "--paths", "src/a/x.js", "--evidence-dir", ev)
+        check("run: no journeys configured exits 1 with SELECT: none",
+              code == 1 and any(l == "SELECT: none (no journeys configured)" for l in lines),
+              f"{out} (code={code})")
+    finally:
+        run_fastpass("stop", cfg, root)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     test_select_paths()
     test_select_git()
@@ -444,5 +705,12 @@ if __name__ == "__main__":
     test_serve_no_fast_block()
     test_serve_stale_lstart()
     test_serve_two_roots()
+    test_run_select_headed_and_all()
+    test_run_failure_and_screenshots()
+    test_run_timeout()
+    test_run_no_unit_suite()
+    test_run_reuses_server()
+    test_run_default_evidence_dir()
+    test_run_no_journeys()
     print(f"\n{'FAIL' if FAILS else 'PASS'} test_fastpass ({len(FAILS)} failing)")
     sys.exit(1 if FAILS else 0)
