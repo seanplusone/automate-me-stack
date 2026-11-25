@@ -167,7 +167,7 @@ def render_prompt(p, iid):
     by = {it["id"]: it for it in p["items"]}
     it = by[iid]
     s, lp = it["spec"], it["spec"].get("loop", {})
-    before = [f'- {a}. {by[a]["name"]}: {by[a]["spec"]["output"]}' for a in it.get("after", [])]
+    before = [f'  - {a}. {by[a]["name"]}: {by[a]["spec"]["output"]}' for a in it.get("after", [])]
     changes_code = s.get("harness") != "findings file"
     waits = ", ".join(it.get("after", [])) or "none"
     guard = "Report only." if not changes_code else "Push, post or message nothing unless the limits allow it."
