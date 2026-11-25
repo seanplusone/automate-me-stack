@@ -122,7 +122,7 @@ Then apply brief-check's trap list (Step 2) to the brief, one line per trap foun
 - Vague scope ("the PRD", "the repo") names a link, path or branch, or becomes an unknown.
 - A check that needs a tool (a browser, images, a test run) names it.
 
-Run `python3 "$SKILL_DIR"/check/check_brief.py <brief.md>` and fix what it flags. It checks the shape. Every slot is present once and filled, and Plan first says yes or none needed. Every unknown has a question and no default beside it. Tagged items sit in their slots, there are at most 3 questions, no slot is only an adjective, and every Must-haves rule has a unique id paired with one backticked Verify command. Run `python3 "$SKILL_DIR"/../shared/check_writing.py <brief.md>` and rewrite the lines it flags.
+Run `python3 "$SKILL_DIR"/check/check_brief.py <brief.md>` and fix what it flags. It checks the shape. Every slot is present once and filled, and Plan first says yes or none needed. Every unknown has a question and no default beside it. Tagged items sit in their slots, there are at most 3 questions, and no slot is only an adjective. Every Must-haves rule has a unique id paired with one backticked Verify command. Run `python3 "$SKILL_DIR"/../shared/check_writing.py <brief.md>` and rewrite the lines it flags.
 
 ## 4. Read back
 
