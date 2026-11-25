@@ -144,7 +144,7 @@ PARALLEL_HOW = re.compile(r"^how:.*\bin\s+parallel\b", re.I)
 # Sentence boundary used to keep record name and write verb in the same sentence.
 SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 # Nouns for a stored record, not actors, items in a cart or navigation.
-RECORD_NOUNS = "note|record|row|entry|document|order|account|ticket|project|thread|notebook"
+RECORD_NOUNS = "note|record|row|entry|document|order|account|ticket|project|thread"
 # Code-span or double-quoted record name, excluding spaces, slashes and dots.
 RECORD_NAME = r"""(?:`([^\s`/.]+)`|"([^\s"/.]+)")"""
 # A record reference is a name near a record noun (at most one word between), or a noun plus a number.
