@@ -486,6 +486,12 @@ expect("a Sub-goals slot fails", swap("- Done: 3 bed. Proof is the listing.\n",
 expect("a misspelled slot label fails", MIN.replace("- Goal:", "- Goals:"), {PRESENT, UNKNOWN_SLOT})
 expect("an unknown slot after the last slot fails", MIN + "- Must-haves: tests\n", {UNKNOWN_SLOT})
 expect("a repeated unknown slot fails once for each line", MIN + "- Extra: a\n- Extra: b\n", {UNKNOWN_SLOT, REPEAT})
+for label, line in (("bold", "- **Sub-goals**: x\n"), ("bold with the colon inside", "- **Sub-goals:** x\n"),
+                    ("a dot", "- Sub.goals: x\n"), ("a leading digit", "- 2nd goal: x\n"),
+                    ("a non-ASCII label", "- Подцели: x\n"), ("several words", "- Note to self: x\n")):
+    expect(f"an unknown slot with {label} in its label fails", MIN + line, {UNKNOWN_SLOT})
+expect("a sentence-ending dot is not part of a label", swap("- Done: 3 bed. Proof is the listing.\n",
+       "- Done:\n- 3 bed. Proof: the listing.\n", MIN), {EMPTY})
 expect("an unknown slot with a bracketed note fails", MIN + "- Extra (a note): a\n", {UNKNOWN_SLOT})
 expect("indented sub-items with a colon are not slots", swap("  - Pass: keep a 3 bed listing.\n",
        "  - Pass: keep a 3 bed listing.\n  - Note: it needs a photo.\n", MIN), set())
