@@ -30,8 +30,9 @@ before your edit, or the page and the job run two different checkouts.
 2. Copy [`users.env.example`](users.env.example) to `~/.config/verify-web/users.env` and
    `chmod 600` it. The user fills in the logins. See [`personas.md`](personas.md).
 3. Install a browser MCP. The default is Playwright MCP, headless:
-   `claude mcp add playwright -- npx @playwright/mcp@latest --headless`.
-   Omit `--headless` to open a headed window, when the task asks or you need to watch a motion or
+   `claude mcp add playwright -- npx @playwright/mcp@latest --headless --caps=devtools`.
+   Tracing uses `browser_start_tracing`, which needs `--caps=devtools`. Omit `--headless` (keep
+   `--caps=devtools`) to open a headed window, when the task asks or you need to watch a motion or
    timing failure. The chrome-devtools MCP (`npx chrome-devtools-mcp@latest`) also works. This file
    names browser tools by what they do (snapshot, screenshot, console messages, network requests);
    use the matching tool of whichever MCP is loaded.
