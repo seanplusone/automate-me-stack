@@ -49,4 +49,5 @@ These need `.claude/project-profile.md`, which `/automate-me:setup` writes. Tick
 - Three skills start only when you type them: `setup`, `working-rules` and `open-pr`. Claude can reach for the others on its own when they fit.
 - `query-db` never writes to prod, whatever is asked. It hands you the SQL instead.
 - Nothing needs pstack. If you have it, `working-rules` and the spikes in `write-edd` use its playbooks. The README says how to install it.
+- A hook blocks a full read of a file over 350 lines, and `cat`, `head`, `tail` or `less` on one. It points the agent at a read with an offset and a limit, or a bulk-read tool such as context-mode's `execute_file` or batch tools. Set `READ_SIZE_THRESHOLD` to change the limit. The check is `skills/shared/check_read_size.py`, which any agent can run.
 - What each skill is made of, and its checks, is in the README's Layout section.
