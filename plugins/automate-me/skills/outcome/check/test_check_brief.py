@@ -261,6 +261,39 @@ def expect_find_workstreams_from_subfolder():
 
 expect_find_workstreams_from_subfolder()
 
+
+def expect_workstreams_list(name, ws_text, bad_line=None):
+    RAN.append(name)
+    with tempfile.TemporaryDirectory() as root:
+        demo_dir = os.path.join(root, "briefs", "demo")
+        os.makedirs(demo_dir)
+        with open(os.path.join(root, "briefs", "WORKSTREAMS"), "w") as f:
+            f.write(ws_text)
+        brief_path = os.path.join(demo_dir, "brief.md")
+        with open(brief_path, "w") as f:
+            f.write(GOOD)
+        proc = subprocess.run([sys.executable, CHECK, brief_path],
+                              capture_output=True, text=True)
+    if bad_line is None:
+        if proc.returncode != 0:
+            FAILS.append(f"{name}: wanted exit 0, got {proc.returncode}")
+        return
+    reasons = []
+    if proc.returncode != 1:
+        reasons.append(f"wanted exit 1, got {proc.returncode}")
+    if not any(q in proc.stdout for q in (repr(bad_line), f'"{bad_line}"', f"`{bad_line}`")):
+        reasons.append(f"wanted output to name {bad_line!r}")
+    if not re.search(r"remove\b.*(?:spaces?|whitespace)", proc.stdout, re.I):
+        reasons.append("wanted output to say to remove the spaces")
+    if reasons:
+        FAILS.append(f"{name}: {'; '.join(reasons)}")
+
+
+expect_workstreams_list("WORKSTREAMS blank line with exact name passes", "\ndemo\n\n")
+expect_workstreams_list("WORKSTREAMS padded name fails", " demo \n", bad_line=" demo ")
+expect_workstreams_list("WORKSTREAMS trailing space fails", "demo \n", bad_line="demo ")
+expect_workstreams_list("WORKSTREAMS tab fails", "\tdemo\n", bad_line="\tdemo")
+
 if __name__ == "__main__":
     for f in FAILS:
         print(f"FAIL {f}")
