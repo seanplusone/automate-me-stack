@@ -21,6 +21,7 @@
 - Agents and roles:
   - how: single pass
   - One agent draws the diagram.
+- Run mode: one-at-a-time
 - Evals:
   - Pass: the five entities appear, and an open point stays open.
   - Fail: an open point is drawn as already decided.

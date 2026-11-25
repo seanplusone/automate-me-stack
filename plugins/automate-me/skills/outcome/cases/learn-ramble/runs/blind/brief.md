@@ -22,6 +22,7 @@
 - Agents and roles:
   - how: single pass
   - One agent explains. The speaker answers the check.
+- Run mode: one-at-a-time
 - Evals:
   - Pass: the explanation covers the orders query and names a source.
   - Fail: it states a row count the speaker did not give.

@@ -22,6 +22,7 @@
 - Agents and roles:
   - how: search the sources in parallel, not one at a time, one agent per source.
   - A second reviewer checks the list before it comes back.
+- Run mode: parallel
 - Evals:
   - Pass: one listing shows 3 bed, 2 bath, Riverton, a price, and a living-room photo.
   - Fail: one listing has no photo of the floor, so it is dropped.

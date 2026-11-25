@@ -21,6 +21,7 @@
   - The database is Postgres. A diagram tool that emits mermaid. Check it can render.
   - write first: none. No repo or schema was named.
 - Agents and roles: One agent draws the diagram. The team reads it on Thursday. No split.
+- Run mode: one-at-a-time
 - Evals:
   - Pass: the diagram shows walker, owner, dog, booking and payment, and the two open points stay open.
   - Fail: an open point is drawn as already decided.

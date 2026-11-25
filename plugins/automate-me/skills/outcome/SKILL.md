@@ -60,7 +60,7 @@ How each pile lands in the brief:
 - **Question the agent can answer by looking.** Examples are "does the PRD cover annual plans?" or "why does an index help?". It becomes a Done item `investigate: <question>`.
 - **Question only the user can answer.** Examples are "can a dog have two owners?" or "is 5k the cap?". It becomes an unknown.
 - **Exclusion.** "Not now" or "skip X" becomes a Constraints item `out of scope: <X>`. If it is an idea for later ("maybe later"), it also goes to the Parking lot so it is not lost.
-- **Process ask.** "Do them in parallel", "one agent per source" or "have someone double check" each have a slot. How the work is split goes in Agents and roles as `how: <...>`. A second checker goes in Verification, and the role is named again under Agents and roles. "Report only" goes in Constraints.
+- **Process ask.** "Do them in parallel" or "one at a time" goes in Run mode as `parallel` or `one-at-a-time`. The checker reads only that slot; it does not infer the mode from prose. How the work is split goes in Agents and roles as `how: <...>`. A second checker goes in Verification, and the role is named again under Agents and roles. "Report only" goes in Constraints.
 
 ## 2. Fill the brief
 
@@ -76,6 +76,7 @@ These slots are required. A brief that omits any one of them fails the checker:
 | Constraints | Guardrails. Stop rule, loop cap, report only, and what is out of scope. |
 | Tools | Tools the run needs, and what must be written before the run starts. |
 | Agents and roles | Who does the work, who checks it, and how the work is split. |
+| Run mode | `parallel` or `one-at-a-time`. The checker does not infer this from prose. |
 | Evals | One case that should pass and one that should fail. |
 | Verification | How each claim is proved. Every claim names its run, file:line or photo, or says guess. |
 
@@ -126,7 +127,8 @@ Write the brief to a file in the session's scratch folder. Use the labels exactl
   - write first: <what must be written before the run, or none>
 - Agents and roles:
   - <who does the work, and who checks it>
-  - how: <how the work is split, e.g. in parallel>
+  - how: <how the work is split, e.g. one agent per source>
+- Run mode: parallel | one-at-a-time
 - Evals:
   - Pass: <one case that meets Done>
   - Fail: <one case that does not>
@@ -142,7 +144,7 @@ Write the brief to a file in the session's scratch folder. Use the labels exactl
 1. <question>?
 ```
 
-A slot with more than one item puts each on its own indented `  - ` line. Kind, Plan first, Taste, Skills, Parking lot and Unknowns may be left out. The eight required slots may not.
+A slot with more than one item puts each on its own indented `  - ` line. Kind, Plan first, Taste, Skills, Parking lot and Unknowns may be left out. The nine required slots may not.
 
 ## 3. Mark unknowns, never guess
 
@@ -168,6 +170,8 @@ Run `python3 "$SKILL_DIR"/check/check_brief.py <brief.md>`. It has three outcome
 - **Exit 0, PASS.** The shape is right.
 
 The rule is deliberately narrow. check_brief FAILs only what is unambiguous. When in doubt it ASKs (exit 2, one ASK line each), and the agent stops and asks the person. Asking is cheap, and a wrong FAIL blocks a real brief. The read-back catches the rest.
+
+The checker also fails a brief whose Run mode is `parallel` when a journey in Evals or Verification writes to one fixed writeable record with no seed or copy step. For example, a parallel brief whose journey adds a comment to the `demo` note needs a step that seeds or copies a fresh note for each build. A Reset line alone does not count. The checker reads only the Run mode slot. It does not infer the mode from prose. The word comment is not a write verb.
 
 ### Limits
 

@@ -22,6 +22,7 @@
   - unknown: Is the PRD at docs/prd/pause-subscription.md? The speaker said "I think".
   - write first: none until that path is confirmed. Read the file before drafting questions.
 - Agents and roles: One reviewer drafts the questions. The PM reads them before Monday. No split.
+- Run mode: one-at-a-time
 - Evals:
   - Pass: a question names a PRD section and offers no answer.
   - Fail: a question states what billing does.

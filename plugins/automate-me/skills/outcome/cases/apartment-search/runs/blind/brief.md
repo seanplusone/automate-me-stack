@@ -22,6 +22,7 @@
 - Agents and roles:
   - how: one agent per source, run in parallel
   - A second agent that did not do the search checks the first one's work.
+- Run mode: parallel
 - Evals:
   - Pass: one listing matches the done lines and has a photo.
   - Fail: one listing has no photo, so it is dropped.

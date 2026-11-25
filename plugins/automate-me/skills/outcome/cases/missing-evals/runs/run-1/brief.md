@@ -10,6 +10,7 @@
 - Constraints: Report only. Change no bug. Stop after one pass.
 - Tools: The tracker export file. Check that it opens. Write first: none.
 - Agents and roles: One reader drafts the list. A second person checks the count.
+- Run mode: one-at-a-time
 - Verification: Every row names the export line, or says guess.
 - Skills: none.
 - Parking lot: The old export format. Not part of this list.
