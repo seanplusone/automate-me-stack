@@ -3,11 +3,12 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from check_brief import check  # noqa: E402
+from check_brief import check, find_workstreams  # noqa: E402
 
 FAILS = []
 RAN = []
@@ -180,8 +181,8 @@ FIXTURES = os.path.join(HERE, "fixtures")
 CHECK = os.path.join(HERE, "check_brief.py")
 
 
-def expect_fixture(filename, want_fail, not_fail=(), want_pattern=None):
-    name = f"fixture {filename}"
+def expect_fixture(filename, want_fail, not_fail=(), want_pattern=None, want_skip=(), name=None):
+    name = name or f"fixture {filename}"
     RAN.append(name)
     proc = subprocess.run([sys.executable, CHECK, os.path.join(FIXTURES, filename)],
                           capture_output=True, text=True)
@@ -194,11 +195,19 @@ def expect_fixture(filename, want_fail, not_fail=(), want_pattern=None):
     if proc.returncode != 1 or line not in lines:
         FAILS.append(f"{name}: wanted exit 1 with {line!r}, got exit {proc.returncode}")
         return
+    reasons = []
     for bad in not_fail:
         if f"FAIL {bad}" in lines:
-            FAILS.append(f"{name}: did not want FAIL {bad!r}")
+            reasons.append(f"did not want FAIL {bad!r}")
+    for skip in want_skip:
+        if f"SKIP {skip}" not in lines:
+            reasons.append(f"wanted SKIP {skip!r}")
+        if f"PASS {skip}" in lines:
+            reasons.append(f"did not want PASS {skip!r}")
     if want_pattern and not re.search(want_pattern, proc.stdout, re.I):
-        FAILS.append(f"{name}: wanted /{want_pattern}/ in output")
+        reasons.append(f"wanted /{want_pattern}/ in output")
+    if reasons:
+        FAILS.append(f"{name}: {'; '.join(reasons)}")
 
 
 expect_fixture("briefs/demo/valid.md", None)
@@ -214,6 +223,40 @@ expect_fixture("briefs/demo/folder-mismatch.md", WS_FOLDER, not_fail=(WS_LISTED,
 expect_fixture("no-list/briefs/demo/brief.md", WS_FILE, not_fail=(WS_LISTED, WS_FOLDER),
                want_pattern=r"create.*WORKSTREAMS")
 expect_fixture("briefs/demo/no-verify-command.md", HAS_CMD)
+expect_fixture("briefs/demo/no-workstream.md", PRESENT,
+               want_pattern=r"add `?- Workstream: demo`?",
+               name="no-workstream fixture suggests folder workstream")
+expect_fixture("briefs/demo/no-workstream.md", PRESENT,
+               want_skip=(WS_FILE, WS_LISTED, WS_FOLDER),
+               name="no-workstream fixture skips workstream path checks")
+expect_fixture("no-list/briefs/demo/brief.md", WS_FILE,
+               not_fail=(WS_LISTED, WS_FOLDER),
+               want_pattern=r"create.*WORKSTREAMS",
+               want_skip=(WS_LISTED, WS_FOLDER),
+               name="no-list fixture skips downstream workstream checks")
+
+
+def expect_find_workstreams_from_subfolder():
+    name = "find_workstreams from subfolder finds root list"
+    RAN.append(name)
+    with tempfile.TemporaryDirectory() as root:
+        briefs_dir = os.path.join(root, "briefs")
+        app_dir = os.path.join(root, "app")
+        os.makedirs(briefs_dir)
+        os.makedirs(app_dir)
+        ws_file = os.path.join(briefs_dir, "WORKSTREAMS")
+        with open(ws_file, "w") as f:
+            f.write("demo\n")
+        dummy = os.path.join(app_dir, "brief.md")
+        with open(dummy, "w") as f:
+            f.write("")
+        got = find_workstreams(dummy)
+        want = os.path.abspath(ws_file)
+        if got != want:
+            FAILS.append(f"{name}: wanted {want!r}, got {got!r}")
+
+
+expect_find_workstreams_from_subfolder()
 
 if __name__ == "__main__":
     for f in FAILS:
