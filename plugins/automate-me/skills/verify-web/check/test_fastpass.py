@@ -694,6 +694,203 @@ def test_run_no_journeys():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+DOCTOR = os.path.join(SKILL, "doctor.py")
+DEMO_DIR = os.path.join(SKILL, "cases", "demo-app")
+DEMO_CFG = os.path.join(DEMO_DIR, "verify-web.fast.yaml")
+TIME_DEMO = os.path.join(HERE, "time_demo.py")
+REPO_ROOT = os.path.abspath(os.path.join(SKILL, "..", "..", "..", ".."))
+
+
+def has_playwright():
+    if not shutil.which("node"):
+        return False
+    p = subprocess.run(["node", "-e", "require('playwright')"], capture_output=True, text=True, timeout=30)
+    return p.returncode == 0
+
+
+def with_state_dir(cfg_text, state_dir):
+    out = []
+    in_fast = False
+    inserted = False
+    for line in cfg_text.splitlines():
+        is_top = bool(line) and not line[0].isspace() and not line.lstrip().startswith("#")
+        if is_top:
+            in_fast = line.startswith("fast:")
+            out.append(line)
+            if in_fast:
+                out.append(f"  state_dir: {state_dir}")
+                inserted = True
+            continue
+        if in_fast and re.match(r"^\s+state_dir\s*:", line):
+            continue
+        out.append(line)
+    if not inserted:
+        out.append(f"  state_dir: {state_dir}")
+    return "\n".join(out) + "\n"
+
+
+def run_fastpass_env(subcmd, cfg_path, root, *args, env=None, timeout=120):
+    p = subprocess.run(
+        [sys.executable, FASTPASS, subcmd, "--config", cfg_path, "--root", root, *args],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=timeout,
+    )
+    return p.returncode, p.stdout.splitlines(), (p.stdout + p.stderr).strip()
+
+
+def test_demo_config():
+    p = subprocess.run(
+        [sys.executable, DOCTOR, "--check-config", "--config", DEMO_CFG],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    doc_lines = p.stdout.splitlines()
+    doc_out = (p.stdout + p.stderr).strip()
+    check("demo config: doctor --check-config reports CONFIG: OK",
+          p.returncode == 0 and any(l.strip() == "CONFIG: OK" for l in doc_lines),
+          f"{doc_out} (code={p.returncode})")
+
+    code, lines, out = run_select(DEMO_CFG, DEMO_DIR, "--paths", "src/refund/button.js")
+    check("demo config: src/refund/button.js selects refund",
+          code == 0 and lines == ["SELECT: mapped refund", "refund"], out)
+
+    code, lines, out = run_select(DEMO_CFG, DEMO_DIR, "--paths", "src/auth/login.js")
+    check("demo config: src/auth/login.js selects login",
+          code == 0 and lines == ["SELECT: mapped login", "login"], out)
+
+    code, lines, out = run_select(DEMO_CFG, DEMO_DIR, "--paths", "src/orders/list.js")
+    check("demo config: src/orders/list.js selects orders",
+          code == 0 and lines == ["SELECT: mapped orders", "orders"], out)
+
+    code, lines, out = run_select(DEMO_CFG, DEMO_DIR, "--paths", "src/other/x.js")
+    check("demo config: unmapped path selects login, orders, refund",
+          code == 0 and bool(lines)
+          and lines[0].startswith("SELECT: all (unmapped: src/other/x.js")
+          and set(lines[1:]) == {"login", "orders", "refund"} and len(lines[1:]) == 3,
+          out)
+
+
+def test_demo_e2e():
+    if not has_playwright():
+        print("SKIP demo e2e: playwright not available")
+        return
+
+    if not os.path.isfile(DEMO_CFG):
+        check("demo e2e: demo config exists", False, f"missing {DEMO_CFG}")
+        return
+
+    with open(DEMO_CFG) as f:
+        demo_cfg_text = f.read()
+
+    tmp_ok = tempfile.mkdtemp(prefix="verify-web-demo-ok-")
+    root_ok = os.path.join(tmp_ok, "demo-app")
+    state_ok = os.path.join(tmp_ok, "state")
+    cfg_ok = os.path.join(root_ok, "verify-web.fast.yaml")
+    ev_ok = os.path.join(tmp_ok, "ev")
+    try:
+        shutil.copytree(DEMO_DIR, root_ok, ignore=shutil.ignore_patterns("build", "run", "__pycache__"))
+        write_file(cfg_ok, with_state_dir(demo_cfg_text, state_ok))
+
+        code, lines, out = run_fastpass_env(
+            "run", cfg_ok, root_ok, "--paths", "src/refund/button.js", "--evidence-dir", ev_ok
+        )
+        shot_lines = [l for l in lines if "screenshot:" in l]
+        after_png = os.path.join(ev_ok, "refund", "refund-after.png")
+        check("demo e2e: refund passes with no screenshot line and writes refund-after.png",
+              code == 0
+              and any(l.startswith("refund: PASS") for l in lines)
+              and not shot_lines
+              and os.path.isfile(after_png),
+              f"{out} (code={code}, after_png={os.path.isfile(after_png)})")
+    finally:
+        run_fastpass_env("stop", cfg_ok, root_ok, timeout=30)
+        shutil.rmtree(tmp_ok, ignore_errors=True)
+
+    tmp_fail = tempfile.mkdtemp(prefix="verify-web-demo-fail-")
+    root_fail = os.path.join(tmp_fail, "demo-app")
+    state_fail = os.path.join(tmp_fail, "state")
+    cfg_fail = os.path.join(root_fail, "verify-web.fast.yaml")
+    ev_fail = os.path.join(tmp_fail, "ev")
+    try:
+        shutil.copytree(DEMO_DIR, root_fail, ignore=shutil.ignore_patterns("build", "run", "__pycache__"))
+        write_file(cfg_fail, with_state_dir(demo_cfg_text, state_fail))
+
+        env = dict(os.environ, REFUND_DELAY="6")
+        code, lines, out = run_fastpass_env(
+            "run", cfg_fail, root_fail, "--paths", "src/refund/button.js", "--evidence-dir", ev_fail, env=env
+        )
+        fail_shots = [l for l in lines if l.startswith("  screenshot:") and "refund-failed.png" in l]
+        check("demo e2e: REFUND_DELAY=6 fails with refund-failed.png screenshot line",
+              code == 1
+              and any(l.startswith("refund: FAIL") for l in lines)
+              and bool(fail_shots),
+              f"{out} (code={code}, fail_shots={fail_shots})")
+    finally:
+        run_fastpass_env("stop", cfg_fail, root_fail, timeout=30)
+        shutil.rmtree(tmp_fail, ignore_errors=True)
+
+
+def test_docs_mention_fastpass():
+    guide_path = os.path.join(REPO_ROOT, "GUIDE.md")
+    check("docs: repo root contains GUIDE.md",
+          os.path.isfile(guide_path),
+          f"missing {guide_path}")
+
+    doc_files = [
+        ("SKILL.md", os.path.join(SKILL, "SKILL.md")),
+        ("GUIDE.md", guide_path),
+        ("README.md", os.path.join(REPO_ROOT, "README.md")),
+    ]
+    for label, path in doc_files:
+        if not os.path.isfile(path):
+            check(f"docs: {label} mentions fastpass.py and journeys", False, f"missing file: {path}")
+            continue
+        with open(path) as f:
+            text = f.read()
+        missing = [tok for tok in ("fastpass.py", "journeys") if tok not in text]
+        check(f"docs: {label} mentions fastpass.py and journeys",
+              not missing,
+              f"{path} missing: {', '.join(missing)}")
+
+
+def test_time_demo():
+    if not has_playwright():
+        print("SKIP time_demo: playwright not available")
+        return
+
+    p1 = subprocess.run(
+        [sys.executable, TIME_DEMO, "--mode", "after", "--passes", "2"],
+        cwd=SKILL,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    lines1 = p1.stdout.splitlines()
+    out1 = (p1.stdout + p1.stderr).strip()
+    check("time_demo: --mode after --passes 2 prints pass=1 and pass=2",
+          p1.returncode == 0
+          and any(l.startswith("after  pass=1") for l in lines1)
+          and any(l.startswith("after  pass=2") for l in lines1),
+          f"{out1} (code={p1.returncode})")
+
+    p2 = subprocess.run(
+        [sys.executable, TIME_DEMO, "--mode", "both", "--passes", "2"],
+        cwd=SKILL,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    lines2 = p2.stdout.splitlines()
+    out2 = (p2.stdout + p2.stderr).strip()
+    check("time_demo: --mode both --passes 2 prints speedup",
+          p2.returncode == 0
+          and any(l.startswith("speedup") for l in lines2),
+          f"{out2} (code={p2.returncode})")
+
+
 if __name__ == "__main__":
     test_select_paths()
     test_select_git()
@@ -712,5 +909,9 @@ if __name__ == "__main__":
     test_run_reuses_server()
     test_run_default_evidence_dir()
     test_run_no_journeys()
+    test_demo_config()
+    test_demo_e2e()
+    test_docs_mention_fastpass()
+    test_time_demo()
     print(f"\n{'FAIL' if FAILS else 'PASS'} test_fastpass ({len(FAILS)} failing)")
     sys.exit(1 if FAILS else 0)

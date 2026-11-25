@@ -45,6 +45,8 @@ evidence, and cleanup.
    - When the config has `pr_mode.start_command`, start your own copy of the app from the worktree,
      on a free port, with its own data. Record the pid you started; you stop that pid later and
      nothing else. Wait until `pr_mode.ready_path` answers.
+   - A config with a `fast` block can use `python3 "$SKILL_DIR"/fastpass.py serve --root <worktree>`
+     instead of `pr_mode.start_command`, which keeps one server per worktree.
    - When it does not, the app is a shared stack. Tell the user which worktree to point it at and
      how you will check, then wait. For example: "The app serves `main abc1234`. To test the PR
      head, restart your dev server from the worktree shop-pr-1-head next to the repo, then tell me." Do not switch a shared

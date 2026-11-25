@@ -1,0 +1,27 @@
+# Fast-pass config for the demo app.
+# The journey paths below are those of an imagined project the demo stands in for.
+# Run with --root cases/demo-app from the verify-web skill folder.
+
+apps:
+  - name: demo
+    base_url: http://127.0.0.1:8000
+    test_data: true
+
+fast:
+  build_command: python3 build.py
+  serve_command: python3 build/app.py --port {port} --data-dir run/data
+  ready_path: /health
+  fingerprint: [app.py, seed.json]
+
+journeys:
+  - name: login
+    command: node journeys/login.js
+    paths: [src/auth/**, src/login/**]
+  - name: orders
+    command: node journeys/orders.js
+    paths: [src/orders/**]
+  - name: refund
+    command: node journeys/refund.js
+    paths: [src/refund/**, src/orders/refund*]
+
+journey_ignore: [README.md, docs/**]

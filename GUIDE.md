@@ -18,7 +18,7 @@ These need `.claude/project-profile.md`, which `/automate-me:setup` writes. Tick
 | Start a ticket | `/automate-me:working-rules fix PROJ-123` | A worktree, the ticket read and validated, then a checkpoint page with the cause, fix options and test plan. It stops at three checkpoints for your answers. |
 | Carry on in a new session | `/automate-me:working-rules pickup PROJ-123` | Where the ticket stands, from its worktree's `RESUME.md`, then it continues. |
 | Stop for now | "pause safely" | The step finished, a `wip:` commit, and `RESUME.md` updated for the next pickup. |
-| Test in the browser | `/automate-me:verify-web` | A health check of your local app, then the change driven in the real app, with screenshots kept as evidence. Needs `.claude/verify-web.yaml` (from `/automate-me:setup`). |
+| Test in the browser | `/automate-me:verify-web` | A health check of your local app, then the change driven in the real app, with screenshots kept as evidence. With a `fast` block, `fastpass.py` reuses one server per worktree and runs only the journeys mapped to your changed files. Needs `.claude/verify-web.yaml` (from `/automate-me:setup`). |
 | Look at data | `/automate-me:query-db` | A read-only query on the default (non-prod) environment, or the database and environment you name, e.g. `/automate-me:query-db analytics prod`. Needs `.claude/query-db.json`. |
 | Open the PR | `/automate-me:open-pr` | The prose check, one confirmation, then a draft PR linked to the ticket. |
 

@@ -84,6 +84,50 @@ The staleness check compares the worker's start time with the newest file in its
 it also catches an uncommitted edit. It does not see a change to environment variables or cached
 config. Restart after those regardless, if a restart is pre-authorized.
 
+## Fast pass
+
+A slow pass rebuilds the app, starts a new server, runs unit tests, drives every screen, and reads
+passing screenshots. When the config has `fast` and `journeys` blocks, `fastpass.py` cuts each one.
+
+```bash
+python3 "$SKILL_DIR"/fastpass.py select [--paths <p> ...] [--base <ref>]
+python3 "$SKILL_DIR"/fastpass.py serve  [--root <dir>]
+python3 "$SKILL_DIR"/fastpass.py run    [--paths <p> ...] [--all] [--headed]
+python3 "$SKILL_DIR"/fastpass.py stop   [--root <dir>]
+```
+
+- `fastpass.py serve` hashes the files matched by `fast.fingerprint`. It builds once per
+  fingerprint and reuses one server per worktree. When a fingerprinted file changes, it stops only
+  its own server, rebuilds, and starts a new one.
+- `fastpass.py select` maps changed paths to journeys with `journeys:` in the config. It falls back
+  to all journeys when no path maps, or when one changed path is unmapped and not in
+  `journey_ignore`.
+- `fastpass.py run` runs the selected journeys headless against the reused server. The exit code of
+  each journey decides pass or fail. Screenshots are always saved to the evidence folder, and the
+  agent reads them only for journeys that FAILED.
+- `fastpass.py stop` stops only the server it started, checked by process start time.
+- The unit suite is not part of `verify-web`. It belongs to the build's test step, so `fastpass.py`
+  never runs it.
+
+A journey is a script in any language. It reads `BASE_URL`, `EVIDENCE_DIR`, and `HEADLESS`, saves
+screenshots into `EVIDENCE_DIR`, and exits nonzero on a failed assert. `HEADLESS=0` runs headed,
+and any other value runs headless.
+
+Example output:
+
+```
+SELECT: mapped refund
+SERVE: reuse pid=41820 url=http://127.0.0.1:54112
+refund: PASS (1.4s)
+FASTPASS: OK 1 passed in 1.5s
+```
+
+When a journey fails, `fastpass.py run` prints its `screenshot:` lines, its `journey.log` path, and
+the last 15 log lines.
+
+Still drive by hand for a new feature with no journey yet. Write the journey from the feature
+recipe afterwards so later edits run through `fastpass.py`.
+
 ## Drive
 
 - Open your own browser page or tab and close it at the end. Leave other tabs alone.
@@ -126,9 +170,13 @@ was missing. Never report a step as verified through a different entry point tha
 ## Files
 
 - `doctor.py`: the health check. Read-only, exit 0 or 1.
+- `fastpass.py`: fast pass runner (`select`, `serve`, `run`, `stop`).
 - `verify-web.example.yaml`: every config key, with comments.
 - `personas.md` and `users.env.example`: who to sign in as, and where the logins live.
 - `features/`: recipe conventions, the template, and an example recipe for the demo app.
 - `playbooks/pr.md`: PR mode.
+- `cases/demo-app/verify-web.fast.yaml`: fast-pass config for the demo app.
+- `cases/demo-app/journeys/`: demo journey scripts (`login.js`, `orders.js`, `refund.js`).
 - `check/check_verify.py`: checks a PR-mode `verify.md` before you hand it on.
-- `check/`: tests for the doctor and the PR case, run against `cases/demo-app/`.
+- `check/time_demo.py`: times the demo app in `before`, `after`, and `both` modes.
+- `check/`: tests for the doctor, fastpass, and the PR case, run against `cases/demo-app/`.
