@@ -13,14 +13,15 @@ RAN = []
 
 BRIEF = """# Brief: t
 
-- Goal: Find 10 listings in Riverton.
-- Decision: unknown: Tour or apply?
-- Context: The couple pays 2600 and the tenant 1700. Up to 5k if it is really good.
-- Must-haves: 3 bed. Proof is the listing.
+- Goal: Find 10 listings in Riverton. The couple pays 2600 and the tenant 1700. Up to 5k if it is really good.
+- Done: 3 bed. Proof is the listing.
 - Taste: Modern, flag don't filter. Signal is the photos.
 - Output: 10 rows.
-- Verify: Check the photos, not the descriptions.
-- If stuck: Peek the next 100 dollars up.
+- Constraints: Peek the next 100 dollars up.
+- Tools: A listing page. Write first: none.
+- Agents and roles: One agent.
+- Evals: Keep a 3 bed row. Drop a row with no photo.
+- Verification: Check the photos, not the descriptions.
 - Skills: none.
 - Parking lot: A Facebook group.
 - Unknowns:
@@ -36,7 +37,8 @@ BRIEF = """# Brief: t
 
 def write(name, text):
     path = os.path.join(tempfile.mkdtemp(), name)
-    open(path, "w").write(text)
+    with open(path, "w") as handle:
+        handle.write(text)
     return path
 
 
@@ -63,7 +65,7 @@ expect("fact $ term", "Fact: $100/100 dollars\n", 0, "PASS")
 expect("slot terms all present", "Slot: Taste | modern | flag | photo\n", 0, "PASS")
 expect("slot term missing", "Slot: Taste | modern | bedroom\n", 1, "does not name: bedroom")
 expect("slot term found only in another slot fails", "Slot: Output | riverton\n", 1, "does not name: riverton")
-expect("slot label case-insensitive", "Slot: if stuck | 100 dollars\n", 0, "PASS")
+expect("slot label case-insensitive", "Slot: constraints | 100 dollars\n", 0, "PASS")
 expect("unknown label fails cleanly", "Slot: Budget | 5k\n", 1, "MISSED")
 expect("unknown found in a marker", "Unknown: cap | 4300 | 5k\n", 0, "PASS")
 expect("unknown found in a question", "Unknown: move-in | move-in\n", 0, "PASS")
@@ -79,13 +81,13 @@ expect("pet does not match carpet (old substring bug)", "Unknown: pets | pet\n",
        brief=BRIEF.replace("Tour or apply?", "Is carpet in the bedrooms fine?"))
 expect("pet matches pets", "Unknown: pets | pet\n", 0, "PASS",
        brief=BRIEF.replace("What move-in date do you need?", "Do you have pets?"))
-expect("slot term 10 does not match 100", "Slot: If stuck | 10\n", 1, "does not name: 10")
+expect("slot term 10 does not match 100", "Slot: Constraints | 10\n", 1, "does not name: 10")
 expect("slot term matches a word start only", "Slot: Goal | sting\n", 1, "does not name: sting",
        brief=BRIEF.replace("Find 10 listings", "Find 10 existing listings"))
-expect("phrase matches across spaces", "Slot: If stuck | next 100\n", 0, "PASS",
+expect("phrase matches across spaces", "Slot: Constraints | next 100\n", 0, "PASS",
        brief=BRIEF.replace("next 100 dollars", "next  100 dollars"))
 expect("any finds a term in any slot", "Any: tool | browser\n", 0, "PASS",
-       brief=BRIEF.replace("- If stuck: Peek", "- If stuck: Check the browser works. Peek"))
+       brief=BRIEF.replace("- Constraints: Peek", "- Constraints: Check the browser works. Peek"))
 expect("any misses a term nowhere in the brief", "Any: tool | browser\n", 1, "brief does not name: browser")
 expect("a short term is a whole word", "Slot: Goal | ERD\n", 1, "does not name: ERD",
        brief=BRIEF.replace("Find 10 listings", "Draw an erDiagram of 10 listings"))

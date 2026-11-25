@@ -46,7 +46,7 @@ Every skill is named verb first and loads as `/automate-me:<name>`.
 | Write something an engineer will read | `write-for-engineer` |
 | Turn a colleague's ask into claims, proposals, fix options and tests before running anything | `decode-ask` |
 | Load a set of working rules for this session | `working-rules` |
-| Turn a rough idea or a spoken ramble into a brief an agent can run | `outcome` |
+| Turn a rough idea or a spoken ramble into a brief with goal, done, output, constraints, tools, agents and roles, evals and verification | `outcome` |
 | Check and tighten a draft prompt before an agent runs it | `brief-check` |
 | Break an idea into small items an agent can build and prove, on one page | `breakdown` |
 
@@ -99,9 +99,9 @@ Everything lives under `plugins/automate-me/skills/`:
 - `decode-ask/` turns a colleague's message into one short page before anything runs. The page lists what they want decided, each claim in system terms, each proposal, and each test with the result that would change the answer. Tests then run one per turn after a go, and the reply is drafted from the results.
 - `working-rules/` holds working rules for a session: response style, scope, verification, process, review voice and delegation. `fix <ticket>` and `pickup <ticket>` run a ticket from worktree to draft PR with checkpoints, using the values in `.claude/project-profile.md`. `check/check_profile.py` fails when a placeholder the rules use is missing from the profile, and `--filled` fails a value still left as a placeholder. It loads only when typed.
 - `write-for-pm/` and `write-for-engineer/` are standalone writing skills: one piece of text in, one draft out, in the matching voice from `shared/voices/`.
-- `outcome/` turns a rough idea, typed or spoken, into a brief. It sorts the ramble into decisions, thinking aloud, tangents and questions, fills brief-check's slots, and marks every gap it can't fill as unknown with a question. Then it reads the brief back with at most 3 questions, and nothing runs until the user says yes. `cases/` holds four rambles (an apartment search, an ERD, a PRD review and learning a topic), scored by `check/score_case.py` for kept facts, asked gaps and no invented ones.
+- `outcome/` turns a rough idea, typed or spoken, into a brief. It sorts the ramble, then fills eight required slots: goal, done, output, constraints, tools, agents and roles, evals, and verification. A gap it cannot fill is an unknown with a question. It reads the brief back with at most 3 questions. Nothing runs until the user says yes. `cases/` holds five rambles (an apartment search, an ERD, a PRD review, a learning topic and a UI badge). `check/score_case.py` scores them for kept facts, asked gaps and no invented ones. `missing-evals` fails `check/check_brief.py` because Evals is absent.
 - `brief-check/` scores a draft prompt on six slots (plan first, goal, checks, output, verify, if stuck) and flags common traps. It fixes mechanical gaps and runs the prompt, or stops and asks when a gap needs information only the user has.
-- `breakdown/` turns an idea too big for one prompt into at most 8 small items in a `plan.json`. Each item names its outcome, done check, limits, harness, try cap, verifier, model, effort and the only context its agent gets. `check_plan.py` holds it to those limits, at most 8 labeled gaps and the writing rules. `render_plan.py` draws the page (a build-order diagram, one plain line per item, details folded) and prints any item as an agent prompt with `--prompt`. The user then challenges one item at a time, and each answer is logged as held or changed.
+- `breakdown/` turns an idea too big for one prompt into at most 8 small items in a `plan.json`. Each item names its outcome, done check, limits, harness, try cap, verifier, model, effort and the only context its agent gets. `check_plan.py` holds it to those limits, at most 8 labeled gaps and the writing rules. `render_plan.py` draws the page (a build-order diagram, one plain line per item, details folded) and prints any item as an agent prompt with `--prompt`, using outcome's brief slots. The user then challenges one item at a time, and each answer is logged as held or changed.
 - `shared/` holds what all of them use:
   - `writing-rules.md` and `check_writing.py`, plus `pr_prose.py`, which runs the same check over the comments, markdown, commit messages and body a PR publishes.
   - `client_sweep.py`: finds every repo and client that reads a changed key, searching each `--repo` you pass by the key's name, the value's shape and the payload it travels in. `working-rules fix` runs it before any "no effect" claim.
@@ -117,7 +117,7 @@ Everything lives under `plugins/automate-me/skills/`:
 
 ## Checks
 
-Every check prints PASS or FAIL and exits 1 on FAIL. Run `sh setup.sh` once after cloning (it makes the `write-edd` practice repo its own git repo), then from `plugins/automate-me/skills/`:
+Every check prints PASS or FAIL and exits 1 on FAIL. `outcome`'s `check_brief.py` also exits 2 when a value needs the person to confirm it. Run `sh setup.sh` once after cloning (it makes the `write-edd` practice repo its own git repo), then from `plugins/automate-me/skills/`:
 
 ```
 python3 shared/check_shared.py

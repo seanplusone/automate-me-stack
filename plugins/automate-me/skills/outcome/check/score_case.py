@@ -33,8 +33,13 @@ KEY_LINE = re.compile(r"^(Fact|Slot|Any|Unknown|Forbidden|Parking):\s*(.+)$")
 
 
 def read_key(path):
+    with open(path) as handle:
+        return _read_key(handle)
+
+
+def _read_key(handle):
     items, fenced = [], False
-    for line in open(path):
+    for line in handle:
         if line.strip().startswith("```"):
             fenced = not fenced
             continue
@@ -79,8 +84,9 @@ def without_questions(text):
 
 
 def score(key_path, brief_path):
-    text = open(brief_path).read()
-    slots, questions, _ = parse(text)
+    with open(brief_path) as handle:
+        text = handle.read()
+    slots, questions, _, _ = parse(text)
     unknown_items = [i for items in slots.values() for i in items if UNKNOWN_START.match(i)] + questions
     items = read_key(key_path)
     if not items:
@@ -93,10 +99,8 @@ def score(key_path, brief_path):
             name, result = "facts " + ", ".join(parts), "MISSED not verbatim: " + ", ".join(lost) if lost else "found"
         elif kind == "Slot":
             label = parts[0]
-            try:
-                body = " ".join(slots.get(canon(label), []))
-            except StopIteration:
-                body = ""
+            named = canon(label)
+            body = " ".join(slots.get(named, [])) if named else ""
             lost = missing(parts[1:], body)
             name, result = f"slot {label}", ("MISSED slot does not name: " + ", ".join(lost)) if lost else "found"
         elif kind == "Any":

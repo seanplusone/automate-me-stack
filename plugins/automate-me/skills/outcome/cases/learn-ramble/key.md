@@ -2,7 +2,7 @@
 
 A synthetic case. The orders page and the query are invented. Never show this file to the skill.
 
-This is a learn brief. Output is an explanation plus a check of understanding, and Verify is sources cited. The speaker never says which Postgres version, how many rows the table holds, or whether they may run anything against a real database. The brief must ask, not assume. Switching databases is a tangent.
+This is a learn brief. Output is an explanation plus a check of understanding, and Verification is sources cited. The speaker never says which Postgres version, how many rows the table holds, or whether they may run anything against a real database. The brief must ask, not assume. Switching databases is a tangent.
 
 ## Facts, in the speaker's words
 
@@ -17,9 +17,9 @@ Fact: standup
 Slot: Kind | learn
 Slot: Goal | index
 Slot: Output | explanation/explain | example | check/quiz
-Slot: Verify | source/docs | cite
-Slot: Must-haves | customer_id | created_at
-Slot: If stuck | report only/read-only/never create
+Slot: Verification | source/docs | cite
+Slot: Done | customer_id | created_at
+Slot: Constraints | report only/read-only/never create
 
 ## Gaps that must be asked, not guessed
 

@@ -6,7 +6,7 @@ Find where you are in the work, then type the command. Every skill drafts for yo
 
 | You want to | Type | You get |
 |---|---|---|
-| Turn a rough idea into a prompt | `/automate-me:outcome` | Your ramble sorted into a one-line-per-slot brief, with at most 3 questions only you can answer. Nothing runs until you say yes. |
+| Turn a rough idea into a prompt | `/automate-me:outcome` | Your ramble sorted into a brief: goal, done, output, constraints, tools, agents and roles, evals, and verification. At most 3 questions. Nothing runs until you say yes. |
 | Set the project up | `/automate-me:setup` | Your databases, tracker, test commands and local app detected and confirmed, then written to `.claude/`. Run it again to change anything. |
 
 ## Working a ticket

@@ -2,22 +2,31 @@
 
 - Kind: build
 - Plan first: none needed
-- Goal: draw an ERD for Pawpath, the dog walking booking app
-- Decision: the ERD will be shown to the team on Thursday
-- Context: Pawpath is a booking app; entities named are walkers, owners, dogs, bookings, payments; Postgres; nothing else existing is named
-- Must-haves:
+- Goal:
+  - draw an ERD for Pawpath, the dog walking booking app
+  - the ERD will be shown to the team on Thursday
+- Done:
   - entities: walkers, owners, dogs, bookings, payments (proof: each appears in the diagram)
   - a booking is one walker, one dog, one time slot (hedged, confirm)
   - the owner pays per booking, and we take 15 percent (proof: payments link to bookings, with the 15 percent in a column or note)
   - Postgres (proof: column types are valid Postgres types)
-  - out of scope: reviews, owners rating walkers
 - Taste (flag, don't filter): should look clean; shown by no crossing lines and readable labels
-- Output: an ERD diagram of the five entities; format unknown
-- Verify: every claim names the entity, rule or line behind it, or says guess; a check that renders the diagram needs a diagram tool
-- If stuck: report only; never loosen a must-have without asking
+- Output: an ERD diagram of the five entities, shown to the team; format unknown
+- Constraints:
+  - out of scope: reviews, owners rating walkers
+  - report only; never loosen a done line without asking
+- Tools:
+  - The database is Postgres. A diagram tool that can render the drawing. Check it works first.
+  - write first: none. Nothing else existing is named.
+- Agents and roles:
+  - how: single pass
+  - One agent draws the diagram.
+- Evals:
+  - Pass: the five entities appear, and an open point stays open.
+  - Fail: an open point is drawn as already decided.
+- Verification: every claim names the entity, rule or line behind it, or says guess; a check that renders the diagram needs a diagram tool
 - Skills:
   - none run yet
-  - how: single pass
 - Parking lot: reviews later; the landing page copy is terrible and someone should fix it
 - Unknowns:
   - unknown: can a walker take up to 3 dogs at once?
