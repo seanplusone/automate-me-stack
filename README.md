@@ -38,6 +38,7 @@ Every skill is named verb first and loads as `/automate-me:<name>`.
 | Understand a long doc or a large PR before reviewing it | `explain-doc` |
 | Review one PR, or a set of linked PRs | `review-pr` |
 | Prove a change, or a PR's test plan, in the running web app | `verify-web` |
+| Fail a page whose backgrounds are beige, or far from a locked palette | `check-palette` |
 | Split a branch or PR that is too big to review | `split-pr` |
 | Commit a change and open it as a draft PR linked to its ticket | `open-pr` |
 | Query one of your Postgres databases, read-only by default | `query-db` |
@@ -90,6 +91,7 @@ Everything lives under `plugins/automate-me/skills/`:
 - `review-prd-light/` and `find-prd-collisions/` are the lighter PRD review pair. The first finds gaps. The second runs after it and finds points that contradict each other and scenarios no point covers.
 - `write-edd/` writes a draft EDD with blast radius, evidence, spikes (run or blocked with a reason) and two mermaid diagrams built from the delta list. `cases/order-sync` is an invented PHP repo and PRD, scored by `check/check_all.sh`.
 - `verify-web/` proves a change in the running web app the way a user would see it. Its `doctor.py` is read-only and config-driven. It checks the health URLs and any containers and workers you list. It also catches a worker that started before the last change to its code, and a page and background jobs that run different code trees. Then it drives the screens through the browser MCP and keeps evidence: snapshots, screenshots, console errors and failed requests. Each side effect is checked a second way. `verify-web pr <number>` reads a PR's test plan and runs each scenario on the base branch, then the PR branch. It writes `verify.md` with a VERIFIED, CONTRADICTED or NOT RUN verdict per scenario, for `review-pr` to use. `cases/demo-app` is a small invented web app with a PR that claims a fix it doesn't make.
+- `check-palette/` loads a page in headless Chromium and fails each large background that is beige or far from a locked palette. Beige passes when the user allows it. `check/test_check_palette.py` runs it on the pages in `cases/`. Then it breaks one rule at a time in a copy of the script and fails if a broken copy still passes.
 - `query-db/` runs read-only Postgres queries on the databases named in `.claude/query-db.json`, for example `query analytics prod`. The default is the non-prod environment. Prod is used only when named in that message, and prod writes are always refused. Before the first query on each database and environment, `guard.sql` counts the tables the login can write to, and the skill refuses a read-only environment whose login can write. `check/check_config.py` rejects a config that allows prod writes or holds a secret. `check/test_guard.py` proves the guard on two throwaway databases.
 - `setup/` configures a project for `query-db`, `working-rules`, `open-pr` and `verify-web`, in the style of pstack's setup. `detect.py` reads the repo and reports each value with the file it came from, never a secret value. The skill asks, validates with each skill's own checker, and writes whole files, so a rerun updates them. It runs only when typed.
 - `explain-doc/` turns a long design doc, PRD, runbook or PR into one page a reader can follow without opening the source. `check/check_map.py` holds the map to its limits, a cold read on a smaller model checks it, and `check/render_page.py` renders the page. It explains only; it judges nothing and posts nothing.
@@ -124,7 +126,7 @@ python3 shared/check_shared.py
 for t in $(find . -name 'test_*.py'); do (cd "$(dirname "$t")" && python3 "$(basename "$t")" >/dev/null) || echo "FAIL $t"; done
 ```
 
-`query-db/check/test_guard.py` needs a local Postgres or a pulled `postgres:16` image and prints SKIP without one. The `verify-web` PR case needs Node with Playwright.
+`query-db/check/test_guard.py` needs a local Postgres or a pulled `postgres:16` image and prints SKIP without one. The `verify-web` PR case needs Node with Playwright. `check-palette/check/test_check_palette.py` needs Python Playwright with Chromium and prints SKIP without them.
 
 ## Credits
 
