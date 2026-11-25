@@ -6,17 +6,19 @@
 - Decision: what to ask the PM at the review on Monday
 - Context: PRD "Pause subscription", handed over by Dana; path docs/prd/pause-subscription.md in the shared drive (hedged, confirm); customers can pause their plan for up to 3 months instead of cancelling
 - Must-haves:
-  - each gap or question is tied to a PRD section or line
+  - [m1] each gap or question is tied to a PRD section or line
   - investigate: what happens to billing while the plan is paused?
   - investigate: does the renewal date move?
   - investigate: can you pause twice in a row?
   - investigate: does the PRD say anything about annual plans?
   - investigate: do support get a tool for it?
-  - the questions are good, not twenty nitpicks
+  - [m2] the questions are good, not twenty nitpicks
   - out of scope: the pricing page and its monthly and yearly toggle
 - Taste (flag, don't filter): questions the PM can answer in one line, each with the line that raised it
 - Output: a short list of gaps and questions for the PM; how many unknown
-- Verify: every claim names the PRD section or line behind it, or says guess; the PRD file must be readable first
+- Verify:
+  - m1: `test -r docs/prd/pause-subscription.md && grep -cE 'section|line' questions.md` every claim names the PRD section or line behind it, or says guess; the PRD file must be readable first
+  - m2: `python3 check_questions.py --max-count "$MAX_QUESTIONS" questions.md`
 - If stuck: report only; if the PRD file is not found, stop and ask; never edit the PRD
 - Skills:
   - review-prd

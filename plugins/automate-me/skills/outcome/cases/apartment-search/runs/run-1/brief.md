@@ -6,17 +6,17 @@
 - Decision: unknown: Is the shortlist for picking which places to tour, or which to apply to?
 - Context: Three people. The couple pays 2600 and the other tenant pays 1700, which sums to 4300. The speaker said "we can go up to 5k if it's really good."
 - Must-haves:
-  - 3 bed and 2 bath, in Riverton. Proof is the listing page.
-  - Rent at or under the cap. Proof is the listing price. The cap itself is still unknown.
-  - Each rule answers yes, no or unknown. A listing with an unknown is flagged, not dropped.
+  - [m1] 3 bed and 2 bath, in Riverton. Proof is the listing page.
+  - [m2] Rent at or under the cap. Proof is the listing price. The cap itself is still unknown.
+  - [m3] Each rule answers yes, no or unknown. A listing with an unknown is flagged, not dropped.
 - Taste:
   - Modern, flag don't filter. Visible signal in the photos: updated kitchen and bath, no dated fixtures.
   - Little to no carpet; carpet only in the bedrooms is fine. Flag, don't filter. Visible signal is the floor in the living room photos.
 - Output: 10 listings, ranked. Fields: link, price, beds, baths, carpet seen, modern seen, photo used as proof, flags.
 - Verify:
-  - Check the photos, not the descriptions; the speaker said the descriptions lie.
-  - Every claim names the listing link or the photo behind it, or says guess.
-  - A second reviewer checks the list like a senior reviewing a junior, before it comes back.
+  - m1: `python3 check_listings.py --beds 3 --baths 2 --city Riverton listings.csv` Check the photos, not the descriptions; the speaker said the descriptions lie. A second reviewer checks the list like a senior reviewing a junior, before it comes back.
+  - m2: `python3 check_listings.py --check-cap listings.csv` Every claim names the listing link or the photo behind it, or says guess.
+  - m3: `python3 check_listings.py --require-status yes,no,unknown --flag-unknown listings.csv`
 - If stuck: if fewer than 10 listings fit under the cap, peek the next 100 dollars up and mark those as over. Stop after one peek. Never loosen a must-have without asking. Report only; contact no landlord.
 - Skills:
   - how: search the sources in parallel, not one at a time, one agent per source.

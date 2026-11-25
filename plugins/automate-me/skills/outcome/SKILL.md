@@ -77,12 +77,13 @@ Write the brief to a file in the session's scratch folder, one line per slot. Us
 - Decision: <what the user will decide with the result>
 - Context: <what exists: repo, files, links, prior decisions>
 - Must-haves:
-  - <checkable rule, with its named proof>
+  - [m1] <checkable rule>
   - investigate: <a question the agent answers by looking>
   - out of scope: <what the speaker excluded>
 - Taste: <preferences, each "flag, don't filter", with its visible signal>
 - Output: <what comes back, how many, which fields>
-- Verify: <how each claim is proved; every claim names its run, file:line or photo, or says guess>
+- Verify:
+  - m1: `<command or script path that exits 0 when the rule holds>`
 - If stuck: <stop rule, loop cap, never loosen a must-have without asking, report only>
 - Skills:
   - <skills to call later; none run yet>
@@ -97,6 +98,8 @@ Write the brief to a file in the session's scratch folder, one line per slot. Us
 ```
 
 A slot with more than one item puts each on its own indented `  - ` line.
+
+Each Must-haves rule gets an id (`[m1]`) and one Verify line with a backticked command that the brief writer proposes. If a rule has no command yet, write `unknown: <what command proves it?>` in Must-haves instead of a rule, and ask it in the read-back. `investigate:` and `out of scope:` items take no id and no Verify line; with no rules, Verify is `none`. The check cannot run the command or know that it passes: running it is the builder's proof and the PR review's job.
 
 Plan first is the agent's call, never a question for the user. Write `yes: <what the plan shows>` when the work is big, runs many agents, or costs real time or money. Write `none needed` when it is one pass the user can redo cheaply.
 
@@ -119,7 +122,7 @@ Then apply brief-check's trap list (Step 2) to the brief, one line per trap foun
 - Vague scope ("the PRD", "the repo") names a link, path or branch, or becomes an unknown.
 - A check that needs a tool (a browser, images, a test run) names it.
 
-Run `python3 "$SKILL_DIR"/check/check_brief.py <brief.md>` and fix what it flags. It checks the shape. Every slot is present once and filled, and Plan first says yes or none needed. Every unknown has a question and no default beside it. Tagged items sit in their slots, there are at most 3 questions, and no slot is only an adjective. Run `python3 "$SKILL_DIR"/../shared/check_writing.py <brief.md>` and rewrite the lines it flags.
+Run `python3 "$SKILL_DIR"/check/check_brief.py <brief.md>` and fix what it flags. It checks the shape. Every slot is present once and filled, and Plan first says yes or none needed. Every unknown has a question and no default beside it. Tagged items sit in their slots, there are at most 3 questions, no slot is only an adjective, and every Must-haves rule has a unique id paired with one backticked Verify command. Run `python3 "$SKILL_DIR"/../shared/check_writing.py <brief.md>` and rewrite the lines it flags.
 
 ## 4. Read back
 

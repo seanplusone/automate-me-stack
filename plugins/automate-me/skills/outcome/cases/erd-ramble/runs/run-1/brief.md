@@ -8,15 +8,18 @@
   - unknown: What should the team decide from it, the schema itself or only the scope?
 - Context: No repo or schema was named. The database is Postgres. Owners pay per booking and the app takes 15 percent.
 - Must-haves:
-  - Entities walker, owner, dog, booking and payment, each with a primary key. Proof is the diagram.
-  - A booking links one walker, one dog and one time slot (hedged, confirm). Group walks stay open until answered.
-  - A payment belongs to one booking and records the 15 percent fee. Proof is a field on the payment entity.
+  - [m1] Entities walker, owner, dog, booking and payment, each with a primary key. Proof is the diagram.
+  - [m2] A booking links one walker, one dog and one time slot (hedged, confirm). Group walks stay open until answered.
+  - [m3] A payment belongs to one booking and records the 15 percent fee. Proof is a field on the payment entity.
   - out of scope: reviews, owners rating walkers. Said "later", so also in the Parking lot.
 - Taste:
   - The speaker wants it to "look clean" for Thursday. Flag, don't filter.
   - unknown: What would make it look clean to you, fewer fields shown or only keys and links?
 - Output: One mermaid erDiagram with every entity, its fields and types, and each link with its cardinality. Then a list of open points.
-- Verify: Every entity and link names the sentence of the ramble behind it, or says guess.
+- Verify:
+  - m1: `grep -c 'PK' erd.mmd` Every entity and link names the sentence of the ramble behind it, or says guess.
+  - m2: `grep -E 'booking.*(walker|dog|time_slot)' erd.mmd`
+  - m3: `grep -E 'payment.*booking|fee_pct' erd.mmd`
 - If stuck: If a link depends on an open question, draw the stated case and list the question. Never model an open point as decided.
 - Skills: write-edd later, if the ERD becomes part of a design doc. None runs now.
 - Parking lot:

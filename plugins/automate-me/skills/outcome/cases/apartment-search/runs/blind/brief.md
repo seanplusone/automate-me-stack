@@ -6,14 +6,18 @@
 - Decision: unknown: which listing will you tour or apply for, and by when?
 - Context: you, your partner and one other tenant; the split is 2600 for the couple and 1700 for the other tenant; no listings or sites named yet
 - Must-haves:
-  - 3 bed, 2 bath, in Riverton (proof: the listing page)
-  - little to no carpet; carpet only in the bedrooms is fine, none in the living room (proof: a photo of the living room, not the description)
-  - budget up to 5k if it's really good (hedged, confirm)
-  - if a result is under the max, also peek the next 100 dollars up to see what else is there
+  - [m1] 3 bed, 2 bath, in Riverton (proof: the listing page)
+  - [m2] little to no carpet; carpet only in the bedrooms is fine, none in the living room (proof: a photo of the living room, not the description)
+  - [m3] budget up to 5k if it's really good (hedged, confirm)
+  - [m4] if a result is under the max, also peek the next 100 dollars up to see what else is there
   - investigate: does each listing's "updated" claim hold up in its photos?
 - Taste (flag, don't filter): modern, not a nineties place; shown by photos of the kitchen and bathrooms, with no dated fixtures or finishes
 - Output: a ranked list of about 10 listings; fields unknown
-- Verify: every claim names its listing link or photo, or says guess; descriptions are never proof. A second agent that did not do the search checks the first one's work, like a senior reviewing a junior. The check needs a way to open listing photos
+- Verify:
+  - m1: `python3 check_listings.py --beds 3 --baths 2 --city Riverton listings.csv` every claim names its listing link or photo, or says guess; descriptions are never proof. A second agent that did not do the search checks the first one's work, like a senior reviewing a junior.
+  - m2: `python3 check_photos.py --room living_room --no-carpet listings.csv` The check needs a way to open listing photos
+  - m3: `python3 check_listings.py --max-rent "$CAP" listings.csv`
+  - m4: `python3 check_listings.py --peek-over 100 listings.csv`
 - If stuck: report only, take no action on any listing; never loosen a must-have without asking
 - Skills:
   - none run yet
