@@ -2,7 +2,7 @@
 
 Part of `automate-me`. Shared writing rules live in `../shared/writing-rules.md`. The trap list comes from `../brief-check/SKILL.md`. The slot names below are this skill's.
 
-Turns a rough idea, often a spoken ramble, into a brief an agent can run. It sorts what was said, fills the slots, marks every gap as an unknown with its question, and reads the brief back with at most 3 questions. Nothing runs until the user says yes.
+Turns a rough idea, often a spoken ramble, into a brief an agent can run. It sorts what was said, fills the slots, marks every gap as an unknown with its question, and reads the brief back with at most 3 questions. Nothing runs until the user says yes. A shape-idea decisions.md is mapped into the brief instead of being sorted as a ramble.
 
 Status: new. Five synthetic scored cases, plus `missing-evals`, which fails the shape check. The `run-*` briefs were written by hand to show the scorer working. One blind run has been scored. A fresh agent read only `SKILL.md` and brief-check's, never a key. Its scores and the key changes it led to are in each case's `runs/score.md`. Blind briefs are kept in `runs/blind/`.
 
@@ -15,7 +15,7 @@ Status: new. Five synthetic scored cases, plus `missing-evals`, which fails the 
 - any item in any slot, and any Evals case, that is a placeholder fails. A slot whose items all fail is named. The value is normalized first. NFKC applies, and emphasis, code marks, one leading tag label and surrounding punctuation are stripped. Dots drop from `T.B.D.`, and `-`, `_` or `.` between letters reads as a space. A placeholder is then empty, or holds only words from a fixed list, with or without hedge words other than `not`. The words are tbd, tbc, tba, todo, fixme, xxx, n/a, na, none, pending, placeholder and later. The phrases are to be determined, to be decided, to be confirmed, fill in, fill in later, see below, see above and same as above. Words are Unicode, so non-English values are real. So are `make`, `$500`, `#123` and `24`. `none` alone is allowed on Skills, Parking lot and Unknowns, and beside other items. Tools and Constraints may use `none: <why>` when the reason is real. `write first: none` alone does not name a tool;
 - a template hole fails only when it is unambiguous. The value is nothing but holes (`<goal>`, `< goal >`, `{{x}}`, `{x}`, `${x}`). Or it holds `[insert x]`, or is a line of the SKILL.md template. A hole inside a longer value, as in `Vec<String>` or `JSON {id, name}`, asks instead. Code spans and autolinks such as `<https://…>` and `<tel:…>` are never holes. `a < b` with a space is a comparison;
 - Kind, when present, is one of build, review, design, learn, search/decide;
-- Evals is present and its cases are not placeholders. A label is the word pass or fail followed by a colon, or should or must pass or fail, anywhere in an item outside code spans. A colon label's case runs to the next label. In an item that starts with a colon label, a phrase counts only when it ends the item. Text before the first colon label is judged too. When Evals has content but no pass case or no fail case can be found, the checker asks rather than fails. An `unknown: <question>?` Evals item stands in for the cases when the Questions block has a question;
+- Evals is present and its cases are not placeholders. A label is the word pass or fail followed by a colon, or should or must pass or fail, anywhere in an item outside code spans. A colon label's case runs to the next label. A phrase with nothing before it, as at the start of an item, is not a case. In an item that starts with a colon label, a phrase counts only when it ends the item. Text before the first colon label is judged too. When Evals has content but no pass case or no fail case can be found, the checker asks rather than fails. An `unknown: <question>?` Evals item stands in for the cases when the Questions block has a question;
 - Plan first, when present, starts with `yes` or `none needed`;
 - an `investigate:` item sits in Done, an `out of scope:` item in Constraints, and a `how:` item in Agents and roles;
 - a slot that holds `unknown:` offers no default beside it;
@@ -172,18 +172,37 @@ outcome/
 From `outcome/`:
 
 ```
+set -euo pipefail
 python3 check/test_check_brief.py
 python3 check/test_score_case.py
 for c in cases/*/; do
-  [ "$(basename "$c")" = missing-evals ] && continue
+  base=$(basename "$c")
+  if [ "$base" = missing-evals ]; then
+    continue
+  fi
+  if [ "$base" = from-decisions ]; then
+    for d in "$c"*/decisions.md; do
+      tmp=$(mktemp)
+      python3 check/map_decisions.py "$d" > "$tmp"
+      python3 check/check_brief.py "$tmp"
+      rm -f "$tmp"
+    done
+    continue
+  fi
   for b in "$c"runs/*/brief.md; do
-    python3 check/check_brief.py "$b" | tail -1
-    python3 check/score_case.py "$c"key.md "$b" | tail -1
+    python3 check/check_brief.py "$b"
   done
+  python3 check/score_case.py "$c"key.md "$c"runs/run-1/brief.md
 done
 ```
 
-Every scored `run-1` passes both. `apartment-search/runs/run-2` passes the shape check and fails the score, which is the point of it. `missing-evals` has no key. Its brief fails `check_brief.py` on the missing Evals slot, and that is the point of it. Skip it in the loop above. Check it on its own:
+Every `run-1` passes both checks. The loop checks the shape of every other brief under `runs/`, and it scores `run-1` only. `from-decisions` has a `decisions.md` and no `runs/` or key. The loop maps each file and runs `check_brief.py` on the result. `map_decisions.py` runs shape-idea's `check_decisions.py` first, with the same `confirmed.md`. It prints a brief only on exit 0. Exit 1 prints the format errors, and exit 2 prints the CHECK WITH ME list. Each yes the user gives goes in `confirmed.md` next to the decisions file, and the mapper copies it into the brief's `## Confirmed` block. `set -e` stops the loop when any command fails. `apartment-search/runs/run-2` passes the shape check and fails the score, which is the point of it, so score it on its own:
+
+```
+python3 check/score_case.py cases/apartment-search/key.md cases/apartment-search/runs/run-2/brief.md
+```
+
+`missing-evals` has no key. Its brief fails `check_brief.py` on the missing Evals slot, and that is the point of it. Skip it in the loop above. Check it on its own:
 
 ```
 python3 check/check_brief.py cases/missing-evals/runs/run-1/brief.md

@@ -32,7 +32,7 @@ def check_writing(path):
     """
     fails = []
     fenced = False
-    for n, raw in enumerate(open(path), 1):
+    for n, raw in enumerate(open(path, encoding="utf-8"), 1):
         line = raw.rstrip("\n")
         if line.strip().startswith("```"):
             fenced = not fenced
