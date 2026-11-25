@@ -109,8 +109,11 @@ outside the plugin, so a plugin update never deletes it. For every proof keep:
 - the doctor output for the run, saved as `doctor.txt`;
 - screenshots and snapshots before and after each step, with the URL visible;
 - a persistence check, only when the claim is a change (a write): after a reload, or in a
-  fresh context, the change still shows. A read-only claim, such as no Refund button, needs
-  no persist step;
+  fresh context, the change still shows. In `verify.md`, a VERIFIED write records `Persist: reload`
+  or `Persist: fresh-context`, plus `Persist screenshot:` and `Before screenshot:`; the persist
+  screenshot must be a real image, listed in `Evidence:`, not the before screenshot, and different
+  bytes. A read-only claim, such as no Refund button, needs no persist step: record `Persist: none`
+  with no persist screenshots. The checker reads only these fields;
 - the console messages, and every non-2xx response from the network requests;
 - the side effect proven a second way, such as the row in the database, the job in the queue's own
   screen, the file in storage, or the record reopened in a fresh page load. A screen that says

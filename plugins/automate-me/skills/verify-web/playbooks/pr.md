@@ -76,8 +76,11 @@ evidence, and cleanup.
 
 8. **Give each scenario a verdict.**
    - `VERIFIED`: on head the screen shows the claim, and the second-way check agrees. When the
-     claim is a change (a write), the change still shows after a reload or in a fresh context.
-     A read-only claim, such as no Refund button, needs no persist step.
+     claim is a change (a write), the change still shows after a reload or in a fresh context:
+     record `Persist: reload` or `Persist: fresh-context`, plus `Persist screenshot:` and
+     `Before screenshot:` (both listed in `Evidence:`, the persist screenshot a real image with
+     different bytes from the before screenshot). A read-only claim, such as no Refund button,
+     needs no persist step, recorded as `Persist: none`.
    - `CONTRADICTED`: on head the screen or the second-way check shows the claim is false. When it
      looks like a timing issue, run head once more. If the two runs differ, it is
      `NOT RUN: flaky, <what differed>`, not CONTRADICTED.
@@ -120,6 +123,9 @@ Steps: <persona, starting data, the steps>
 Base: <what you saw on base>
 Head: <what you saw on head>
 Evidence: <file names in this folder, comma separated>
+Persist: reload | fresh-context | none  (VERIFIED only)
+Persist screenshot: <file name in Evidence, required for reload or fresh-context>
+Before screenshot: <file name in Evidence, required for reload or fresh-context>
 Verdict: VERIFIED | CONTRADICTED | NOT RUN: <why>
 
 Summary: <n> CONTRADICTED, <n> VERIFIED, <n> NOT RUN
