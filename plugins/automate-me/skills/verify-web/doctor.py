@@ -485,6 +485,61 @@ class Doctor:
         return 0 if self.fails == 0 else 1
 
 
+def fast_problems(cfg):
+    """Shape problems in the optional fast, journeys and journey_ignore keys."""
+    out = []
+    if "fast" in cfg:
+        fast = cfg["fast"]
+        if not isinstance(fast, dict):
+            out.append(("FAIL", "fast: must be a mapping"))
+        else:
+            serve = fast.get("serve_command")
+            if not isinstance(serve, str) or not serve:
+                out.append(("FAIL", "fast.serve_command: required"))
+            elif "{port}" not in serve:
+                out.append(("FAIL", "fast.serve_command: must contain {port}"))
+            ready = fast.get("ready_path")
+            if not isinstance(ready, str) or not ready.startswith("/"):
+                out.append(("FAIL", "fast.ready_path: must start with /"))
+            fp = fast.get("fingerprint")
+            if not isinstance(fp, list) or not all(isinstance(x, str) for x in fp):
+                out.append(("FAIL", "fast.fingerprint: must be a list of strings"))
+            for key in ("ready_timeout", "journey_timeout"):
+                if key in fast:
+                    val = fast[key]
+                    if not isinstance(val, int) or isinstance(val, bool) or val <= 0:
+                        out.append(("FAIL", f"fast.{key}: must be a positive integer"))
+    if "journeys" in cfg:
+        journeys = cfg["journeys"]
+        if not isinstance(journeys, list):
+            out.append(("FAIL", "journeys: must be a list"))
+        else:
+            if journeys and not isinstance(cfg.get("fast"), dict):
+                out.append(("FAIL", "journeys: needs a fast block"))
+            seen, dup = set(), False
+            for i, j in enumerate(journeys):
+                if not isinstance(j, dict):
+                    out.append(("FAIL", f"journeys[{i}]: needs name and command"))
+                    continue
+                name, cmd = j.get("name"), j.get("command")
+                if not isinstance(name, str) or not name.strip() or not isinstance(cmd, str) or not cmd.strip():
+                    out.append(("FAIL", f"journeys[{i}]: needs name and command"))
+                else:
+                    if name in seen:
+                        dup = True
+                    seen.add(name)
+                paths = j.get("paths")
+                if not isinstance(paths, list) or not paths or not all(isinstance(p, str) and p for p in paths):
+                    out.append(("FAIL", f"journeys[{i}].paths: must be a non-empty list of strings"))
+            if dup:
+                out.append(("FAIL", "journeys: names must be unique"))
+    if "journey_ignore" in cfg:
+        ig = cfg["journey_ignore"]
+        if not isinstance(ig, list) or not all(isinstance(x, str) for x in ig):
+            out.append(("FAIL", "journey_ignore: must be a list of strings"))
+    return out
+
+
 def config_problems(cfg):
     """Shape problems in a parsed config, as (level, message) pairs. No I/O."""
     out = []
@@ -528,6 +583,7 @@ def config_problems(cfg):
     for i, r in enumerate(cfg.get("restarts") or []):
         if not isinstance(r, dict) or not r.get("for") or not r.get("command"):
             out.append(("FAIL", f"restarts[{i}]: needs for and command"))
+    out.extend(fast_problems(cfg))
     if not cfg.get("evidence_dir"):
         out.append(("WARN", "evidence_dir: not set"))
     return out

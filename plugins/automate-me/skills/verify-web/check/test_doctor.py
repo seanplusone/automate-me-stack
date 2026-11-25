@@ -40,6 +40,15 @@ def test_yaml():
           and cfg["apps"][0]["test_data"] is True and cfg["personas"]["readonly"]["password_env"] == "READONLY_PASSWORD"
           and cfg["workers"][0]["source_dirs"] == ["app", "lib", "config"])
     check("yaml: health expect_status is an int", cfg["health"][0]["expect_status"] == 200)
+    fast = cfg.get("fast")
+    journeys = cfg.get("journeys")
+    check("yaml: example parses with fast, journeys, journey_ignore",
+          isinstance(fast, dict) and bool(fast.get("serve_command")) and bool(fast.get("ready_path"))
+          and isinstance(fast.get("fingerprint"), list)
+          and isinstance(journeys, list) and len(journeys) >= 1 and isinstance(journeys[0], dict)
+          and bool(journeys[0].get("name")) and bool(journeys[0].get("command"))
+          and isinstance(journeys[0].get("paths"), list)
+          and isinstance(cfg.get("journey_ignore"), list))
     check("yaml: a quoted '#' is not a comment, a spaced one is",
           doctor.parse_yaml("a: 'x # y'  # real comment\nb: c#d\n") == {"a": "x # y", "b": "c#d"})
     check("yaml: list items at the key's indent", doctor.parse_yaml("k:\n- 1\n- two\nz: [a, 'b, c']\n")
@@ -58,6 +67,8 @@ def test_check_config():
     ex = os.path.join(SKILL, "verify-web.example.yaml")
     r = subprocess.run([sys.executable, DOCTOR, "--check-config", "--config", ex], capture_output=True, text=True)
     check("check-config: example is OK", r.returncode == 0 and "CONFIG: OK" in r.stdout, r.stdout)
+    base = "apps:\n  - name: l\n    base_url: http://x\n"
+    fast_ok = "fast:\n  serve_command: app --port {port}\n  ready_path: /health\n  fingerprint: [app.py]\n"
     cases = {
         "no apps": ("login_path: /login\n", "apps: list at least one app"),
         "app without base_url": ("apps:\n  - name: local\n", "apps[0]: needs name and base_url"),
@@ -69,6 +80,34 @@ def test_check_config():
         "worker without source_dirs": ("apps:\n  - name: l\n    base_url: http://x\nworkers:\n  - name: w\n"
                                        "    container: c\n", "source_dirs"),
         "not yaml": ("apps: 'open\n", "unclosed quote"),
+        "fast not a map": (base + "fast: not-a-map\n", "fast: must be a mapping"),
+        "fast without serve_command": (base + "fast:\n  ready_path: /health\n  fingerprint: [app.py]\n",
+                                       "fast.serve_command: required"),
+        "serve_command without {port}": (base + "fast:\n  serve_command: app\n  ready_path: /health\n"
+                                         "  fingerprint: [app.py]\n", "fast.serve_command: must contain {port}"),
+        "ready_path not starting with /": (base + "fast:\n  serve_command: app --port {port}\n  ready_path: health\n"
+                                           "  fingerprint: [app.py]\n", "fast.ready_path: must start with /"),
+        "fingerprint not a list": (base + "fast:\n  serve_command: app --port {port}\n  ready_path: /health\n"
+                                   "  fingerprint: app.py\n", "fast.fingerprint: must be a list of strings"),
+        "ready_timeout of 0": (base + fast_ok + "  ready_timeout: 0\n",
+                               "fast.ready_timeout: must be a positive integer"),
+        "ready_timeout is a string": (base + fast_ok + "  ready_timeout: fast\n",
+                                      "fast.ready_timeout: must be a positive integer"),
+        "journey_timeout negative": (base + fast_ok + "  journey_timeout: -5\n",
+                                     "fast.journey_timeout: must be a positive integer"),
+        "journeys without fast": (base + "journeys:\n  - name: login\n    command: node j.js\n    paths: [src/**]\n",
+                                  "journeys: needs a fast block"),
+        "journey without name": (base + fast_ok + "journeys:\n  - command: node j.js\n    paths: [src/**]\n",
+                                 "journeys[0]: needs name and command"),
+        "journey without command": (base + fast_ok + "journeys:\n  - name: login\n    paths: [src/**]\n",
+                                    "journeys[0]: needs name and command"),
+        "journey with empty paths": (base + fast_ok + "journeys:\n  - name: login\n    command: node j.js\n"
+                                     "    paths: []\n", "journeys[0].paths: must be a non-empty list of strings"),
+        "duplicate journey names": (base + fast_ok + "journeys:\n  - name: login\n    command: node a.js\n"
+                                    "    paths: [a/**]\n  - name: login\n    command: node b.js\n    paths: [b/**]\n",
+                                    "journeys: names must be unique"),
+        "journey_ignore not a list": (base + "journey_ignore: README.md\n",
+                                      "journey_ignore: must be a list of strings"),
     }
     tmp = tempfile.mkdtemp(prefix="verify-web-cfg-")
     for name, (text, needle) in cases.items():
@@ -78,6 +117,16 @@ def test_check_config():
         r = subprocess.run([sys.executable, DOCTOR, "--check-config", "--config", path], capture_output=True, text=True)
         check(f"check-config: fails on {name}", r.returncode == 1 and needle in r.stdout and "CONFIG: FAIL" in r.stdout,
               r.stdout)
+    good = (base + fast_ok + "  ready_timeout: 30\n  journey_timeout: 60\n"
+            "journeys:\n"
+            "  - name: login\n    command: node journeys/login.js\n    paths: [src/auth/**]\n"
+            "  - name: refund\n    command: node journeys/refund.js\n    paths: [src/refund/**]\n"
+            "journey_ignore: [README.md, docs/**]\n")
+    path = os.path.join(tmp, "verify-web-fast-ok.yaml")
+    with open(path, "w") as f:
+        f.write(good)
+    r = subprocess.run([sys.executable, DOCTOR, "--check-config", "--config", path], capture_output=True, text=True)
+    check("check-config: valid fast and journeys is OK", r.returncode == 0 and "CONFIG: OK" in r.stdout, r.stdout)
     shutil.rmtree(tmp, ignore_errors=True)
 
 

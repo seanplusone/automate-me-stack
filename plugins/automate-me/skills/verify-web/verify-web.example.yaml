@@ -83,5 +83,32 @@ pr_mode:
   start_command: npm run dev -- --port {port}
   ready_path: /login
 
+# Optional. Fast pass: build once per fingerprint and reuse one server per worktree.
+# {port} is a free port fastpass.py picks. Leave build_command out if there is no build step.
+fast:
+  build_command: npm run build
+  serve_command: npm run start -- --port {port}
+  ready_path: /login
+  fingerprint: [src/**, package.json]
+  state_dir: ~/.cache/verify-web
+  ready_timeout: 60
+  journey_timeout: 120
+
+# Optional. Headless browser journeys that fastpass.py selects from changed files.
+# Needs a fast block. Each journey runs when a changed file matches any glob in its paths.
+journeys:
+  - name: login
+    command: node journeys/login.js
+    paths: [src/auth/**]
+  - name: checkout
+    command: node journeys/checkout.js
+    paths: [src/checkout/**]
+  - name: refund
+    command: node journeys/refund.js
+    paths: [src/refund/**]
+
+# Optional. Changed files that match these globs do not trigger any journey.
+journey_ignore: [README.md, docs/**]
+
 # Where evidence goes. Keep it outside the plugin, so an update never deletes it.
 evidence_dir: ~/.claude/verify-evidence/web
