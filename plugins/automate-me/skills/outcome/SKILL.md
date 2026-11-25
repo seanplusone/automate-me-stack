@@ -100,6 +100,18 @@ For Output, ask: "Where will this live, and what shares that space (container, o
 
 Evals name a concrete pass and a concrete fail. An eval is not a restatement of Done with no example.
 
+### One template, many outputs
+
+Skip this when each output has its own prompt. Use it when one template makes a batch of any kind: cards, messages, pages, pictures, or rows. It does not ask for a particular model, stack, or image tool.
+
+Before any output is made, name the item kinds. Check the shared template against each kind. Flag it when the template fits one kind and bans a cue that distinguishes another. Put that flag in Evals.
+
+Prove 1-3 items, one at a time, with the prompt shown, before scaling.
+
+After the batch exists, check the outputs blind. The judge does not see the prompt that made them. Where two items can be confused, include a plausible lookalike. Judge them in the conditions the person will actually use. For a picture, that includes the size on their screen. For anything else, use the matching real condition, such as the printed card, the spoken line, or the page they read. Put this check in Verification.
+
+A score tuned on the same items it scores is a review aid, not a gate. It stays that way until the same check is tried on a fresh held-out set. Do not treat the first score as certain. Say that next to the score.
+
 Skills: propose skills that fit, from this plugin or the user's own. Examples: review-prd or review-prd-light for a PRD, review-pr for a PR, explain-doc for a long doc, write-edd for a design, decode-ask for a colleague's message. Do not run any of them yet. If the speaker wants what worked saved, say so here too. The Learn section below has the steps.
 
 The traps in section 3 come from [brief-check](../brief-check/SKILL.md), Step 2. The slot names in this file are the ones the checker enforces. brief-check's own six names are not this brief's required set.

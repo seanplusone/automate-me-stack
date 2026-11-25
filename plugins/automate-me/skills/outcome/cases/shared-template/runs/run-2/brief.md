@@ -1,0 +1,24 @@
+# Brief: Workshop practice cards
+
+- Kind: build
+- Plan first: yes: show the card layout before any card is made.
+- Goal:
+  - Make about 24 practice cards for a Saturday workshop from one shared prompt, so the deck matches.
+  - The deck is for people to use during the workshop.
+- Done:
+  - name-the-tool cards show one tool, four labels A to D, and one right label. Proof is the card.
+  - 4 order-the-steps cards, sand then stain then seal. Proof is the card.
+- Output: About 24 cards, printed on half-sheets. The answer is hidden on the back. A person holds one half-sheet.
+- Constraints: Report only. Use the same template for every card. Do not show more than one object.
+- Tools:
+  - A card layout. Check that one sample card renders.
+  - write first: the card layout, before any card is made.
+- Agents and roles: One agent drafts every card. No second checker.
+- Evals:
+  - Pass: a name-the-tool card with one object and four labels.
+  - Fail: a card that shows two objects.
+  - One template covers all 24 cards.
+- Verification: Every claim names the card, or says guess.
+- Skills: none.
+- Parking lot: none.
+- Unknowns: none.
