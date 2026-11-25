@@ -35,6 +35,11 @@ def is_image(path):
     return len(hdr) >= 12 and hdr[:4] == b"RIFF" and hdr[8:12] == b"WEBP"
 
 
+def field_names(s, key):
+    raws = s.get(key + " all", [s.get(key, "")])
+    return [n.strip() for raw in raws for n in raw.split(",") if n.strip()]
+
+
 def parse(text):
     head, scenarios, cur = {}, [], None
     for line in text.splitlines():
@@ -45,9 +50,13 @@ def parse(text):
             continue
         m = re.match(r"^(\w[\w ]*?):\s*(.*)$", line)
         if m:
-            (cur if cur is not None else head)[m.group(1)] = m.group(2).strip()
-            if m.group(1) == "Summary":
-                head["Summary"] = m.group(2).strip()
+            target = cur if cur is not None else head
+            key, val = m.group(1), m.group(2).strip()
+            if key in ("Before screenshot", "Persist screenshot"):
+                target.setdefault(key + " all", []).append(val)
+            target[key] = val
+            if key == "Summary":
+                head["Summary"] = val
     return head, scenarios
 
 
@@ -91,27 +100,32 @@ def check(path):
                             fails.append(f"{sid}: Persist screenshot not in the folder: {shot}")
                         else:
                             shot_path = p
-                    before_path = None
                     if not before or "/" in before or "\\" in before:
                         fails.append(f"{sid}: VERIFIED needs Before screenshot: <filename in folder>, got {before!r}")
-                    else:
-                        p = os.path.join(folder, before)
-                        if not os.path.isfile(p):
-                            fails.append(f"{sid}: Before screenshot not in the folder: {before}")
-                        else:
-                            before_path = p
+                    elif not os.path.isfile(os.path.join(folder, before)):
+                        fails.append(f"{sid}: Before screenshot not in the folder: {before}")
                     if shot and shot not in files:
                         fails.append(f"{sid}: Persist screenshot not listed in Evidence: {shot}")
                     if before and before not in files:
                         fails.append(f"{sid}: Before screenshot not listed in Evidence: {before}")
-                    if shot and before and shot == before:
-                        fails.append(f"{sid}: Persist screenshot must not reuse Before screenshot: {shot}")
+                    shot_names = field_names(s, "Persist screenshot")
+                    before_names = field_names(s, "Before screenshot")
+                    reused = sorted(set(shot_names) & set(before_names))
+                    if reused:
+                        fails.append(f"{sid}: Persist screenshot must not reuse Before screenshot: {', '.join(reused)}")
                     if shot_path and not is_image(shot_path):
                         fails.append(f"{sid}: Persist screenshot must be a non-empty png, jpg, jpeg or webp image: {shot}")
-                    if shot_path and before_path and shot != before:
-                        with open(shot_path, "rb") as fs, open(before_path, "rb") as fb:
-                            if fs.read() == fb.read():
+                    if shot_path and not reused:
+                        shot_bytes = open(shot_path, "rb").read()
+                        seen = set()
+                        for name in before_names:
+                            if name in seen:
+                                continue
+                            seen.add(name)
+                            bp = os.path.join(folder, name)
+                            if os.path.isfile(bp) and open(bp, "rb").read() == shot_bytes:
                                 fails.append(f"{sid}: Persist screenshot has the same bytes as Before screenshot: {shot}")
+                                break
         elif re.match(r"^NOT RUN: \S", v):
             counts["NOT RUN"] += 1
         elif v:

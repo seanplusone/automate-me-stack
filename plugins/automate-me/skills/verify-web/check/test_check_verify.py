@@ -226,6 +226,10 @@ run_files(s1(evidence="s1.png, s1-persist.png", extra="Persist: reload\nPersist 
 run_files(write_case(before="s1.png", evidence="s1-persist.png, s2.png"),
           GOOD,
           needle="Before screenshot", name="Before screenshot not listed in Evidence fails VERIFIED")
+run_files(s1(evidence="s1.png, s2.png, s1-persist.png",
+             extra="Persist: reload\nPersist screenshot: s1.png\nBefore screenshot: s1.png\nBefore screenshot: s2.png\n"),
+          {"s1.png": RED, "s2.png": BLUE, "s1-persist.png": BLUE},
+          needle="Persist screenshot", name="reuse of s1.png hidden by a second Before screenshot fails VERIFIED")
 
 print(f"\n{'FAIL' if FAILS else 'PASS'} test_check_verify ({len(FAILS)} failing)")
 shutil.rmtree(os.path.join(HERE, "__pycache__"), ignore_errors=True)
