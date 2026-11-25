@@ -58,7 +58,7 @@ Fails (exit 1) when:
   or a numbered question has no question mark;
 - an item is only trap adjectives (modern, clean, good, better, correct, valid, nice) and names no
   visible signal. A digit is a visible signal;
-- parallel-shared-record, when all three of these hold. Agents and roles has a `how:` item that says `in parallel`. A negated mark such as `never in parallel` does not count. The word comment is not a write.
+- parallel-shared-record, when all three of these hold. Agents and roles has a `how:` item that says `in parallel`. A negated mark such as `never in parallel` or `never run in parallel` does not count. The word comment is not a write.
   One sentence in Evals or Verification says a journey writes to a named record. A record is a code
   span or double-quoted name next to a record noun, or a record noun followed by a number. No slot in
   the brief mentions a seed, copy, clone or duplicate step. A Reset line is not a seed. When in doubt
@@ -140,9 +140,13 @@ HEDGE_WORDS = {"maybe", "perhaps", "possibly", "probably", "not", "sure", "unsur
                "it", "idk", "dunno", "we", "ll", "will", "well", "see", "yet", "tbh", "hmm", "let", "s"}
 
 # Agents and roles `how:` item marking parallel execution.
-# A negated mark such as "never in parallel" or "no parallel" does not count.
+# A negation word before "in parallel", with at most two words between, does not count.
+# "no parallel" also counts as a negation.
 PARALLEL_HOW = re.compile(r"^how:.*\bin\s+parallel\b", re.I)
-PARALLEL_NEGATED = re.compile(r"\b(?:never|not)\s+in\s+parallel\b|\bno\s+parallel\b", re.I)
+PARALLEL_NEGATED = re.compile(
+    r"\b(?:never|not|don't|dont|do\s+not|no)\s+(?:\w+\s+){0,2}(?:in\s+)?parallel\b",
+    re.I,
+)
 # Sentence boundary used to keep record name and write verb in the same sentence.
 SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 # Nouns for a stored record, not actors, items in a cart or navigation.

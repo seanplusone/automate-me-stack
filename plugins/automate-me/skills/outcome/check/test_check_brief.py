@@ -584,6 +584,14 @@ expect("parallel not in parallel",
        swap("how: in parallel, one agent per build", "how: not in parallel", PARALLEL_BAD_SHARED), set())
 expect("parallel no parallel",
        swap("how: in parallel, one agent per build", "how: no parallel", PARALLEL_BAD_SHARED), set())
+expect("parallel never run in parallel",
+       swap("how: in parallel, one agent per build", "how: never run in parallel", PARALLEL_BAD_SHARED), set())
+expect("parallel not run in parallel",
+       swap("how: in parallel, one agent per build", "how: not run in parallel", PARALLEL_BAD_SHARED), set())
+expect("parallel don't run in parallel",
+       swap("how: in parallel, one agent per build", "how: don't run in parallel", PARALLEL_BAD_SHARED), set())
+expect("parallel do not run in parallel",
+       swap("how: in parallel, one agent per build", "how: do not run in parallel", PARALLEL_BAD_SHARED), set())
 expect("parallel reads comments is not a write",
        parallel_case("A journey reads the comments on the `demo` note and checks the title."), set())
 
