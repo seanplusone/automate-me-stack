@@ -21,11 +21,12 @@ Show a small table: ✅ clear, ⚠️ vague, ❌ missing.
 1. Before you start (big or ambiguous tasks only): ask questions and
    show a plan first?
 2. Goal: what to do AND what decision the user will make with the result.
-3. Must-haves / Check: each rule is checkable, with named proof
-   (test run, file and line, doc section, photo).
+3. Must-haves / Check: each rule is checkable, has an id (`[m1]`),
+   and names a command as its proof.
 4. Output: what comes back, how many, which fields.
-5. Verify: how claims get proved. Must include "every claim names
-   the run or file:line behind it, or says guess."
+5. Verify: one ``m1: `command` `` line per id. Every claim names the
+   run or file:line behind it, or says guess. The check cannot run
+   the command or know that it passes.
 6. If stuck: what to do when the goal can't be met. Loops need a cap.
 
 ## Step 2: Check for traps (one line each, only if present)
@@ -46,6 +47,7 @@ Show a small table: ✅ clear, ⚠️ vague, ❌ missing.
 
 Mechanical gaps (fix them yourself):
 - Missing slot labels or structure
+- Missing id or Verify command for a rule, when the user already gave the proof
 - Missing evidence rule (slot 5)
 - Missing "Report only" guardrail
 - Missing output format, when the right one is obvious
@@ -54,6 +56,7 @@ Gaps only the user can fill (stop and ask):
 - Which decision the result is for
 - Scope: which PRs, files, spec, or branch
 - Limits: budget, caps, deadlines
+- Missing Verify command for a rule, when the user gave no proof
 - Anything that would make you guess at intent
 
 If every gap is mechanical:

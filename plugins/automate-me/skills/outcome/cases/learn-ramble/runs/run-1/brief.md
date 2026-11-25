@@ -9,13 +9,15 @@
   - It filters orders by customer_id and sorts by created_at. The database is Postgres.
   - The speaker "kind of" knows what a b-tree is, so start there and check it.
 - Must-haves:
-  - Cover a two-column index on customer_id then created_at, and why the column order matters.
-  - Cover at least one case where an index does not help. Proof is a query plan.
+  - [m1] Cover a two-column index on customer_id then created_at, and why the column order matters.
+  - [m2] Cover at least one case where an index does not help. Proof is a query plan.
 - Taste: A small example the speaker can run. Flag, don't filter.
 - Output:
   - A short explanation in plain words, built on one runnable example.
   - Then a check of understanding: 3 questions the speaker answers, with the answers folded below.
-- Verify: Every claim about how Postgres behaves cites a source (the Postgres docs section) or a query plan from the example, or says guess.
+- Verify:
+  - m1: `psql -f explain_composite_index.sql | grep -E 'Index Scan|customer_id, created_at'` Every claim about how Postgres behaves cites a source (the Postgres docs section) or a query plan from the example, or says guess.
+  - m2: `psql -f explain_seq_scan.sql | grep 'Seq Scan'`
 - If stuck: Report only. Run the example in a throwaway local database; never create an index on a shared database. Stop and ask if the example cannot run.
 - Skills: explain-doc if a long doc on indexes needs a one-page read. None runs yet.
 - Parking lot:

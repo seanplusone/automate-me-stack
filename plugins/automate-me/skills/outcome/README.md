@@ -17,7 +17,11 @@ Status: new. Four synthetic scored cases. The `run-*` briefs were written by han
 - every item that starts with `unknown` reads `unknown: <question>?`;
 - the Unknowns list holds only unknown markers, and does not say `none` while a slot is unknown;
 - a brief with unknowns has a Questions block, with at most 3 numbered questions, each with a question mark;
-- no item is only trap adjectives (modern, clean, good, better, correct, valid, nice).
+- no item is only trap adjectives (modern, clean, good, better, correct, valid, nice);
+- every Must-haves rule (not `investigate:`, `out of scope:` or `unknown`) has an `[id]` prefix;
+- every rule id has one Verify line with a backticked command, and no id is unknown or repeated.
+
+The check cannot run the command or know that it passes.
 
 `check/score_case.py` scores a brief against a case key: facts in the speaker's words, slot terms, gaps asked rather than guessed, guesses that must not appear, and Parking lot items.
 
@@ -39,7 +43,7 @@ The `run-1` and `run-2` briefs are hand-written: they prove the scorers work, no
 | Blind 1 | first draft | 20/26 | 17/19 | 17/18 | 16/18 | 70/81 | 0 |
 | Blind 2 | after the fixes below | 24/28 | 17/19 | 18/18 | 17/18 | 76/83 | 0 |
 
-Blind 1 is scored with the whole-word scorer. Its first, substring scorer counted "pet" inside "carpet" as asking about pets. Between the runs, some keys were loosened where the blind brief was right and the key too literal, and kept strict where the skill really missed. Each change and its reason is in that case's `runs/score.md`. Blind 2's briefs are kept in each case's `runs/blind/`.
+Blind 1 is scored with the whole-word scorer. Its first, substring scorer counted "pet" inside "carpet" as asking about pets. Between the runs, some keys were loosened where the blind brief was right and the key too literal, and kept strict where the skill really missed. Each change and its reason is in that case's `runs/score.md`. Blind 2's briefs are kept in each case's `runs/blind/`. After the Verify format change, the blind briefs and run briefs got ids and Verify lines added by hand; their scores did not change.
 
 Known gaps after blind 2, left as they are because a fix would need another blind run:
 
@@ -57,9 +61,12 @@ Known gaps after blind 2, left as they are because a fix would need another blin
 - Goal: <value>
 - Decision: <value, or unknown: <question>?>
 - Must-haves:
-  - <item>
+  - [m1] <rule>
   - investigate: <question the agent answers by looking>
   - out of scope: <exclusion>
+...
+- Verify:
+  - m1: `<command or script path>`
 ...
 - Unknowns:
   - unknown: <question>?
@@ -98,6 +105,7 @@ outcome/
   SKILL.md                          sort, fill, mark unknowns, read back, hand off
   check/
     check_brief.py                  the shape check
+    fixtures/                       synthetic briefs, one defect each, used by the test
     score_case.py                   scores a brief against a case key
     test_check_brief.py             python3 check/test_check_brief.py
     test_score_case.py              python3 check/test_score_case.py

@@ -15,11 +15,13 @@
   - investigate: Can a customer pause twice in a row?
   - investigate: Does the PRD cover annual plans?
   - investigate: Does support get a tool to pause or resume a plan?
-  - Each investigate item becomes a PM question only if the PRD does not answer it. Proof is the section that does.
-  - Questions carry no proposed answer.
+  - [m1] Each investigate item becomes a PM question only if the PRD does not answer it. Proof is the section that does.
+  - [m2] Questions carry no proposed answer.
 - Taste: "Good, not twenty nitpicks." Flag, don't filter. The count needs a number from the speaker.
 - Output: One list of questions for the PM, each with the PRD section it is about. A separate list of gaps for engineering.
-- Verify: Every gap names the PRD section or line behind it, or says guess.
+- Verify:
+  - m1: `python3 check_prd_coverage.py docs/prd/pause-subscription.md questions.md` Every gap names the PRD section or line behind it, or says guess.
+  - m2: `python3 check_questions.py --no-proposed-answer questions.md`
 - If stuck: If the PRD cannot be found, stop and ask for the link. Report only: draft the questions, change nothing in the PRD, message no one.
 - Skills: review-prd for the gaps and PM questions, or review-prd-light for a lighter pass. None runs yet.
 - Parking lot:
