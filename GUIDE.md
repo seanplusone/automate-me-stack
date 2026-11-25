@@ -30,7 +30,7 @@ These need `.claude/project-profile.md`, which `/automate-me:setup` writes. Tick
 |---|---|---|
 | Understand a doc or a PR before reviewing it | `/automate-me:explain-doc <path or PR link>` | One page that shows the big picture through a small example and the flow in stages. It sums up every section and lists what looked wrong. |
 | Check a PR does what its test plan says | `/automate-me:verify-web pr <PR number>` | Each scenario run on the base branch and the PR branch, with evidence. A `verify.md` marks each one VERIFIED, CONTRADICTED or NOT RUN. |
-| Review a PR | `/automate-me:review-pr <PR link>` | At most five short inline comments per PR and a verdict, on a page you can share. Results from `verify-web pr` go in as findings. Nothing is posted until you say so. |
+| Review a PR | `/automate-me:review-pr <PR link>` | At most five short inline comments per PR and a verdict, on a page you can share. The review tries to break the change and re-runs claims instead of trusting the PR. Results from `verify-web pr` go in as findings. Nothing is posted until you say so. |
 | Know if a PR is too big | `/automate-me:split-pr <PR link or branch>` | A size verdict and, if it should split, which files go in each smaller PR and in what order. |
 | Write one comment or reply | `/automate-me:write-for-engineer` | One draft in the engineer voice, with the evidence behind each claim. |
 

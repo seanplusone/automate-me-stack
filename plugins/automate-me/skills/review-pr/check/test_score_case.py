@@ -1,9 +1,13 @@
 """Run: python3 check/test_score_case.py"""
 import contextlib
 import io
+import json
 import os
+import signal
+import subprocess
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from score_case import score  # noqa: E402
@@ -67,6 +71,183 @@ expect("terms case-insensitive", drafts(("scripts/stage.sh:17", None), text="ADM
 expect("a/b term matches the second word", drafts(("scripts/stage.sh:17", None), text="An admin, so only the assignee."), {"K1"}, KEY + "\nTerms: K1 | admin | owner/assignee\n")
 expect("a/b term needs one of its words", drafts(("scripts/stage.sh:17", None), text="An admin only."), set(), KEY + "\nTerms: K1 | admin | owner/assignee\n")
 expect("row without terms unaffected", drafts(("scripts/stage.sh:28", None)), {"K2"}, KEY_TERMS)
+
+
+def planted_files(attack, catch="returns True | ok\": false"):
+    d = tempfile.mkdtemp()
+    k, p = os.path.join(d, "key.md"), os.path.join(d, "attack.md")
+    open(k, "w").write(f"Planted: yes\nCatch: {catch}\n")
+    open(p, "w").write(attack)
+    return k, p
+
+
+def planted_score(attack, catch="returns True | ok\": false", runner=None):
+    k, p = planted_files(attack, catch)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = score(k, p, environ={"PATH": "/nonexistent"}, runner=runner)
+    return code, out.getvalue()
+
+
+def attack_json(file, line, claim, repro):
+    body = {
+        "verdict": "needs fixes",
+        "tried": [{"input": "{\"ok\": false}", "broke": True, "observed": "True"}],
+        "findings": [{"file": file, "line": line, "claim": claim, "repro": repro}],
+    }
+    return "```json\n" + json.dumps(body) + "\n```\n"
+
+
+CAUGHT = attack_json(
+    "report.py", 4,
+    "accept returns True when a case has ok: false.",
+    "{\"passed\": true, \"ok\": false}",
+)
+MISSED = attack_json("report.py", 9, "The name field has no length cap.", "{\"name\": \"\"}")
+def expect_planted(name, got, want):
+    RAN.append(name)
+    if got != want:
+        FAILS.append(f"{name}: wanted {want!r}, got {got!r}")
+
+
+code, text = planted_score(CAUGHT)
+expect_planted("planted bug caught", (code, "WEAK location only" in text and "PASS" not in text), (2, True))
+k, p = planted_files(MISSED)
+open(k, "a").write("Where: report.py:4\n")
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    code = score(k, p, environ={"PATH": "/nonexistent"})
+text = out.getvalue()
+expect_planted("planted bug missed", (code, "FAIL missed planted bug" in text), (1, True))
+code, _text = planted_score(CAUGHT, "returns true/returns True")
+expect_planted("a/b catch term", code, 2)
+QUOTED = attack_json("report.py", 4, "accept returns True", "`ok`: False")
+code, _text = planted_score(QUOTED, "'ok': False | returns True")
+expect_planted("quotes and case are ignored", code, 2)
+PARAPHRASE = attack_json(
+    "report.py", 4,
+    "The early return treats the summary as proof.",
+    "a failed case with a true summary",
+)
+seen = []
+code, text = planted_score(
+    PARAPHRASE, "returns True | 'ok': False",
+    runner=lambda prompt: seen.append(prompt) or "ITEM 1: yes\n",
+)
+expect_planted("meaning judge can catch a paraphrase", (code, "PASS judge caught planted bug" in text), (0, True))
+expect_planted("the judge sees the matching claim", "summary as proof" in seen[0], True)
+mixed = attack_json("unrelated.py", 900, "MARKER other bug", "other")
+# A second finding on the key line is the only one the judge should see.
+parsed = json.loads(mixed.split("```json\n", 1)[1].split("\n```", 1)[0])
+parsed["findings"].append({
+    "file": "report.py", "line": 4,
+    "claim": "The early return treats the summary as proof.",
+    "repro": "a failed case",
+})
+mixed_path_key, mixed_path = planted_files("```json\n" + json.dumps(parsed) + "\n```\n", "returns True | 'ok': False")
+open(mixed_path_key, "a").write("Where: report.py:4\n")
+prompts = []
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    code = score(mixed_path_key, mixed_path, environ={"PATH": "/nonexistent"}, runner=lambda prompt: prompts.append(prompt) or "ITEM 1: yes\n")
+expect_planted("only the matching finding is judged", (code, "MARKER" not in prompts[0] and "summary as proof" in prompts[0]), (0, True))
+DENIED = attack_json("unrelated.py", 900, "accept returns True when a case has ok false.", "ok false")
+k, p = planted_files(DENIED, "returns True | ok false")
+open(k, "a").write("Where: report.py:4\n")
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    code = score(k, p, environ={"PATH": "/nonexistent"}, runner=lambda prompt: (7, "ITEM 1: no\nITEM 1: yes\n"))
+text = out.getvalue()
+expect_planted("a denial on another file is not a catch", (code, "PASS" not in text), (1, True))
+code, text = planted_score(PARAPHRASE, "returns True | 'ok': False", runner=lambda prompt: (7, "ITEM 1: no\nITEM 1: yes\n"))
+expect_planted("a non-zero judge does not pass", (code, "SKIP judge exited non-zero" in text and "PASS" not in text), (2, True))
+code, text = planted_score(PARAPHRASE, "returns True | 'ok': False", runner=lambda prompt: "ITEM 1: no\nITEM 1: yes\n")
+expect_planted("conflicting judge answers fail", (code, "FAIL judge missed planted bug" in text), (1, True))
+SPAN = attack_json("report.py", 3, "accept returns True when a case has ok false.", "ok false")
+k, p = planted_files(SPAN, "returns True | ok false")
+open(k, "a").write("Where: report.py:3-4\n")
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    code = score(k, p, environ={"PATH": "/nonexistent"})
+expect_planted("a line in the key span counts", code, 2)
+FAR = attack_json("report.py", 9, "accept returns True when a case has ok false.", "ok false")
+k, p = planted_files(FAR, "returns True | ok false")
+open(k, "a").write("Where: report.py:4\n")
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    code = score(k, p, environ={"PATH": "/nonexistent"})
+expect_planted("a line outside the window misses", code, 1)
+DENY = attack_json(
+    "report.py", 4,
+    "This does not show a bug. returns True and ok false are only words.",
+    "ok false",
+)
+k, p = planted_files(DENY, "returns True | ok false")
+open(k, "a").write("Where: report.py:4\n")
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    code = score(k, p, environ={"PATH": "/nonexistent"})
+text = out.getvalue()
+expect_planted(
+    "a denial on the key line is not a pass",
+    (code, "PASS" not in text and "WEAK location only" in text),
+    (2, True),
+)
+soft = attack_json(
+    "report.py", 4,
+    "accept does not return False when a case has ok false, so it returns True.",
+    "ok false",
+)
+k, p = planted_files(soft, "returns True | ok false")
+open(k, "a").write("Where: report.py:4\n")
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    code = score(k, p, environ={"PATH": "/nonexistent"})
+text = out.getvalue()
+expect_planted("does not in a real claim is not a miss", (code, "WEAK location only" in text), (2, True))
+from judge_case import parse_verdict
+expect_planted("a sentence is not a judge answer", parse_verdict("The answer is not ITEM 1: yes."), None)
+expect_planted("bold yes counts", parse_verdict("**ITEM 1: yes**"), True)
+expect_planted("a trailing period counts", parse_verdict("ITEM 1: yes."), True)
+expect_planted("backticks count", parse_verdict("`ITEM 1: yes`"), True)
+expect_planted("yes is the first word", parse_verdict("ITEM 1: Yes — the cap rejects 5"), True)
+expect_planted("bold label and answer", parse_verdict("**ITEM 1:** Yes."), True)
+expect_planted("bold answer word", parse_verdict("ITEM 1: **yes**"), True)
+expect_planted("a list marker counts", parse_verdict("- ITEM 1: yes"), True)
+expect_planted("yesterday is not yes", parse_verdict("ITEM 1: yesterday"), None)
+expect_planted("conflict still fails", parse_verdict("ITEM 1: yes\nITEM 1: no\n"), "conflict")
+slow_judge = os.path.join(tempfile.mkdtemp(), "judge")
+open(slow_judge, "w").write("#!/bin/sh\nsleep 5\n")
+os.chmod(slow_judge, 0o755)
+from judge_case import judge
+k, p = planted_files(CAUGHT)
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    code = judge(k, p, environ={"JUDGE_CLI": slow_judge, "PATH": "/usr/bin"}, timeout=0.2)
+expect_planted("a judge timeout is not a pass", (code, "SKIP judge timed out" in buf.getvalue() and "PASS" not in buf.getvalue()), (2, True))
+
+score_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "score_case.py")
+for stop, use_group in ((signal.SIGTERM, False), (signal.SIGKILL, True)):
+    late = os.path.join(tempfile.mkdtemp(), "late.txt")
+    stub = os.path.join(tempfile.mkdtemp(), "judge")
+    open(stub, "w").write("#!/usr/bin/python3\nimport time\npath = %r\ntime.sleep(3)\nopen(path, 'w').write('late')\n" % late)
+    os.chmod(stub, 0o755)
+    k, p = planted_files(CAUGHT)
+    open(k, "a").write("Where: report.py:4\n")
+    env = os.environ.copy()
+    env["PATH"] = "/usr/bin"
+    env["JUDGE_CLI"] = stub
+    proc = subprocess.Popen(
+        [sys.executable, score_script, k, p], env=env, start_new_session=True,
+    )
+    time.sleep(0.4)
+    if use_group:
+        os.killpg(proc.pid, signal.SIGKILL)
+    else:
+        proc.send_signal(stop)
+    proc.wait(timeout=5)
+    time.sleep(3.2)
+    expect_planted("judge dies with the scorer (%s)" % stop.name, os.path.exists(late), False)
 
 if __name__ == "__main__":
     for f in FAILS:
