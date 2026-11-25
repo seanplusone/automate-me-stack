@@ -1,0 +1,25 @@
+# Brief: Comment timestamp in the notes app
+
+- Kind: build
+- Plan first: none needed
+- Goal: Show the comment timestamp in the notes app.
+- Done:
+  - Each comment shows its timestamp below the comment body.
+  - Proof is the rendered note view after the journey runs.
+- Output: The updated notes app code and a run log.
+- Constraints:
+  - Keep the existing note layout unchanged.
+  - Stop after 2 failed fix attempts.
+- Tools:
+  - The local notes app running on a test server.
+  - Reset: delete the comment from the demo note after the run.
+  - write first: none.
+- Agents and roles:
+  - Two agents build two features at the same time.
+  - how: in parallel, one agent per build
+- Evals:
+  - Pass: a new comment shows its timestamp below the body.
+  - Fail: a new comment hides its timestamp.
+- Verification:
+  - Every claim names its run, its file:line, or says guess.
+  - A journey adds a comment to the `demo` note and checks the timestamp.

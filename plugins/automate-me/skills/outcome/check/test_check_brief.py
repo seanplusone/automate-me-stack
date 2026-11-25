@@ -524,6 +524,46 @@ if ran.returncode != 1 or "unknown slot: Sub-goals" not in ran.stdout:
     FAILS.append(f"cli names the unknown slot and exits 1: exit {ran.returncode}\n{ran.stdout}")
 
 
+FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
+with open(os.path.join(FIXTURES, "parallel-bad-shared-note.md")) as handle:
+    PARALLEL_BAD_SHARED = handle.read()
+with open(os.path.join(FIXTURES, "parallel-bad-reset-only.md")) as handle:
+    PARALLEL_BAD_RESET = handle.read()
+with open(os.path.join(FIXTURES, "parallel-good-seeded-note.md")) as handle:
+    PARALLEL_GOOD_SEEDED = handle.read()
+
+SHARED_REC = "parallel-shared-record"
+expect("parallel bad shared note", PARALLEL_BAD_SHARED, {SHARED_REC})
+expect("parallel bad reset only", PARALLEL_BAD_RESET, {SHARED_REC})
+expect("parallel good seeded note", PARALLEL_GOOD_SEEDED, set())
+parallel_evals_only = slot(
+    "Verification",
+    "- Verification: Every claim names its run or says guess.",
+    slot(
+        "Evals",
+        "- Evals:\n  - Pass: a journey adds a comment to the `demo` note and sees the timestamp.\n  - Fail: a comment has no timestamp.",
+        PARALLEL_BAD_SHARED,
+    ),
+)
+expect("parallel evals only", parallel_evals_only, {SHARED_REC})
+parallel_verification_only = slot(
+    "Evals",
+    "- Evals:\n  - Pass: a timestamp appears below the text.\n  - Fail: no timestamp appears.",
+    PARALLEL_BAD_SHARED,
+)
+expect("parallel verification only", parallel_verification_only, {SHARED_REC})
+expect("parallel no mark", swap("how: in parallel, one agent per build", "how: one agent builds", PARALLEL_BAD_SHARED), set())
+RAN.append("cli parallel bad shared note exits 1")
+ran = run_cli(PARALLEL_BAD_SHARED)
+if ran.returncode != 1 or "FAIL parallel-shared-record" not in ran.stdout:
+    FAILS.append(f"cli parallel bad shared note exits 1: exit {ran.returncode}\n{ran.stdout}")
+RAN.append("cli parallel good seeded note exits 0")
+ran = run_cli(PARALLEL_GOOD_SEEDED)
+if (ran.returncode != 0 or "PASS parallel-shared-record" not in ran.stdout
+        or any(line.startswith("FAIL") for line in ran.stdout.splitlines())):
+    FAILS.append(f"cli parallel good seeded note exits 0: exit {ran.returncode}\n{ran.stdout}")
+
+
 if __name__ == "__main__":
     for f in FAILS:
         print(f"FAIL {f}")
