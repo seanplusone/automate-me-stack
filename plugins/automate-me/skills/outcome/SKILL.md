@@ -99,7 +99,7 @@ Write the brief to a file in the session's scratch folder, one line per slot. Us
 
 A slot with more than one item puts each on its own indented `  - ` line.
 
-Each Must-haves rule gets an id (`[m1]`) and one Verify line with a backticked command that the brief writer proposes. If a rule has no command yet, write `unknown: <what command proves it?>` in Must-haves instead of a rule, and ask it in the read-back. `investigate:` and `out of scope:` items take no id and no Verify line; with no rules, Verify is `none`. The check cannot run the command or know that it passes: running it is the builder's proof and the PR review's job.
+Each Must-haves rule gets an id (`[m1]`) and one Verify line with a backticked command that the brief writer proposes. If a rule has no command yet, write `unknown: <what command proves it?>` in Must-haves instead of a rule, and ask it in the read-back. `investigate:` and `out of scope:` items take no id and no Verify line. With no rules, Verify is `none`. The check cannot run the command or know that it passes. The builder runs it, and the PR review confirms it.
 
 Plan first is the agent's call, never a question for the user. Write `yes: <what the plan shows>` when the work is big, runs many agents, or costs real time or money. Write `none needed` when it is one pass the user can redo cheaply.
 

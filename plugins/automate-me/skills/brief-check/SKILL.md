@@ -24,10 +24,9 @@ Show a small table: ✅ clear, ⚠️ vague, ❌ missing.
 3. Must-haves / Check: each rule is checkable, has an id (`[m1]`),
    and names a command as its proof.
 4. Output: what comes back, how many, which fields.
-5. Verify: one ``m1: `command` `` line per id. The command's output
-   must show that every claim names the run or file:line behind it,
-   or says guess. The check cannot run the command or know that it
-   passes.
+5. Verify: one ``m1: `command` `` line per id. Every claim names the
+   run or file:line behind it, or says guess. The check cannot run
+   the command or know that it passes.
 6. If stuck: what to do when the goal can't be met. Loops need a cap.
 
 ## Step 2: Check for traps (one line each, only if present)
