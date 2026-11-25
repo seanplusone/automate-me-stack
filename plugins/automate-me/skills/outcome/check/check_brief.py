@@ -26,9 +26,11 @@ Fails when:
 - a Verify line has no backticked command, or the command is not first in the value;
 - an id is used more than once among Must-haves or among Verify lines;
 - given a file path, no `briefs/WORKSTREAMS` file is found (starting at the path if it is a
-  directory or its parent folder, at each directory look for `briefs/WORKSTREAMS`), Workstream is
-  not listed in the nearest `briefs/WORKSTREAMS`, or the parent folder name does not match
-  Workstream (omitted when no path is given; path checks that cannot run print SKIP, not PASS).
+  directory or its parent folder, at each directory look for `briefs/WORKSTREAMS`), a non-blank
+  line in `briefs/WORKSTREAMS` has leading or trailing whitespace (blank lines are ignored;
+  padded lines fail with a message to remove the spaces), Workstream is not listed in the nearest
+  `briefs/WORKSTREAMS`, or the parent folder name does not match Workstream (omitted when no path
+  is given; path checks that cannot run print SKIP, not PASS).
 Prints a PASS, FAIL, or SKIP line per check and exits 1 only on FAIL.
 """
 import os
@@ -230,7 +232,7 @@ def check(text, path=None):
     if path is not None:
         ws_items = slots.get("Workstream", [])
         if not ws_items:
-            ws_file_fails, ws_listed_fails, ws_folder_fails = None, None, None
+            ws_file_fails, ws_ws_fails, ws_listed_fails, ws_folder_fails = None, None, None, None
         else:
             ws = ws_items[0].strip()
             ws_file = find_workstreams(path)
@@ -238,16 +240,26 @@ def check(text, path=None):
                 ws_file_fails = [
                     "no briefs/WORKSTREAMS found; ask before you create a briefs/WORKSTREAMS file listing the allowed workstreams, one per line"
                 ]
-                ws_listed_fails, ws_folder_fails = None, None
+                ws_ws_fails, ws_listed_fails, ws_folder_fails = None, None, None
             else:
-                ws_file_fails, ws_listed_fails, ws_folder_fails = [], [], []
+                ws_file_fails, ws_ws_fails, ws_listed_fails, ws_folder_fails = [], [], [], []
+                allowed = set()
                 with open(ws_file) as f:
-                    allowed = {line.strip() for line in f.read().splitlines() if line.strip()}
+                    for line in f.read().splitlines():
+                        if not line.strip():
+                            continue
+                        if line != line.strip():
+                            ws_ws_fails.append(
+                                f"{ws_file}: line {line!r} has leading or trailing whitespace; remove the spaces"
+                            )
+                        else:
+                            allowed.add(line)
                 if ws not in allowed:
                     ws_listed_fails.append(f"Workstream {ws!r} is not listed in {ws_file}")
                 if parent != ws:
                     ws_folder_fails.append(f"parent folder {parent!r} does not match Workstream {ws!r}")
         add("a briefs/WORKSTREAMS file exists", ws_file_fails)
+        add("WORKSTREAMS lines have no leading or trailing whitespace", ws_ws_fails)
         add("Workstream is in the nearest WORKSTREAMS", ws_listed_fails)
         add("Workstream matches the parent folder", ws_folder_fails)
     return results
