@@ -564,6 +564,22 @@ if (ran.returncode != 0 or "PASS parallel-shared-record" not in ran.stdout
     FAILS.append(f"cli parallel good seeded note exits 0: exit {ran.returncode}\n{ran.stdout}")
 
 
+def parallel_case(sentence, text=PARALLEL_GOOD_SEEDED):
+    return swap(
+        "A journey adds a comment to that copy and checks the timestamp, then cleanup removes it.",
+        sentence,
+        swap("write first: seed a fresh copy of the demo note for this build", "write first: none.", text),
+    )
+
+
+expect("parallel held-out orders app",
+       parallel_case("A journey edits order 1042 and checks the refund total.").replace("notes app", "orders app").replace(" note ", " order "),
+       {SHARED_REC})
+expect("parallel actor is not a record", parallel_case("The user adds `hello` to the cart and checks the total."), set())
+expect("parallel page number is not a record", parallel_case("The journey updates the filter, then opens page 2."), set())
+expect("parallel read only record passes", parallel_case("A journey reads the `demo` note and checks the title."), set())
+
+
 if __name__ == "__main__":
     for f in FAILS:
         print(f"FAIL {f}")
