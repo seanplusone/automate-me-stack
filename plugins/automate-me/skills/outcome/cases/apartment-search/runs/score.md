@@ -37,7 +37,7 @@ The first scorer matched terms as substrings. The key term `pet` matched "carpet
 
 Blind misses on the current key are move-in, area and pets, all real skill misses.
 
-Output of `python3 check/score_case.py cases/apartment-search/key.md cases/apartment-search/runs/run-1/brief.md` (exit 0):
+Output of `python3 check/score_case.py cases/apartment-search/key.md cases/apartment-search/runs/run-1/briefs/apartment-search/brief.md` (exit 0):
 
 ```
 facts 3 bed: found
@@ -71,7 +71,7 @@ parking facebook: found
 PASS 28/28 key items
 ```
 
-Output of `python3 check/score_case.py cases/apartment-search/key.md cases/apartment-search/runs/run-2/brief.md` (exit 1):
+Output of `python3 check/score_case.py cases/apartment-search/key.md cases/apartment-search/runs/run-2/briefs/apartment-search/brief.md` (exit 1):
 
 ```
 facts 3 bed: found

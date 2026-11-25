@@ -19,7 +19,7 @@ None. Both blind misses are kept strict:
 - `Slot: Output | diagram/mermaid | field`. The blind Output names formats only and leaves the fields out. brief-check's Output slot asks "which fields", so this is a real miss, not a literal key.
 - `Parking: reviews | review`. The blind brief put "reviews later" in Taste. SKILL.md now says an exclusion goes in Must-haves as `out of scope:`, and an idea for later also goes in the Parking lot. Taste is wrong under either rule.
 
-Output of `python3 check/score_case.py cases/erd-ramble/key.md cases/erd-ramble/runs/run-1/brief.md` (exit 0):
+Output of `python3 check/score_case.py cases/erd-ramble/key.md cases/erd-ramble/runs/run-1/briefs/erd-ramble/brief.md` (exit 0):
 
 ```
 facts Pawpath: found

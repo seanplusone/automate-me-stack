@@ -1,5 +1,6 @@
 # Brief: Understand database indexes for a slow orders page
 
+- Workstream: learn-ramble
 - Kind: learn
 - Plan first: none needed
 - Goal: explain how Postgres indexes work, why one helps, and when one does not

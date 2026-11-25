@@ -64,13 +64,14 @@ How each pile lands in the brief:
 
 ## 2. Fill the brief
 
-Use the slots defined in [brief-check](../brief-check/SKILL.md), Step 1. Read them there; this skill does not restate them. The brief adds four slots of its own: Kind, Skills, Parking lot and Unknowns. Decision is split out of Goal so it can be marked unknown on its own line.
+Use the slots defined in [brief-check](../brief-check/SKILL.md), Step 1. Read them there; this skill does not restate them. The brief adds five slots of its own: Workstream, Kind, Skills, Parking lot and Unknowns. Decision is split out of Goal so it can be marked unknown on its own line.
 
-Write the brief to a file in the session's scratch folder, one line per slot. Use the labels exactly as the template shows them. A note in brackets after a label, as in `- Taste (flag, don't filter):`, is allowed. Every slot except Kind is required.
+Ask for the workstream first, before filling other slots. Walk up from the current project for the nearest directory named `briefs` that contains `WORKSTREAMS`, and offer those names. Then write the brief yourself to `briefs/<workstream>/<feature>.md`, one line per slot. Do not leave the path for the caller to invent. Use the labels exactly as the template shows them. A note in brackets after a label, as in `- Taste (flag, don't filter):`, is allowed. Workstream is required, and every other slot except Kind is required.
 
 ```
 # Brief: <short title>
 
+- Workstream: <name>
 - Kind: build | review | design | learn | search/decide
 - Plan first: yes: <what the plan shows first> | none needed
 - Goal: <what to do>
@@ -122,7 +123,7 @@ Then apply brief-check's trap list (Step 2) to the brief, one line per trap foun
 - Vague scope ("the PRD", "the repo") names a link, path or branch, or becomes an unknown.
 - A check that needs a tool (a browser, images, a test run) names it.
 
-Run `python3 "$SKILL_DIR"/check/check_brief.py <brief.md>` and fix what it flags. It checks the shape. Every slot is present once and filled, and Plan first says yes or none needed. Every unknown has a question and no default beside it. Tagged items sit in their slots, there are at most 3 questions, and no slot is only an adjective. Every Must-haves rule has a unique id paired with one backticked Verify command. Run `python3 "$SKILL_DIR"/../shared/check_writing.py <brief.md>` and rewrite the lines it flags.
+Run `python3 "$SKILL_DIR"/check/check_brief.py <brief.md>` and fix what it flags. It checks the shape. Every slot is present once and filled, and Plan first says yes or none needed. Every unknown has a question and no default beside it. Tagged items sit in their slots, there are at most 3 questions, and no slot is only an adjective. Every Must-haves rule has a unique id paired with one backticked Verify command. Given the file path, it also checks the Workstream field against the parent folder and the nearest `briefs/WORKSTREAMS`, and skips those checks when given no path. If `briefs/WORKSTREAMS` is missing, it fails with a message to create one listing allowed workstreams, one per line. Run `python3 "$SKILL_DIR"/../shared/check_writing.py <brief.md>` and rewrite the lines it flags.
 
 ## 4. Read back
 

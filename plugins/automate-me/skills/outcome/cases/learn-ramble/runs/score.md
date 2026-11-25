@@ -20,7 +20,7 @@ Run 1 was updated for the new SKILL.md rules: Plan first reads `none needed`.
 
 The blind score stays 16 of 18, but the misses changed. Before, they were the composite index (a key fault) and data size. Now they are version and data size, both real skill misses.
 
-Output of `python3 check/score_case.py cases/learn-ramble/key.md cases/learn-ramble/runs/run-1/brief.md` (exit 0):
+Output of `python3 check/score_case.py cases/learn-ramble/key.md cases/learn-ramble/runs/run-1/briefs/learn-ramble/brief.md` (exit 0):
 
 ```
 facts 4 seconds: found

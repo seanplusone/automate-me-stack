@@ -1,5 +1,6 @@
 # Brief: Learn how database indexes work
 
+- Workstream: learn-ramble
 - Kind: learn
 - Plan first: none needed. One topic, one session.
 - Goal: Explain how an index speeds up a query, and when it does not, using the slow orders query as the example.

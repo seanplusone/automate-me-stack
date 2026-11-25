@@ -10,7 +10,7 @@ Status: new. Four synthetic scored cases. The `run-*` briefs were written by han
 
 `check/check_brief.py` checks a brief's shape:
 
-- every required slot is present once and filled (Plan first, Goal, Decision, Context, Must-haves, Taste, Output, Verify, If stuck, Skills, Parking lot, Unknowns; Kind is optional). A note in brackets after a label, as in `- Taste (flag, don't filter):`, is allowed;
+- every required slot is present once and filled (Workstream, Plan first, Goal, Decision, Context, Must-haves, Taste, Output, Verify, If stuck, Skills, Parking lot, Unknowns; Kind is optional). A note in brackets after a label, as in `- Taste (flag, don't filter):`, is allowed;
 - Plan first starts with `yes` or `none needed`;
 - an `investigate:` or `out of scope:` item sits in Must-haves, and a `how:` item in Skills;
 - a slot that holds `unknown:` offers no default beside it;
@@ -19,7 +19,8 @@ Status: new. Four synthetic scored cases. The `run-*` briefs were written by han
 - a brief with unknowns has a Questions block, with at most 3 numbered questions, each with a question mark;
 - no item is only trap adjectives (modern, clean, good, better, correct, valid, nice);
 - every Must-haves rule (not `investigate:`, `out of scope:` or `unknown`) has an `[id]` prefix;
-- every rule id has one Verify line with a backticked command, and no id is unknown or repeated.
+- every rule id has one Verify line with a backticked command, and no id is unknown or repeated;
+- given a file path, walks up from the brief's folder to find the nearest `briefs/WORKSTREAMS` file. It checks that Workstream is in that allow-list (one allowed name per line, blank lines ignored) and matches the parent folder. If `briefs/WORKSTREAMS` is missing, it fails with a message to create one listing allowed workstreams, one per line. When called with no path, it still requires the Workstream slot and skips the folder and allow-list checks.
 
 The check cannot run the command or know that it passes.
 
@@ -56,6 +57,7 @@ Known gaps after blind 2, left as they are because a fix would need another blin
 ```
 # Brief: <title>
 
+- Workstream: <name>
 - Kind: build | review | design | learn | search/decide
 - Plan first: yes: <plan> | none needed
 - Goal: <value>
@@ -113,13 +115,15 @@ outcome/
     apartment-search/               search/decide: a rent split, a stretch budget, photos over descriptions
       input.md                      the ramble, the only thing the skill is given
       key.md                        facts, slot terms, unknowns, forbidden guesses, parking lot
-      runs/run-1/brief.md           hand-written, passes (28 of 28)
-      runs/run-2/brief.md           fails on purpose: guesses the cap, a move-in date and an area (21 of 28)
+      runs/run-1/briefs/apartment-search/brief.md
+                                    hand-written, passes (28 of 28)
+      runs/run-2/briefs/apartment-search/brief.md
+                                    fails on purpose: guesses the cap, a move-in date and an area (21 of 28)
       runs/score.md                 why run-2 fails, the blind score, key changes, scorer outputs
     erd-ramble/                     build: an ERD with two points still open
     prd-review-ramble/              review: a PRD path said with "I think", questions to look up, a tangent
     learn-ramble/                   learn: indexes for a slow query; output is an explanation and a check
-                                    each of the last three: input.md, key.md, runs/run-1/brief.md, runs/score.md
+                                    each of the last three: input.md, key.md, runs/*/briefs/*/brief.md, runs/score.md
 ```
 
 ## Run the checks
@@ -130,7 +134,7 @@ From `outcome/`:
 python3 check/test_check_brief.py
 python3 check/test_score_case.py
 for c in cases/*/; do
-  for b in "$c"runs/*/brief.md; do
+  for b in "$c"runs/*/briefs/*/brief.md; do
     python3 check/check_brief.py "$b" | tail -1
     python3 check/score_case.py "$c"key.md "$b" | tail -1
   done
