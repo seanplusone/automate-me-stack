@@ -1,6 +1,7 @@
 """Checks the shape of a brief written by the outcome skill.
 
 Usage: python3 check/check_brief.py <brief.md>
+From Python: check(text, path=None). Passing path runs the workstream location checks; omitting it skips them.
 
 A slot is a top-level line `- <Label>: <value>`. A note in brackets after the label is allowed, as in
 `- Taste (flag, don't filter):`. Indented `  - <item>` lines under it are more items of the same slot.
@@ -23,14 +24,18 @@ Fails when:
 - a Must-haves rule (not `investigate:`, `out of scope:` or `unknown`) has no `[id]` prefix;
 - a Must-have id has no Verify line, or a Verify line names no id or an unknown id;
 - a Verify line has no backticked command, or the command is not first in the value;
-- an id is used more than once among Must-haves or among Verify lines.
+- an id is used more than once among Must-haves or among Verify lines;
+- given a file path, no ancestor `briefs/WORKSTREAMS` file is found (walking up from the brief's
+  folder), Workstream is not listed in the nearest `briefs/WORKSTREAMS`, or the parent folder name
+  does not match Workstream (all three are skipped when no path is given).
 Prints a PASS or FAIL line per check and exits 1 on any FAIL.
 """
+import os
 import re
 import sys
 
-REQUIRED = ["Plan first", "Goal", "Decision", "Context", "Must-haves", "Taste", "Output", "Verify", "If stuck",
-            "Skills", "Parking lot", "Unknowns"]
+REQUIRED = ["Workstream", "Plan first", "Goal", "Decision", "Context", "Must-haves", "Taste", "Output", "Verify",
+            "If stuck", "Skills", "Parking lot", "Unknowns"]
 OPTIONAL = ["Kind"]
 LABELS = REQUIRED + OPTIONAL
 SLOT = re.compile(r"^- (" + "|".join(map(re.escape, LABELS)) + r")(?:\s*\([^)]*\))?:(.*)$", re.I)
@@ -105,7 +110,20 @@ def is_none(items):
     return len(items) == 1 and items[0].strip().rstrip(".").lower() == "none"
 
 
-def check(text):
+def find_workstreams(path):
+    d = os.path.dirname(os.path.abspath(path))
+    while True:
+        if os.path.basename(d) == "briefs":
+            candidate = os.path.join(d, "WORKSTREAMS")
+            if os.path.isfile(candidate):
+                return candidate
+        up = os.path.dirname(d)
+        if up == d:
+            return None
+        d = up
+
+
+def check(text, path=None):
     slots, questions, counts = parse(text)
     results = []
 
@@ -199,15 +217,39 @@ def check(text):
             seen[i] = seen.get(i, 0) + 1
         dup_ids += [f"{label}: id {i!r} appears {n} times" for i, n in seen.items() if n > 1]
     add("no id used twice", dup_ids)
+
+    if path is not None:
+        ws_items = slots.get("Workstream", [])
+        ws_file_fails, ws_listed_fails, ws_folder_fails = [], [], []
+        if ws_items:
+            ws = ws_items[0].strip()
+            ws_file = find_workstreams(path)
+            if ws_file is None:
+                ws_file_fails.append(
+                    "no briefs/WORKSTREAMS found; create a briefs/WORKSTREAMS file listing the allowed workstreams, one per line"
+                )
+            else:
+                with open(ws_file) as f:
+                    allowed = {line.strip() for line in f.read().splitlines() if line.strip()}
+                if ws not in allowed:
+                    ws_listed_fails.append(f"Workstream {ws!r} is not listed in {ws_file}")
+                parent = os.path.basename(os.path.dirname(os.path.abspath(path)))
+                if parent != ws:
+                    ws_folder_fails.append(f"parent folder {parent!r} does not match Workstream {ws!r}")
+        add("a briefs/WORKSTREAMS file exists", ws_file_fails)
+        add("Workstream is in the nearest WORKSTREAMS", ws_listed_fails)
+        add("Workstream matches the parent folder", ws_folder_fails)
     return results
 
 
 def main(path):
     failed = False
-    for name, fails in check(open(path).read()):
+    with open(path) as f:
+        text = f.read()
+    for name, fails in check(text, path):
         print(f"{'FAIL' if fails else 'PASS'} {name}")
-        for f in fails:
-            print(f"  {f}")
+        for fail in fails:
+            print(f"  {fail}")
         failed = failed or bool(fails)
     print(f"{'FAIL' if failed else 'PASS'} brief: {path}")
     return 1 if failed else 0
