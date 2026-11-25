@@ -69,9 +69,10 @@ evidence, and cleanup.
    reload or fresh-context persistence check when the claim is a change (a write), the console
    messages, non-2xx network requests, and the second-way check (a JSON response, a query result,
    the record reopened in a fresh page).
-   Start a Playwright trace, or the browser MCP's equivalent, before driving. Keep it in the
-   evidence folder if a step fails or the verdict is CONTRADICTED; otherwise you may discard it.
-   Record video only when motion or timing matters. Write down what you saw, not what you expected.
+   With Playwright MCP, start a trace before driving and keep it in the evidence folder if a step
+   fails or the verdict is CONTRADICTED; otherwise you may discard it. Record video only when
+   motion or timing matters. With the chrome-devtools MCP, screenshots are the evidence; no trace
+   is required. Write down what you saw, not what you expected.
 
 8. **Give each scenario a verdict.**
    - `VERIFIED`: on head the screen shows the claim, and the second-way check agrees. When the

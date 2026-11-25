@@ -115,9 +115,10 @@ outside the plugin, so a plugin update never deletes it. For every proof keep:
 - the side effect proven a second way, such as the row in the database, the job in the queue's own
   screen, the file in storage, or the record reopened in a fresh page load. A screen that says
   "saved" is the claim, not the proof;
-- start a Playwright trace, or the browser MCP's equivalent, before driving. Keep it in the
-  evidence folder if a step fails or the verdict is CONTRADICTED; otherwise you may discard it.
-  Record video only when motion or timing matters;
+- with Playwright MCP, start a trace before driving and keep it in the evidence folder if a step
+  fails or the verdict is CONTRADICTED; otherwise you may discard it. Record video only when
+  motion or timing matters. With the chrome-devtools MCP, screenshots are the evidence; no trace
+  is required;
 - the branch and sha of the tree that served the page and of the tree that ran the job.
 
 ## Cleanup
