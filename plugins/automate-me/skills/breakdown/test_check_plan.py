@@ -99,7 +99,7 @@ class CheckPlan(unittest.TestCase):
 class RenderPlan(unittest.TestCase):
     def test_prompt_has_brief_check_slots_and_upstream_output(self):
         out = render_plan.render_prompt(GOOD, "B")
-        for slot in ("Never say done", "Review:", "Context:", "Run on:", "not proof", "RESUME.md", "Goal:", "Check:", "Limits:", "Output:", "Verify:", "If stuck:", "Uses the output of:"):
+        for slot in ("Never say done", "Review:", "Context:", "Run on:", "not proof", "RESUME.md", "check_resume.py", "resume-shape.md", "Goal:", "Check:", "Limits:", "Output:", "Verify:", "If stuck:", "Uses the output of:"):
             self.assertIn(slot, out)
 
     def test_page_draws_every_item(self):
