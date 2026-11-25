@@ -25,7 +25,7 @@ next to its config, in `.claude/verify-web/features/`, and list them in an index
 
 ## Proof and skip reporting
 
-- Snapshot and screenshot before and after the action, with the URL visible.
+- Snapshot and screenshot before and after each step, with the URL visible.
 - A change is proven by a second, read-only view: the row in the database, a read-only API call, or
   the record reopened in a fresh page load.
 - Console errors and non-2xx requests are findings, even when the screen looks right.

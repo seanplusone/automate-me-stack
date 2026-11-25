@@ -29,10 +29,12 @@ before your edit, or the page and the job run two different checkouts.
    stop and point the user at `/automate-me:setup`; do not guess URLs or container names.
 2. Copy [`users.env.example`](users.env.example) to `~/.config/verify-web/users.env` and
    `chmod 600` it. The user fills in the logins. See [`personas.md`](personas.md).
-3. Install a browser MCP. The default is Playwright MCP: `claude mcp add playwright npx @playwright/mcp@latest`.
-   The chrome-devtools MCP (`npx chrome-devtools-mcp@latest`) also works. This file names browser
-   tools by what they do (snapshot, screenshot, console messages, network requests); use the
-   matching tool of whichever MCP is loaded.
+3. Install a browser MCP. The default is Playwright MCP, headless:
+   `claude mcp add playwright -- npx @playwright/mcp@latest --headless`.
+   Omit `--headless` to open a headed window, when the task asks or you need to watch a motion or
+   timing failure. The chrome-devtools MCP (`npx chrome-devtools-mcp@latest`) also works. This file
+   names browser tools by what they do (snapshot, screenshot, console messages, network requests);
+   use the matching tool of whichever MCP is loaded.
 
 ## Non-negotiables
 
@@ -87,6 +89,8 @@ config. Restart after those regardless, if a restart is pre-authorized.
 ## Drive
 
 - Open your own browser page or tab and close it at the end. Leave other tabs alone.
+- Headless is a setup flag, not a switch during a run. The browser MCP is installed headless (setup step 3); to watch a motion or timing failure, re-register it without `--headless` and restart.
+- Do not run the project's full unit-test suite here. The build's test step owns it.
 - Sign in on the config's `login_path` as the default persona (the first one in the config). Use
   another persona only when the task names it.
 - Locate controls from the accessibility snapshot, by role, accessible name, label or `name=`
@@ -102,11 +106,15 @@ Write to `<evidence_dir>/<YYYYMMDD-HHMM>-<feature>/` (default `~/.claude/verify-
 outside the plugin, so a plugin update never deletes it. For every proof keep:
 
 - the doctor output for the run, saved as `doctor.txt`;
-- a snapshot before and after the action, and a screenshot with the URL visible;
+- screenshots and snapshots before and after each step, with the URL visible;
+- a persistence check: after a reload, or in a fresh context, the change still shows;
 - the console messages, and every non-2xx response from the network requests;
 - the side effect proven a second way, such as the row in the database, the job in the queue's own
   screen, the file in storage, or the record reopened in a fresh page load. A screen that says
   "saved" is the claim, not the proof;
+- start a Playwright trace, or the browser MCP's equivalent, before driving. Keep it in the
+  evidence folder if a step fails or the verdict is CONTRADICTED; otherwise you may discard it.
+  Record video only when motion or timing matters;
 - the branch and sha of the tree that served the page and of the tree that ran the job.
 
 ## Cleanup
