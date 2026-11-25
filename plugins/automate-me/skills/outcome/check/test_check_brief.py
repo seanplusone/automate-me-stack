@@ -490,8 +490,21 @@ for label, line in (("bold", "- **Sub-goals**: x\n"), ("bold with the colon insi
                     ("a dot", "- Sub.goals: x\n"), ("a leading digit", "- 2nd goal: x\n"),
                     ("a non-ASCII label", "- Подцели: x\n"), ("several words", "- Note to self: x\n")):
     expect(f"an unknown slot with {label} in its label fails", MIN + line, {UNKNOWN_SLOT})
-expect("a sentence-ending dot is not part of a label", swap("- Done: 3 bed. Proof is the listing.\n",
-       "- Done:\n- 3 bed. Proof: the listing.\n", MIN), {EMPTY})
+for label, line in (("an apostrophe", "- Won't do: skip the PDF export.\n"), ("an ampersand", "- Agents & roles: one agent\n"),
+                    ("a question mark", "- Done?: yes\n"), ("a non-breaking hyphen", "- Non\u2011goals: no PDF.\n"),
+                    ("five words", "- What the person will decide: which export to keep.\n"),
+                    ("an em dash", "- Out of scope \u2014 later: PDF\n"), ("a space before the colon", "- Sub-goals : x\n"),
+                    ("a full-width colon", "- Sub-goals\uff1a x\n"), ("no space after the colon", "- Sub-goals:No space.\n"),
+                    ("a star bullet", "* Note: x\n"), ("a plus bullet", "+ Note: x\n"), ("a tab after the bullet", "-\tNote: x\n")):
+    expect(f"an unknown slot with {label} fails", MIN + line, {UNKNOWN_SLOT})
+expect("a top-level bullet in Done with a colon is an unknown slot", swap("- Done: 3 bed. Proof is the listing.\n",
+       "- Done:\n- 3 bed. Proof: the listing.\n", MIN), {EMPTY, UNKNOWN_SLOT})
+expect("a time is not a slot", MIN + "- Call at 10:30 about the spec\n", set())
+expect("a URL with a colon is not a slot", MIN + "- see https://example.com/spec for details\n", set())
+ran = run_cli(MIN + "- Won't do: x\n")
+RAN.append("the unknown slot message says to indent")
+if "Indent" not in ran.stdout:
+    FAILS.append(f"the unknown slot message says to indent:\n{ran.stdout}")
 expect("an unknown slot with a bracketed note fails", MIN + "- Extra (a note): a\n", {UNKNOWN_SLOT})
 expect("indented sub-items with a colon are not slots", swap("  - Pass: keep a 3 bed listing.\n",
        "  - Pass: keep a 3 bed listing.\n  - Note: it needs a photo.\n", MIN), set())
