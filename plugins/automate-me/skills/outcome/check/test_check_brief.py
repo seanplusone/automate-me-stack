@@ -379,7 +379,8 @@ expect_outcome("R4 X6 a Fail item that says should pass has no pass case",
 expect_outcome("R4 X6 Pass: ok; Fail: depends asks", slot("Evals", "- Evals:\n  - Pass: ok; Fail: depends", APT), "ask")
 RAN.append("R4 X6 one ASK per case body")
 if asks(slot("Evals", "- Evals:\n  - Pass: ok; Fail: depends", APT)) != [("Evals", "ok"), ("Evals", "depends")]:
-    FAILS.append(f"R4 X6 one ASK per case body: {asks(slot('Evals', '- Evals:\n  - Pass: ok; Fail: depends', APT))}")
+    got = asks(slot("Evals", "- Evals:\n  - Pass: ok; Fail: depends", APT))
+    FAILS.append(f"R4 X6 one ASK per case body: {got}")
 whole = slot("Evals", "- Evals:\n  - Pass: ok; Fail: depends", APT) + "\n## Confirmed\n\n- Evals: Pass: ok; Fail: depends\n"
 expect_outcome("R4 S6 a whole-line confirmation does not lift the case bodies", whole, "ask")
 # X7: other checks.
