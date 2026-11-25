@@ -499,6 +499,10 @@ for label, line in (("an apostrophe", "- Won't do: skip the PDF export.\n"), ("a
     expect(f"an unknown slot with {label} fails", MIN + line, {UNKNOWN_SLOT})
 expect("a top-level bullet in Done with a colon is an unknown slot", swap("- Done: 3 bed. Proof is the listing.\n",
        "- Done:\n- 3 bed. Proof: the listing.\n", MIN), {EMPTY, UNKNOWN_SLOT})
+for label, line in (("a star bullet", "* Goal: TBD\n"), ("a plus bullet", "+ Goal: TBD\n"),
+                    ("a space before the colon", "- Goal : TBD\n"), ("a full-width colon", "- Goal\uff1aTBD\n")):
+    broken = MIN.replace("- Goal: Find 10 listings.\n", line)
+    expect(f"a required slot written with {label} still fails", broken, {PRESENT, UNKNOWN_SLOT})
 expect("a time is not a slot", MIN + "- Call at 10:30 about the spec\n", set())
 expect("a URL with a colon is not a slot", MIN + "- see https://example.com/spec for details\n", set())
 ran = run_cli(MIN + "- Won't do: x\n")
