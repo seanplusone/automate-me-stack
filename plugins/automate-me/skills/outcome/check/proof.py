@@ -14,8 +14,9 @@ check fails, they print the failing checks, touch no proof files, and exit 2.
 
 `run` executes each Verify command in Must-haves order and writes
 verify-<id>.txt. An existing verify-<id>.txt, including a symlink, is replaced
-with a new file and a link's target is left alone. A command that exceeds the
-timeout (default 300 seconds) has its process group killed and is recorded with
+with a new file and a link's target is left alone. Proof files get the normal
+default mode (0666 masked by the umask). A command that exceeds the timeout
+(default 300 seconds) has its process group killed and is recorded with
 exit=124. `run` exits 1 if any command exits nonzero, else 0.
 
 `check` runs nothing. It fails with exit 1 when:
@@ -88,6 +89,12 @@ def load_valid_brief(brief_path):
     return text
 
 
+def default_file_mode():
+    mask = os.umask(0)
+    os.umask(mask)
+    return 0o666 & ~mask
+
+
 def run_brief(brief_path, outdir, timeout):
     text = load_valid_brief(brief_path)
     if text is None:
@@ -95,6 +102,7 @@ def run_brief(brief_path, outdir, timeout):
 
     rule_ids, commands, _ = load_verify(text)
     os.makedirs(outdir, exist_ok=True)
+    mode = default_file_mode()
     any_failed = False
 
     for mid in rule_ids:
@@ -123,6 +131,7 @@ def run_brief(brief_path, outdir, timeout):
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 fd = None
                 f.write(f"exit={code}\ncmd: {cmd}\n{output}")
+            os.chmod(tmp, mode)
             os.replace(tmp, out_path)
         except BaseException:
             if fd is not None:
