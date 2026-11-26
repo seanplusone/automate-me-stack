@@ -200,6 +200,52 @@ def test_run_binary():
         shutil.rmtree(out, ignore_errors=True)
 
 
+def test_run_symlink():
+    name = "run replaces a symlinked verify file and leaves its target alone"
+    RAN.append(name)
+    d = tempfile.mkdtemp()
+    try:
+        target = os.path.join(d, "target")
+        new_target = os.path.join(d, "new")
+        out = os.path.join(d, "out")
+        with open(target, "w") as f:
+            f.write("keep")
+        os.mkdir(out)
+        m1_path = os.path.join(out, "verify-m1.txt")
+        m2_path = os.path.join(out, "verify-m2.txt")
+        os.symlink(target, m1_path)
+        os.symlink(new_target, m2_path)
+        proc, err = run_proof("run", f"{BRIEFS}/pass.md", out)
+        if err:
+            FAILS.append(f"{name}: {err}")
+            return
+        reasons = []
+        if proc.returncode != 0:
+            reasons.append(f"wanted exit 0, got {proc.returncode}")
+        if not os.path.isfile(target):
+            reasons.append("target is missing")
+        else:
+            with open(target) as f:
+                target_content = f.read()
+            if target_content != "keep":
+                reasons.append(f"target content was {target_content!r}, wanted 'keep'")
+        if os.path.exists(new_target):
+            reasons.append(f"dangling link target {new_target} was created")
+        for mid, path in (("m1", m1_path), ("m2", m2_path)):
+            if os.path.islink(path):
+                reasons.append(f"verify-{mid}.txt is still a symlink")
+            if not os.path.isfile(path):
+                reasons.append(f"missing verify-{mid}.txt")
+            else:
+                lines = read_lines(path)
+                if not lines or lines[0] != "exit=0":
+                    reasons.append(f"verify-{mid}.txt line 1 was {lines[0] if lines else None!r}, wanted 'exit=0'")
+        if reasons:
+            FAILS.append(f"{name}: {'; '.join(reasons)}")
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def test_run_broken():
     name = "run on broken.md exits 2 and writes nothing"
     RAN.append(name)
@@ -425,6 +471,11 @@ def test_proof_source():
     m = re.search(r"^(RULE_ID|VERIFY_ID|BACKTICK_CMD|SLOT) =", src, re.M)
     if m:
         reasons.append(f"defines {m.group(1)} =")
+    if "BACKTICK_CMD" not in src:
+        reasons.append("missing BACKTICK_CMD")
+    for line in src.splitlines():
+        if re.search(r"re\.compile\(.*`", line):
+            reasons.append(f"compiles backtick regex: {line.strip()!r}")
     if reasons:
         FAILS.append(f"{name}: {'; '.join(reasons)}")
 
@@ -434,6 +485,7 @@ test_run_fail()
 test_run_slow()
 test_run_child()
 test_run_binary()
+test_run_symlink()
 test_run_broken()
 test_round_trip()
 test_check_extra_file()
