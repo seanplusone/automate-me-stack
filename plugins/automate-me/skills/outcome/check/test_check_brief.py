@@ -210,14 +210,25 @@ FIXTURES = os.path.join(HERE, "fixtures")
 CHECK = os.path.join(HERE, "check_brief.py")
 
 
-def expect_fixture(filename, want_fail, not_fail=(), want_pattern=None, want_skip=(), name=None):
+def expect_fixture(filename, want_fail, not_fail=(), want_pattern=None, want_skip=(), name=None, isolate=False):
     name = name or f"fixture {filename}"
     RAN.append(name)
     path = os.path.join(FIXTURES, filename)
     if not os.path.exists(path):
         path = os.path.join(HERE, filename)
-    proc = subprocess.run([sys.executable, CHECK, path],
-                          capture_output=True, text=True)
+    tmp = None
+    if isolate:
+        top = filename.split("/", 1)[0]
+        base = FIXTURES if os.path.exists(os.path.join(FIXTURES, filename)) else HERE
+        tmp = tempfile.mkdtemp()
+        shutil.copytree(os.path.join(base, top), os.path.join(tmp, top))
+        path = os.path.join(tmp, filename)
+    try:
+        proc = subprocess.run([sys.executable, CHECK, path],
+                              capture_output=True, text=True)
+    finally:
+        if tmp is not None:
+            shutil.rmtree(tmp)
     lines = proc.stdout.splitlines()
     if want_fail is None:
         if proc.returncode != 0:
@@ -253,7 +264,7 @@ expect_fixture("briefs/demo/no-workstream.md", PRESENT)
 expect_fixture("unknown-list/briefs/ghost/unknown-workstream.md", WS_LISTED, not_fail=(WS_FOLDER,))
 expect_fixture("briefs/demo/folder-mismatch.md", WS_FOLDER, not_fail=(WS_LISTED,))
 expect_fixture("no-list/briefs/demo/brief.md", WS_FILE, not_fail=(WS_LISTED, WS_FOLDER),
-               want_pattern=r"create.*WORKSTREAMS")
+               want_pattern=r"create.*WORKSTREAMS", isolate=True)
 expect_fixture("briefs/demo/no-verify-command.md", HAS_CMD)
 expect_fixture("briefs/demo/no-workstream.md", PRESENT,
                want_pattern=r"add `?- Workstream: demo`?",
@@ -265,7 +276,8 @@ expect_fixture("no-list/briefs/demo/brief.md", WS_FILE,
                not_fail=(WS_LISTED, WS_FOLDER),
                want_pattern=r"create.*WORKSTREAMS",
                want_skip=(WS_LISTED, WS_FOLDER),
-               name="no-list fixture skips downstream workstream checks")
+               name="no-list fixture skips downstream workstream checks",
+               isolate=True)
 
 
 def expect_find_workstreams_from_subfolder():
@@ -324,12 +336,12 @@ expect_workstreams_list("WORKSTREAMS trailing space fails", "demo \n", bad_line=
 expect_workstreams_list("WORKSTREAMS tab fails", "\tdemo\n", bad_line="\tdemo")
 
 
-def expect_workstreams_bytes(name, ws_bytes, workstream="demo", want_listed_fail=False, want_ws_detail=None):
+def expect_workstreams_bytes(name, ws_bytes, workstream="demo", want_listed_fail=False, want_ws_detail=None, folder=None):
     RAN.append(name)
     text = GOOD if workstream == "demo" else swap("- Workstream: demo", f"- Workstream: {workstream}")
     root = tempfile.mkdtemp()
     try:
-        ws_dir = os.path.join(root, "briefs", workstream)
+        ws_dir = os.path.join(root, "briefs", folder or workstream)
         os.makedirs(ws_dir)
         with open(os.path.join(root, "briefs", "WORKSTREAMS"), "wb") as f:
             f.write(ws_bytes)
@@ -344,7 +356,7 @@ def expect_workstreams_bytes(name, ws_bytes, workstream="demo", want_listed_fail
         ws_fails = res.get(WS_SPACE) or []
         if not any(want_ws_detail in d for d in ws_fails):
             reasons.append(f"wanted {WS_SPACE!r} to fail with {want_ws_detail!r}, got {res.get(WS_SPACE)!r}")
-    elif not want_listed_fail:
+    else:
         if res.get(WS_SPACE) != []:
             reasons.append(f"wanted {WS_SPACE!r} to pass, got {res.get(WS_SPACE)!r}")
     if want_listed_fail:
@@ -381,6 +393,32 @@ expect_workstreams_bytes(
 expect_workstreams_bytes(
     "WORKSTREAMS CRLF list with a blank line",
     b"other\r\n\r\ndemo\r\n",
+)
+expect_workstreams_bytes(
+    "WORKSTREAMS comment: trailing space on comment line passes",
+    b"# owners: team a \ndemo\n",
+)
+expect_workstreams_bytes(
+    "WORKSTREAMS comment: hash-prefixed name does not list demo",
+    b"#demo\n",
+    want_listed_fail=True,
+)
+expect_workstreams_bytes(
+    "WORKSTREAMS comment: indented hash line fails whitespace check",
+    b"  # note\ndemo\n",
+    want_ws_detail=f"{'  # note'!r} has leading or trailing whitespace; remove the spaces",
+)
+expect_workstreams_bytes(
+    "WORKSTREAMS comment: inline hash is not a comment",
+    b"demo # note\n",
+    want_listed_fail=True,
+)
+expect_workstreams_bytes(
+    "WORKSTREAMS comment: hash-prefixed workstream name is not listed",
+    b"# demo\ndemo\n",
+    workstream="# demo",
+    folder="demo",
+    want_listed_fail=True,
 )
 
 if __name__ == "__main__":
