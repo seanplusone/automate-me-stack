@@ -33,6 +33,7 @@ import re
 import subprocess
 import sys
 
+sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from check_brief import RULE_ID, TAG, UNKNOWN_START, VERIFY_ID, check, is_none, parse
 
@@ -127,17 +128,17 @@ def check_brief_proof(brief_path, outdir):
         print(f"PASS proof: {brief_path}")
         return 0
 
-    failed = False
+    failing = []
     for mid in rule_ids:
         if mid not in commands:
-            print(f"FAIL {mid}: no Verify command in brief")
-            failed = True
+            print(f"FAIL {mid}: no Verify command in {brief_path}")
+            failing.append(mid)
             continue
 
         path = os.path.join(outdir, f"verify-{mid}.txt")
         if not os.path.isfile(path):
             print(f"FAIL {mid}: no file {path}")
-            failed = True
+            failing.append(mid)
             continue
 
         with open(path) as f:
@@ -145,20 +146,22 @@ def check_brief_proof(brief_path, outdir):
 
         m = EXIT_LINE.match(lines[0]) if lines else None
         if not m:
-            print(f"FAIL {mid}: line 1 is not exit=<integer>")
-            failed = True
+            actual = repr(lines[0]) if lines else "missing"
+            print(f"FAIL {mid}: {path} line 1 is {actual}, expected exit=<integer>")
+            failing.append(mid)
             continue
 
         code = int(m.group(1))
         if code != 0:
-            print(f"FAIL {mid}: recorded exit {code} is not 0")
-            failed = True
+            print(f"FAIL {mid}: {path} records exit {code}, expected exit=0")
+            failing.append(mid)
             continue
 
         expected = f"cmd: {commands[mid]}"
         if len(lines) < 2 or lines[1] != expected:
-            print(f"FAIL {mid}: line 2 does not match `{expected}`")
-            failed = True
+            actual = repr(lines[1]) if len(lines) >= 2 else "missing"
+            print(f"FAIL {mid}: {path} line 2 is {actual}, expected `{expected}`")
+            failing.append(mid)
             continue
 
         print(f"PASS {mid}")
@@ -170,8 +173,11 @@ def check_brief_proof(brief_path, outdir):
             if m and m.group(1) not in known_ids:
                 print(f"note: {entry} is for an id not in the brief")
 
-    print(f"{'FAIL' if failed else 'PASS'} proof: {brief_path}")
-    return 1 if failed else 0
+    if failing:
+        print(f"FAIL proof: {brief_path} (failing: {', '.join(failing)})")
+        return 1
+    print(f"PASS proof: {brief_path}")
+    return 0
 
 
 def build_parser():
