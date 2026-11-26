@@ -28,10 +28,10 @@ Fails when:
 - given a file path, no `briefs/WORKSTREAMS` file is found (starting at the path if it is a
   directory or its parent folder, at each directory look for `briefs/WORKSTREAMS`), a non-blank
   line in `briefs/WORKSTREAMS` (read as UTF-8 with an optional BOM, split on newlines only) has
-  leading or trailing whitespace (blank lines are ignored; padded lines fail with a message to
-  remove the spaces), Workstream is not listed in the nearest `briefs/WORKSTREAMS`, or the parent
-  folder name does not match Workstream (omitted when no path is given; path checks that cannot
-  run print SKIP, not PASS).
+  leading or trailing whitespace (blank lines are ignored; lines starting with `#` are comments
+  and are ignored; padded lines fail with a message to remove the spaces), Workstream is not
+  listed in the nearest `briefs/WORKSTREAMS`, or the parent folder name does not match Workstream
+  (omitted when no path is given; path checks that cannot run print SKIP, not PASS).
 Prints a PASS, FAIL, or SKIP line per check and exits 1 only on FAIL.
 """
 import os
@@ -247,7 +247,7 @@ def check(text, path=None):
                 allowed = set()
                 with open(ws_file, encoding="utf-8-sig", newline="") as f:
                     for line in [l[:-1] if l.endswith("\r") else l for l in f.read().split("\n")]:
-                        if not line.strip():
+                        if not line.strip() or line.startswith("#"):
                             continue
                         if line != line.strip():
                             ws_ws_fails.append(
