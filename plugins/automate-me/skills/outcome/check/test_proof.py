@@ -16,13 +16,14 @@ FAILS = []
 RAN = []
 
 
-def run_proof(*args, timeout=None):
+def run_proof(*args, timeout=None, env=None):
     if not os.path.isfile(PROOF):
         return None, f"missing {PROOF}"
     try:
         proc = subprocess.run(
             [sys.executable, "check/proof.py", *args],
             cwd=OUTCOME,
+            env=env,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -139,6 +140,66 @@ def test_run_slow():
         shutil.rmtree(out, ignore_errors=True)
 
 
+def test_run_child():
+    name = "run --timeout 1 on child.md kills process group with exit=124"
+    RAN.append(name)
+    tmp = tempfile.mkdtemp()
+    try:
+        marker = os.path.join(tmp, "marker")
+        out = os.path.join(tmp, "out")
+        env = dict(os.environ)
+        env["PROOF_MARKER"] = marker
+        proc, err = run_proof("run", "--timeout", "1", f"{BRIEFS}/child.md", out, timeout=20, env=env)
+        if err:
+            FAILS.append(f"{name}: {err}")
+            return
+        reasons = []
+        if proc.returncode != 1:
+            reasons.append(f"wanted exit 1, got {proc.returncode}")
+        path = os.path.join(out, "verify-m1.txt")
+        if not os.path.isfile(path):
+            reasons.append("missing verify-m1.txt")
+        else:
+            lines = read_lines(path)
+            if not lines or lines[0] != "exit=124":
+                reasons.append(f"verify-m1.txt line 1 was {lines[0] if lines else None!r}, wanted 'exit=124'")
+        time.sleep(3)
+        if os.path.exists(marker):
+            reasons.append(f"child process created {marker}")
+        if reasons:
+            FAILS.append(f"{name}: {'; '.join(reasons)}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_run_binary():
+    name = "run on binary.md exits 0 and preserves non-UTF-8 output"
+    RAN.append(name)
+    out = tempfile.mkdtemp()
+    try:
+        proc, err = run_proof("run", f"{BRIEFS}/binary.md", out)
+        if err:
+            FAILS.append(f"{name}: {err}")
+            return
+        reasons = []
+        if proc.returncode != 0:
+            reasons.append(f"wanted exit 0, got {proc.returncode}")
+        path = os.path.join(out, "verify-m1.txt")
+        if not os.path.isfile(path):
+            reasons.append("missing verify-m1.txt")
+        else:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                lines = f.read().splitlines()
+            if not lines or lines[0] != "exit=0":
+                reasons.append(f"verify-m1.txt line 1 was {lines[0] if lines else None!r}, wanted 'exit=0'")
+            if len(lines) < 3 or lines[2] != "a\ufffdb":
+                reasons.append(f"verify-m1.txt line 3 was {lines[2] if len(lines) >= 3 else None!r}, wanted 'a\\ufffdb'")
+        if reasons:
+            FAILS.append(f"{name}: {'; '.join(reasons)}")
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+
 def test_run_broken():
     name = "run on broken.md exits 2 and writes nothing"
     RAN.append(name)
@@ -221,7 +282,52 @@ def test_check_none():
         shutil.rmtree(out, ignore_errors=True)
 
 
-def test_check_tampered(name, mutate, line_parts=(), check_summary=False):
+def check_m1_failure(proc, line_parts):
+    reasons = []
+    if proc.returncode != 1:
+        reasons.append(f"wanted exit 1, got {proc.returncode}")
+    lines = proc.stdout.splitlines()
+    fail_lines = [line for line in lines if line.startswith("FAIL m1:")]
+    if not fail_lines:
+        reasons.append("wanted stdout line starting with 'FAIL m1:'")
+    else:
+        for part in line_parts:
+            if part not in fail_lines[0]:
+                reasons.append(f"wanted {part!r} in {fail_lines[0]!r}")
+    non_empty = [line for line in lines if line.strip()]
+    last = non_empty[-1] if non_empty else ""
+    if not (last.startswith("FAIL proof:") and "m1" in last):
+        reasons.append(f"wanted final line starting with 'FAIL proof:' containing 'm1', got {last!r}")
+    return reasons
+
+
+def test_check_invalid_brief(brief_name):
+    name = f"check on {brief_name} exits 2 with FAIL brief and no proof lines"
+    RAN.append(name)
+    out = tempfile.mkdtemp()
+    try:
+        with open(os.path.join(out, "verify-m1.txt"), "w") as f:
+            f.write("exit=0\ncmd: true\n")
+        proc, err = run_proof("check", f"{BRIEFS}/{brief_name}", out)
+        if err:
+            FAILS.append(f"{name}: {err}")
+            return
+        reasons = []
+        if proc.returncode != 2:
+            reasons.append(f"wanted exit 2, got {proc.returncode}")
+        lines = proc.stdout.splitlines()
+        if not any(line.startswith("FAIL brief:") for line in lines):
+            reasons.append("wanted stdout line starting with 'FAIL brief:'")
+        bad = [line for line in lines if line.startswith(("PASS m", "FAIL m", "PASS proof:", "FAIL proof:"))]
+        if bad:
+            reasons.append(f"unexpected proof lines: {bad!r}")
+        if reasons:
+            FAILS.append(f"{name}: {'; '.join(reasons)}")
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+
+def test_check_tampered(name, mutate, line_parts=()):
     RAN.append(name)
     out = tempfile.mkdtemp()
     try:
@@ -241,22 +347,7 @@ def test_check_tampered(name, mutate, line_parts=(), check_summary=False):
         if err:
             FAILS.append(f"{name}: {err}")
             return
-        reasons = []
-        if proc.returncode != 1:
-            reasons.append(f"wanted exit 1, got {proc.returncode}")
-        lines = proc.stdout.splitlines()
-        fail_lines = [line for line in lines if line.startswith("FAIL m1")]
-        if not fail_lines:
-            reasons.append("wanted stdout line starting with 'FAIL m1'")
-        else:
-            for part in line_parts:
-                if part not in fail_lines[0]:
-                    reasons.append(f"wanted {part!r} in {fail_lines[0]!r}")
-        if check_summary:
-            non_empty = [line for line in lines if line.strip()]
-            last = non_empty[-1] if non_empty else ""
-            if not (last.startswith("FAIL proof:") and "m1" in last):
-                reasons.append(f"wanted final line starting with 'FAIL proof:' containing 'm1', got {last!r}")
+        reasons = check_m1_failure(proc, line_parts)
         if reasons:
             FAILS.append(f"{name}: {'; '.join(reasons)}")
     finally:
@@ -311,8 +402,9 @@ def test_check_empty_dir():
         if err:
             FAILS.append(f"{name}: {err}")
             return
-        if proc.returncode != 1:
-            FAILS.append(f"{name}: wanted exit 1, got {proc.returncode}")
+        reasons = check_m1_failure(proc, ("verify-m1.txt", "no file", "expected", "exit=0", "cmd: true"))
+        if reasons:
+            FAILS.append(f"{name}: {'; '.join(reasons)}")
     finally:
         shutil.rmtree(out, ignore_errors=True)
 
@@ -340,22 +432,33 @@ def test_proof_source():
 test_run_pass()
 test_run_fail()
 test_run_slow()
+test_run_child()
+test_run_binary()
 test_run_broken()
 test_round_trip()
 test_check_extra_file()
 test_check_none()
-test_check_tampered("check fails when verify-m1.txt is deleted", os.remove, check_summary=True)
+test_check_invalid_brief("broken.md")
+test_check_invalid_brief("empty.md")
+test_check_tampered(
+    "check fails when verify-m1.txt is deleted",
+    os.remove,
+    line_parts=("verify-m1.txt", "no file", "expected", "exit=0", "cmd: true"),
+)
 test_check_tampered(
     "check fails when line 1 is exit=1",
     lambda p: set_line(p, 0, "exit=1"),
-    line_parts=("verify-m1.txt", "exit=0"),
-    check_summary=True,
+    line_parts=("verify-m1.txt", "line 1", "expected exit=0"),
 )
-test_check_tampered("check fails when line 1 is removed", drop_first_line, line_parts=("verify-m1.txt",))
+test_check_tampered(
+    "check fails when line 1 is removed",
+    drop_first_line,
+    line_parts=("verify-m1.txt", "line 1", "expected exit=<integer>"),
+)
 test_check_tampered(
     "check fails when line 2 is cmd: old",
     lambda p: set_line(p, 1, "cmd: old"),
-    line_parts=("verify-m1.txt", "cmd: true"),
+    line_parts=("verify-m1.txt", "line 2", "expected cmd: true"),
 )
 test_check_empty_dir()
 test_check_no_pycache()
