@@ -1,6 +1,7 @@
 """Run: python3 check/test_check_brief.py"""
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -65,6 +66,7 @@ HAS_CMD = "every Verify line has a backticked command"
 KNOWN_ID = "every Verify line names a Must-have id"
 UNIQUE_ID = "no id used twice"
 WS_FILE = "a briefs/WORKSTREAMS file exists"
+WS_SPACE = "WORKSTREAMS lines have no leading or trailing whitespace"
 WS_LISTED = "Workstream is in the nearest WORKSTREAMS"
 WS_FOLDER = "Workstream matches the parent folder"
 
@@ -293,6 +295,60 @@ expect_workstreams_list("WORKSTREAMS blank line with exact name passes", "\ndemo
 expect_workstreams_list("WORKSTREAMS padded name fails", " demo \n", bad_line=" demo ")
 expect_workstreams_list("WORKSTREAMS trailing space fails", "demo \n", bad_line="demo ")
 expect_workstreams_list("WORKSTREAMS tab fails", "\tdemo\n", bad_line="\tdemo")
+
+
+def expect_workstreams_bytes(name, ws_bytes, workstream="demo", want_listed_fail=False, want_ws_detail=None):
+    RAN.append(name)
+    text = GOOD if workstream == "demo" else swap("- Workstream: demo", f"- Workstream: {workstream}")
+    root = tempfile.mkdtemp()
+    try:
+        ws_dir = os.path.join(root, "briefs", workstream)
+        os.makedirs(ws_dir)
+        with open(os.path.join(root, "briefs", "WORKSTREAMS"), "wb") as f:
+            f.write(ws_bytes)
+        brief_path = os.path.join(ws_dir, "brief.md")
+        with open(brief_path, "w") as f:
+            f.write(text)
+        res = dict(check(text, brief_path))
+    finally:
+        shutil.rmtree(root)
+    reasons = []
+    if want_ws_detail is not None:
+        ws_fails = res.get(WS_SPACE) or []
+        if not any(want_ws_detail in d for d in ws_fails):
+            reasons.append(f"wanted {WS_SPACE!r} to fail with {want_ws_detail!r}, got {res.get(WS_SPACE)!r}")
+    elif not want_listed_fail:
+        if res.get(WS_SPACE) != []:
+            reasons.append(f"wanted {WS_SPACE!r} to pass, got {res.get(WS_SPACE)!r}")
+    if want_listed_fail:
+        if not res.get(WS_LISTED):
+            reasons.append(f"wanted {WS_LISTED!r} to fail, got {res.get(WS_LISTED)!r}")
+    elif want_ws_detail is None:
+        if res.get(WS_LISTED) != []:
+            reasons.append(f"wanted {WS_LISTED!r} to pass, got {res.get(WS_LISTED)!r}")
+    if reasons:
+        FAILS.append(f"{name}: {'; '.join(reasons)}")
+
+
+expect_workstreams_bytes(
+    "WORKSTREAMS read: BOM before the first name",
+    b"\xef\xbb\xbfdemo\nother\n",
+)
+expect_workstreams_bytes(
+    "WORKSTREAMS read: vertical tab at line end",
+    b"demo\x0b\n",
+    want_ws_detail="has leading or trailing whitespace; remove the spaces",
+)
+expect_workstreams_bytes(
+    "WORKSTREAMS read: vertical tab inside a line",
+    b"demo\x0bghost\n",
+    workstream="ghost",
+    want_listed_fail=True,
+)
+expect_workstreams_bytes(
+    "WORKSTREAMS CRLF list with a blank line",
+    b"other\r\n\r\ndemo\r\n",
+)
 
 if __name__ == "__main__":
     for f in FAILS:
