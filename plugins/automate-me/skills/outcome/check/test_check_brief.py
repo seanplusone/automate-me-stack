@@ -174,9 +174,10 @@ expect_details("Verify detail when no backticked command",
                [f"Verify: {repr('m1')} has no backticked command; the command must come first"])
 no_id_later = "Shown by `python3 check_listings.py`."
 no_id_none = "Shown by the listing page."
+no_id_first = "`python3 check_listings.py` output."
 expect_details("Verify detail with no id prefix",
                swap("  - m1: `python3 check_listings.py`",
-                    f"  - {no_id_later}\n  - {no_id_none}\n  - m1: `python3 check_listings.py`"),
+                    f"  - {no_id_later}\n  - {no_id_none}\n  - {no_id_first}\n  - m1: `python3 check_listings.py`"),
                HAS_CMD,
                [f"Verify: {repr(no_id_later)} has a backticked command, but not first; the command must come first",
                 f"Verify: {repr(no_id_none)} has no backticked command; the command must come first"])
