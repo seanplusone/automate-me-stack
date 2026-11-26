@@ -157,6 +157,32 @@ expect("command first with a later code span in the note passes",
        swap("  - m1: `python3 check_listings.py`", "  - m1: `python3 check_listings.py` see `listings.csv`"), set())
 
 
+def expect_details(name, text, check_name, want):
+    RAN.append(name)
+    got = dict(check(text))[check_name]
+    if got != want:
+        FAILS.append(f"{name}: wanted {want!r}, got {got!r}")
+
+
+expect_details("Verify detail when command is not first",
+               swap("  - m1: `python3 check_listings.py`", "  - m1: Shown by `python3 check_listings.py`."),
+               HAS_CMD,
+               [f"Verify: {repr('m1')} has a backticked command, but not first; the command must come first"])
+expect_details("Verify detail when no backticked command",
+               swap("  - m1: `python3 check_listings.py`", "  - m1: Shown by the listing page."),
+               HAS_CMD,
+               [f"Verify: {repr('m1')} has no backticked command; the command must come first"])
+no_id_later = "Shown by `python3 check_listings.py`."
+no_id_none = "Shown by the listing page."
+expect_details("Verify detail with no id prefix",
+               swap("  - m1: `python3 check_listings.py`",
+                    f"  - {no_id_later}\n  - {no_id_none}\n  - m1: `python3 check_listings.py`"),
+               HAS_CMD,
+               [f"Verify: {repr(no_id_later)} has a backticked command, but not first; the command must come first",
+                f"Verify: {repr(no_id_none)} has no backticked command; the command must come first"])
+expect_details("Verify detail is empty for GOOD", GOOD, HAS_CMD, [])
+
+
 def expect_fast(name, text, want, limit=1.0):
     RAN.append(name)
     start = time.perf_counter()
