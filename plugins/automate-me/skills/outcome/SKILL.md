@@ -100,7 +100,7 @@ Ask for the workstream first, before filling other slots. The workstream questio
 
 A slot with more than one item puts each on its own indented `  - ` line.
 
-Each Must-haves rule gets an id (`[m1]`) and one Verify line with a backticked command that the brief writer proposes. If a rule has no command yet, write `unknown: <what command proves it?>` in Must-haves instead of a rule, and ask it in the read-back. `investigate:` and `out of scope:` items take no id and no Verify line. With no rules, Verify is `none`. The check cannot run the command or know that it passes. The builder runs it, and the PR review confirms it.
+Each Must-haves rule gets an id (`[m1]`) and one Verify line with a backticked command that the brief writer proposes. If a rule has no command yet, write `unknown: <what command proves it?>` in Must-haves instead of a rule, and ask it in the read-back. `investigate:` and `out of scope:` items take no id and no Verify line. With no rules, Verify is `none`. check_brief.py cannot run the command or know that it passes. The builder runs every Verify command with `python3 "$SKILL_DIR"/check/proof.py run <brief.md> <out dir>`. The work is not done until `python3 "$SKILL_DIR"/check/proof.py check <brief.md> <out dir>` passes.
 
 Plan first is the agent's call, never a question for the user. Write `yes: <what the plan shows>` when the work is big, runs many agents, or costs real time or money. Write `none needed` when it is one pass the user can redo cheaply.
 
@@ -144,6 +144,7 @@ After the yes:
 1. Fold the answers into the brief. A slot that was unknown now holds the user's words.
 2. Score the final brief with brief-check (Step 1 table and Step 2 traps).
 3. Run it, or the proposed skills, per brief-check Step 3. A gap only the user can fill still stops the run.
+4. After the build, run `python3 "$SKILL_DIR"/check/proof.py run <brief.md> <out dir>` from the folder the Verify commands assume. It saves each command's exit code, the command, and its output as `<out dir>/verify-<id>.txt`. Keep the out dir with the PR evidence. The work is not done until `python3 "$SKILL_DIR"/check/proof.py check <brief.md> <out dir>` passes. It does not prove the command tests the right thing. The PR review still reads each command.
 
 For parallel work, brief each subagent with one part of the brief and the same Verify and If stuck lines. A second agent that did not do the work checks it before the results come back.
 

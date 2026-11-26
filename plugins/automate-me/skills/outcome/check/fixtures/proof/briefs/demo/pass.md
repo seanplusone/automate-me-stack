@@ -1,0 +1,22 @@
+# Brief: Build a reading-list CLI
+
+- Workstream: demo
+- Kind: build
+- Plan first: none needed
+- Goal: Build a small command-line tool that tracks books to read and marks them finished.
+- Decision: Merge the reading-list CLI or send it back for fixes.
+- Context: Books are stored in books.json with fields title, author, and status.
+- Must-haves:
+  - [m1] Adding a book writes a new entry to books.json.
+  - [m2] Listing books prints each saved title on its own line.
+  - [m3] Marking a book finished updates its status to done.
+- Taste: Short help text, flag don't filter. Signal is that --help fits in 20 lines.
+- Output: A CLI script and its test file in the project folder.
+- Verify:
+  - m1: `true`
+  - m2: `echo ok`
+  - m3: `test -f check/fixtures/proof/briefs/demo/pass.md`
+- If stuck: Stop after 2 failed attempts and report the blocker.
+- Skills: none.
+- Parking lot: none.
+- Unknowns: none.
