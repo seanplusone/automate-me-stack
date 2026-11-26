@@ -221,7 +221,7 @@ def test_check_none():
         shutil.rmtree(out, ignore_errors=True)
 
 
-def test_check_tampered(name, mutate):
+def test_check_tampered(name, mutate, line_parts=(), check_summary=False):
     RAN.append(name)
     out = tempfile.mkdtemp()
     try:
@@ -244,12 +244,62 @@ def test_check_tampered(name, mutate):
         reasons = []
         if proc.returncode != 1:
             reasons.append(f"wanted exit 1, got {proc.returncode}")
-        if not any(line.startswith("FAIL m1") for line in proc.stdout.splitlines()):
+        lines = proc.stdout.splitlines()
+        fail_lines = [line for line in lines if line.startswith("FAIL m1")]
+        if not fail_lines:
             reasons.append("wanted stdout line starting with 'FAIL m1'")
+        else:
+            for part in line_parts:
+                if part not in fail_lines[0]:
+                    reasons.append(f"wanted {part!r} in {fail_lines[0]!r}")
+        if check_summary:
+            non_empty = [line for line in lines if line.strip()]
+            last = non_empty[-1] if non_empty else ""
+            if not (last.startswith("FAIL proof:") and "m1" in last):
+                reasons.append(f"wanted final line starting with 'FAIL proof:' containing 'm1', got {last!r}")
         if reasons:
             FAILS.append(f"{name}: {'; '.join(reasons)}")
     finally:
         shutil.rmtree(out, ignore_errors=True)
+
+
+def test_check_no_pycache():
+    name = "check writes no __pycache__"
+    RAN.append(name)
+    tmp = tempfile.mkdtemp()
+    try:
+        copy = os.path.join(tmp, "check")
+        out = os.path.join(tmp, "out")
+        os.mkdir(out)
+        shutil.copytree(HERE, copy, ignore=shutil.ignore_patterns("__pycache__"))
+        copied_proof = os.path.join(copy, "proof.py")
+        if not os.path.isfile(copied_proof):
+            FAILS.append(f"{name}: missing {PROOF}")
+            return
+        env = dict(os.environ)
+        env.pop("PYTHONDONTWRITEBYTECODE", None)
+        proc = subprocess.run(
+            [sys.executable, copied_proof, "check", f"{BRIEFS}/none.md", out],
+            cwd=OUTCOME,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        reasons = []
+        if proc.returncode != 0:
+            reasons.append(f"wanted exit 0, got {proc.returncode}")
+        caches = [
+            os.path.join(root, d)
+            for root, dirs, _ in os.walk(copy)
+            for d in dirs
+            if d == "__pycache__"
+        ]
+        if caches:
+            reasons.append(f"wrote __pycache__: {caches!r}")
+        if reasons:
+            FAILS.append(f"{name}: {'; '.join(reasons)}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def test_check_empty_dir():
@@ -294,11 +344,21 @@ test_run_broken()
 test_round_trip()
 test_check_extra_file()
 test_check_none()
-test_check_tampered("check fails when verify-m1.txt is deleted", os.remove)
-test_check_tampered("check fails when line 1 is exit=1", lambda p: set_line(p, 0, "exit=1"))
-test_check_tampered("check fails when line 1 is removed", drop_first_line)
-test_check_tampered("check fails when line 2 is cmd: old", lambda p: set_line(p, 1, "cmd: old"))
+test_check_tampered("check fails when verify-m1.txt is deleted", os.remove, check_summary=True)
+test_check_tampered(
+    "check fails when line 1 is exit=1",
+    lambda p: set_line(p, 0, "exit=1"),
+    line_parts=("verify-m1.txt", "exit=0"),
+    check_summary=True,
+)
+test_check_tampered("check fails when line 1 is removed", drop_first_line, line_parts=("verify-m1.txt",))
+test_check_tampered(
+    "check fails when line 2 is cmd: old",
+    lambda p: set_line(p, 1, "cmd: old"),
+    line_parts=("verify-m1.txt", "cmd: true"),
+)
 test_check_empty_dir()
+test_check_no_pycache()
 test_proof_source()
 
 if __name__ == "__main__":
