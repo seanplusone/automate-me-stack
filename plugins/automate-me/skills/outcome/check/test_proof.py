@@ -17,13 +17,15 @@ FAILS = []
 RAN = []
 
 
-def run_proof(*args, timeout=None, env=None, umask=None):
+def run_proof(*args, timeout=None, env=None, umask=None, cwd=None):
     if not os.path.isfile(PROOF):
         return None, f"missing {PROOF}"
+    work_dir = OUTCOME if cwd is None else cwd
+    proof_arg = "check/proof.py" if work_dir == OUTCOME else PROOF
     try:
         proc = subprocess.run(
-            [sys.executable, "check/proof.py", *args],
-            cwd=OUTCOME,
+            [sys.executable, proof_arg, *args],
+            cwd=work_dir,
             env=env,
             capture_output=True,
             text=True,
@@ -33,6 +35,59 @@ def run_proof(*args, timeout=None, env=None, umask=None):
     except subprocess.TimeoutExpired:
         return None, f"timed out after {timeout}s"
     return proc, None
+
+
+def git(repo, *args):
+    return subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+
+def git_head(repo):
+    return git(repo, "rev-parse", "HEAD").stdout.strip()
+
+
+def read_pass_brief():
+    with open(os.path.join(OUTCOME, BRIEFS, "pass.md")) as f:
+        return f.read()
+
+
+def make_repo(brief_text=None, extra_files=None):
+    repo = tempfile.mkdtemp()
+    try:
+        git(repo, "init", "-q")
+        git(repo, "config", "user.name", "test")
+        git(repo, "config", "user.email", "test@example.com")
+        git(repo, "config", "commit.gpgsign", "false")
+        brief_dir = os.path.join(repo, BRIEFS)
+        os.makedirs(brief_dir, exist_ok=True)
+        workstreams = os.path.join(os.path.dirname(brief_dir), "WORKSTREAMS")
+        with open(workstreams, "w") as f:
+            f.write("demo\n")
+        pass_dst = os.path.join(brief_dir, "pass.md")
+        if brief_text is None:
+            shutil.copyfile(os.path.join(OUTCOME, BRIEFS, "pass.md"), pass_dst)
+        else:
+            with open(pass_dst, "w") as f:
+                f.write(brief_text)
+        if extra_files:
+            for rel, content in extra_files.items():
+                full = os.path.join(repo, rel)
+                parent = os.path.dirname(full)
+                if parent:
+                    os.makedirs(parent, exist_ok=True)
+                with open(full, "w") as f:
+                    f.write(content)
+        git(repo, "add", "-A")
+        git(repo, "commit", "-q", "-m", "init")
+    except BaseException:
+        shutil.rmtree(repo, ignore_errors=True)
+        raise
+    return repo
 
 
 def read_lines(path):
@@ -59,8 +114,10 @@ def test_run_pass():
     name = "run on pass.md writes verify files and exits 0"
     RAN.append(name)
     out = tempfile.mkdtemp()
+    repo = None
     try:
-        proc, err = run_proof("run", f"{BRIEFS}/pass.md", out)
+        repo = make_repo()
+        proc, err = run_proof("run", f"{BRIEFS}/pass.md", out, cwd=repo)
         if err:
             FAILS.append(f"{name}: {err}")
             return
@@ -86,6 +143,8 @@ def test_run_pass():
             FAILS.append(f"{name}: {'; '.join(reasons)}")
     finally:
         shutil.rmtree(out, ignore_errors=True)
+        if repo:
+            shutil.rmtree(repo, ignore_errors=True)
 
 
 def test_run_fail():
@@ -178,8 +237,10 @@ def test_run_binary():
     name = "run on binary.md exits 0 and preserves non-UTF-8 output"
     RAN.append(name)
     out = tempfile.mkdtemp()
+    repo = None
     try:
-        proc, err = run_proof("run", f"{BRIEFS}/binary.md", out)
+        repo = make_repo()
+        proc, err = run_proof("run", os.path.join(OUTCOME, BRIEFS, "binary.md"), out, cwd=repo)
         if err:
             FAILS.append(f"{name}: {err}")
             return
@@ -200,13 +261,17 @@ def test_run_binary():
             FAILS.append(f"{name}: {'; '.join(reasons)}")
     finally:
         shutil.rmtree(out, ignore_errors=True)
+        if repo:
+            shutil.rmtree(repo, ignore_errors=True)
 
 
 def test_run_symlink():
     name = "run replaces a symlinked verify file and leaves its target alone"
     RAN.append(name)
     d = tempfile.mkdtemp()
+    repo = None
     try:
+        repo = make_repo()
         target = os.path.join(d, "target")
         new_target = os.path.join(d, "new")
         out = os.path.join(d, "out")
@@ -217,7 +282,7 @@ def test_run_symlink():
         m2_path = os.path.join(out, "verify-m2.txt")
         os.symlink(target, m1_path)
         os.symlink(new_target, m2_path)
-        proc, err = run_proof("run", f"{BRIEFS}/pass.md", out)
+        proc, err = run_proof("run", f"{BRIEFS}/pass.md", out, cwd=repo)
         if err:
             FAILS.append(f"{name}: {err}")
             return
@@ -246,32 +311,38 @@ def test_run_symlink():
             FAILS.append(f"{name}: {'; '.join(reasons)}")
     finally:
         shutil.rmtree(d, ignore_errors=True)
+        if repo:
+            shutil.rmtree(repo, ignore_errors=True)
 
 
 def test_run_mode():
     name = "run writes proof files with the umask's default mode"
     RAN.append(name)
     reasons = []
-    for umask, wanted in ((0o022, 0o644), (0o027, 0o640)):
-        d = tempfile.mkdtemp()
-        try:
-            out = os.path.join(d, "out")
-            proc, err = run_proof("run", f"{BRIEFS}/pass.md", out, umask=umask)
-            if err:
-                FAILS.append(f"{name}: {err}")
-                return
-            if proc.returncode != 0:
-                reasons.append(f"umask {umask:03o}: wanted exit 0, got {proc.returncode}")
-                continue
-            path = os.path.join(out, "verify-m1.txt")
-            if not os.path.isfile(path):
-                reasons.append(f"umask {umask:03o}: missing verify-m1.txt")
-                continue
-            mode = stat.S_IMODE(os.stat(path).st_mode)
-            if mode != wanted:
-                reasons.append(f"umask {umask:03o}: mode was {oct(mode)}, wanted {oct(wanted)}")
-        finally:
-            shutil.rmtree(d, ignore_errors=True)
+    repo = make_repo()
+    try:
+        for umask, wanted in ((0o022, 0o644), (0o027, 0o640)):
+            d = tempfile.mkdtemp()
+            try:
+                out = os.path.join(d, "out")
+                proc, err = run_proof("run", f"{BRIEFS}/pass.md", out, umask=umask, cwd=repo)
+                if err:
+                    FAILS.append(f"{name}: {err}")
+                    return
+                if proc.returncode != 0:
+                    reasons.append(f"umask {umask:03o}: wanted exit 0, got {proc.returncode}")
+                    continue
+                path = os.path.join(out, "verify-m1.txt")
+                if not os.path.isfile(path):
+                    reasons.append(f"umask {umask:03o}: missing verify-m1.txt")
+                    continue
+                mode = stat.S_IMODE(os.stat(path).st_mode)
+                if mode != wanted:
+                    reasons.append(f"umask {umask:03o}: mode was {oct(mode)}, wanted {oct(wanted)}")
+            finally:
+                shutil.rmtree(d, ignore_errors=True)
+    finally:
+        shutil.rmtree(repo, ignore_errors=True)
     if reasons:
         FAILS.append(f"{name}: {'; '.join(reasons)}")
 
@@ -301,15 +372,17 @@ def test_round_trip():
     name = "round trip run then check on pass.md exits 0"
     RAN.append(name)
     out = tempfile.mkdtemp()
+    repo = None
     try:
-        proc, err = run_proof("run", f"{BRIEFS}/pass.md", out)
+        repo = make_repo()
+        proc, err = run_proof("run", f"{BRIEFS}/pass.md", out, cwd=repo)
         if err:
             FAILS.append(f"{name}: {err}")
             return
         if proc.returncode != 0:
             FAILS.append(f"{name}: setup run exited {proc.returncode}")
             return
-        proc, err = run_proof("check", f"{BRIEFS}/pass.md", out)
+        proc, err = run_proof("check", f"{BRIEFS}/pass.md", out, cwd=repo)
         if err:
             FAILS.append(f"{name}: {err}")
             return
@@ -317,14 +390,18 @@ def test_round_trip():
             FAILS.append(f"{name}: wanted exit 0, got {proc.returncode}")
     finally:
         shutil.rmtree(out, ignore_errors=True)
+        if repo:
+            shutil.rmtree(repo, ignore_errors=True)
 
 
 def test_check_extra_file():
     name = "check passes with an extra verify file for an unknown id"
     RAN.append(name)
     out = tempfile.mkdtemp()
+    repo = None
     try:
-        proc, err = run_proof("run", f"{BRIEFS}/pass.md", out)
+        repo = make_repo()
+        proc, err = run_proof("run", f"{BRIEFS}/pass.md", out, cwd=repo)
         if err:
             FAILS.append(f"{name}: {err}")
             return
@@ -333,7 +410,7 @@ def test_check_extra_file():
             return
         with open(os.path.join(out, "verify-zz.txt"), "w") as f:
             f.write("exit=0\ncmd: true\n")
-        proc, err = run_proof("check", f"{BRIEFS}/pass.md", out)
+        proc, err = run_proof("check", f"{BRIEFS}/pass.md", out, cwd=repo)
         if err:
             FAILS.append(f"{name}: {err}")
             return
@@ -341,6 +418,8 @@ def test_check_extra_file():
             FAILS.append(f"{name}: wanted exit 0, got {proc.returncode}")
     finally:
         shutil.rmtree(out, ignore_errors=True)
+        if repo:
+            shutil.rmtree(repo, ignore_errors=True)
 
 
 def test_check_none():
@@ -406,8 +485,10 @@ def test_check_invalid_brief(brief_name):
 def test_check_tampered(name, mutate, line_parts=()):
     RAN.append(name)
     out = tempfile.mkdtemp()
+    repo = None
     try:
-        proc, err = run_proof("run", f"{BRIEFS}/pass.md", out)
+        repo = make_repo()
+        proc, err = run_proof("run", f"{BRIEFS}/pass.md", out, cwd=repo)
         if err:
             FAILS.append(f"{name}: {err}")
             return
@@ -419,7 +500,7 @@ def test_check_tampered(name, mutate, line_parts=()):
             FAILS.append(f"{name}: setup did not create verify-m1.txt")
             return
         mutate(target)
-        proc, err = run_proof("check", f"{BRIEFS}/pass.md", out)
+        proc, err = run_proof("check", f"{BRIEFS}/pass.md", out, cwd=repo)
         if err:
             FAILS.append(f"{name}: {err}")
             return
@@ -428,6 +509,8 @@ def test_check_tampered(name, mutate, line_parts=()):
             FAILS.append(f"{name}: {'; '.join(reasons)}")
     finally:
         shutil.rmtree(out, ignore_errors=True)
+        if repo:
+            shutil.rmtree(repo, ignore_errors=True)
 
 
 def test_check_no_pycache():
@@ -510,6 +593,306 @@ def test_proof_source():
         FAILS.append(f"{name}: {'; '.join(reasons)}")
 
 
+def test_git_clean_ignored_and_outdir_in_repo():
+    name = "run and check pass in clean repo with gitignored file and in-repo out dir"
+    RAN.append(name)
+    repo = make_repo(extra_files={".gitignore": "ign\n"})
+    try:
+        head = git_head(repo)
+        with open(os.path.join(repo, "ign"), "w") as f:
+            f.write("ignored\n")
+        proc, err = run_proof("run", f"{BRIEFS}/pass.md", "out", cwd=repo)
+        if err:
+            FAILS.append(f"{name}: {err}")
+            return
+        reasons = []
+        if proc.returncode != 0:
+            reasons.append(f"run wanted exit 0, got {proc.returncode}")
+        summary_path = os.path.join(repo, "out", "proof-summary.txt")
+        if not os.path.isfile(summary_path):
+            reasons.append("missing proof-summary.txt")
+        else:
+            lines = read_lines(summary_path)
+            if f"sha={head}" not in lines:
+                reasons.append(f"proof-summary.txt missing sha={head}")
+            if "dirty=no" not in lines:
+                reasons.append("proof-summary.txt missing dirty=no")
+            non_empty = [line for line in lines if line.strip()]
+            last = non_empty[-1] if non_empty else ""
+            wanted_last = f"VERIFY: PASS sha={head}"
+            if last != wanted_last:
+                reasons.append(f"proof-summary.txt last line was {last!r}, wanted {wanted_last!r}")
+        m2_path = os.path.join(repo, "out", "verify-m2.txt")
+        if not os.path.isfile(m2_path):
+            reasons.append("missing verify-m2.txt")
+        else:
+            m2 = read_lines(m2_path)
+            if len(m2) < 1 or m2[0] != "exit=0":
+                reasons.append(f"verify-m2.txt line 1 was {m2[0] if m2 else None!r}, wanted 'exit=0'")
+            if len(m2) < 2 or m2[1] != "cmd: echo ok":
+                reasons.append(f"verify-m2.txt line 2 was {m2[1] if len(m2) >= 2 else None!r}, wanted 'cmd: echo ok'")
+            if len(m2) < 3 or m2[2] != "ok":
+                reasons.append(f"verify-m2.txt line 3 was {m2[2] if len(m2) >= 3 else None!r}, wanted 'ok'")
+        proc, err = run_proof("check", f"{BRIEFS}/pass.md", "out", cwd=repo)
+        if err:
+            FAILS.append(f"{name}: {err}")
+            return
+        if proc.returncode != 0:
+            reasons.append(f"check wanted exit 0, got {proc.returncode}")
+        if reasons:
+            FAILS.append(f"{name}: {'; '.join(reasons)}")
+    finally:
+        shutil.rmtree(repo, ignore_errors=True)
+
+
+def test_git_dirty_after_verify():
+    name = "run exits 1 with dirty=yes when a verify command leaves an untracked file"
+    RAN.append(name)
+    brief_text = read_pass_brief().replace(
+        "test -f check/fixtures/proof/briefs/demo/pass.md",
+        "touch made",
+    )
+    repo = make_repo(brief_text=brief_text)
+    try:
+        head = git_head(repo)
+        proc, err = run_proof("run", f"{BRIEFS}/pass.md", "out", cwd=repo)
+        if err:
+            FAILS.append(f"{name}: {err}")
+            return
+        reasons = []
+        if proc.returncode != 1:
+            reasons.append(f"wanted exit 1, got {proc.returncode}")
+        summary_path = os.path.join(repo, "out", "proof-summary.txt")
+        if not os.path.isfile(summary_path):
+            reasons.append("missing proof-summary.txt")
+        else:
+            lines = read_lines(summary_path)
+            if "dirty=yes" not in lines:
+                reasons.append("proof-summary.txt missing dirty=yes")
+            non_empty = [line for line in lines if line.strip()]
+            last = non_empty[-1] if non_empty else ""
+            wanted_last = f"VERIFY: FAIL sha={head}"
+            if last != wanted_last:
+                reasons.append(f"proof-summary.txt last line was {last!r}, wanted {wanted_last!r}")
+        if reasons:
+            FAILS.append(f"{name}: {'; '.join(reasons)}")
+    finally:
+        shutil.rmtree(repo, ignore_errors=True)
+
+
+def test_git_check_missing_summary():
+    name = "check exits 1 when proof-summary.txt is missing"
+    RAN.append(name)
+    repo = make_repo()
+    try:
+        proc, err = run_proof("run", f"{BRIEFS}/pass.md", "out", cwd=repo)
+        if err:
+            FAILS.append(f"{name}: {err}")
+            return
+        if proc.returncode != 0:
+            FAILS.append(f"{name}: setup run exited {proc.returncode}")
+            return
+        summary_path = os.path.join(repo, "out", "proof-summary.txt")
+        if os.path.exists(summary_path):
+            os.remove(summary_path)
+        proc, err = run_proof("check", f"{BRIEFS}/pass.md", "out", cwd=repo)
+        if err:
+            FAILS.append(f"{name}: {err}")
+            return
+        if proc.returncode != 1:
+            FAILS.append(f"{name}: wanted exit 1, got {proc.returncode}")
+    finally:
+        shutil.rmtree(repo, ignore_errors=True)
+
+
+def test_git_check_dirty_clean_and_moved_head():
+    name = "check rejects dirty tree, passes when clean at same HEAD, rejects moved HEAD"
+    RAN.append(name)
+    repo = make_repo()
+    try:
+        proc, err = run_proof("run", f"{BRIEFS}/pass.md", "out", cwd=repo)
+        if err:
+            FAILS.append(f"{name}: {err}")
+            return
+        if proc.returncode != 0:
+            FAILS.append(f"{name}: setup run exited {proc.returncode}")
+            return
+        reasons = []
+        junk = os.path.join(repo, "junk")
+        with open(junk, "w") as f:
+            f.write("dirty\n")
+        proc, err = run_proof("check", f"{BRIEFS}/pass.md", "out", cwd=repo)
+        if err:
+            FAILS.append(f"{name}: {err}")
+            return
+        if proc.returncode != 1:
+            reasons.append(f"dirty tree: wanted exit 1, got {proc.returncode}")
+        os.remove(junk)
+        proc, err = run_proof("check", f"{BRIEFS}/pass.md", "out", cwd=repo)
+        if err:
+            FAILS.append(f"{name}: {err}")
+            return
+        if proc.returncode != 0:
+            reasons.append(f"cleaned tree: wanted exit 0, got {proc.returncode}")
+        git(repo, "commit", "-q", "--allow-empty", "-m", "move")
+        proc, err = run_proof("check", f"{BRIEFS}/pass.md", "out", cwd=repo)
+        if err:
+            FAILS.append(f"{name}: {err}")
+            return
+        if proc.returncode != 1:
+            reasons.append(f"moved HEAD: wanted exit 1, got {proc.returncode}")
+        if reasons:
+            FAILS.append(f"{name}: {'; '.join(reasons)}")
+    finally:
+        shutil.rmtree(repo, ignore_errors=True)
+
+
+def test_git_check_summary_missing_sha_line():
+    name = "check exits 1 when sha= line is removed from proof-summary.txt"
+    RAN.append(name)
+    repo = make_repo()
+    try:
+        proc, err = run_proof("run", f"{BRIEFS}/pass.md", "out", cwd=repo)
+        if err:
+            FAILS.append(f"{name}: {err}")
+            return
+        if proc.returncode != 0:
+            FAILS.append(f"{name}: setup run exited {proc.returncode}")
+            return
+        summary_path = os.path.join(repo, "out", "proof-summary.txt")
+        if not os.path.isfile(summary_path):
+            FAILS.append(f"{name}: setup did not create proof-summary.txt")
+            return
+        lines = [line for line in read_lines(summary_path) if not line.startswith("sha=")]
+        with open(summary_path, "w") as f:
+            f.write("\n".join(lines) + "\n")
+        proc, err = run_proof("check", f"{BRIEFS}/pass.md", "out", cwd=repo)
+        if err:
+            FAILS.append(f"{name}: {err}")
+            return
+        if proc.returncode != 1:
+            FAILS.append(f"{name}: wanted exit 1, got {proc.returncode}")
+    finally:
+        shutil.rmtree(repo, ignore_errors=True)
+
+
+def test_not_git_repo():
+    name = "run and check exit 2 outside a git repo and run writes no proof files"
+    RAN.append(name)
+    d = tempfile.mkdtemp()
+    try:
+        brief_dir = os.path.join(d, "briefs", "demo")
+        os.makedirs(brief_dir, exist_ok=True)
+        with open(os.path.join(d, "briefs", "WORKSTREAMS"), "w") as f:
+            f.write("demo\n")
+        shutil.copyfile(os.path.join(OUTCOME, BRIEFS, "pass.md"), os.path.join(brief_dir, "b.md"))
+        out = os.path.join(d, "out")
+        proc, err = run_proof("run", "briefs/demo/b.md", "out", cwd=d)
+        if err:
+            FAILS.append(f"{name}: {err}")
+            return
+        reasons = []
+        if proc.returncode != 2:
+            reasons.append(f"run wanted exit 2, got {proc.returncode}")
+        combined = proc.stdout + proc.stderr
+        if "git" not in combined.lower():
+            reasons.append(f"run output did not name git: {combined!r}")
+        if os.path.exists(out) and os.listdir(out):
+            reasons.append(f"run wrote files in out dir: {os.listdir(out)!r}")
+        proc, err = run_proof("check", "briefs/demo/b.md", "out", cwd=d)
+        if err:
+            FAILS.append(f"{name}: {err}")
+            return
+        if proc.returncode != 2:
+            reasons.append(f"check wanted exit 2, got {proc.returncode}")
+        if reasons:
+            FAILS.append(f"{name}: {'; '.join(reasons)}")
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_git_head_moved_during_run():
+    name = "run exits 1 with starting sha when a verify command moves HEAD"
+    RAN.append(name)
+    brief_text = read_pass_brief().replace(
+        "test -f check/fixtures/proof/briefs/demo/pass.md",
+        "git commit -q --allow-empty -m moved",
+    )
+    repo = make_repo(brief_text=brief_text)
+    try:
+        head = git_head(repo)
+        proc, err = run_proof("run", f"{BRIEFS}/pass.md", "out", cwd=repo)
+        if err:
+            FAILS.append(f"{name}: {err}")
+            return
+        reasons = []
+        if proc.returncode != 1:
+            reasons.append(f"wanted exit 1, got {proc.returncode}")
+        if git_head(repo) == head:
+            reasons.append("verify command did not move HEAD")
+        summary_path = os.path.join(repo, "out", "proof-summary.txt")
+        if not os.path.isfile(summary_path):
+            reasons.append("missing proof-summary.txt")
+        else:
+            lines = read_lines(summary_path)
+            if f"sha={head}" not in lines:
+                reasons.append(f"proof-summary.txt missing sha={head}")
+            non_empty = [line for line in lines if line.strip()]
+            last = non_empty[-1] if non_empty else ""
+            wanted_last = f"VERIFY: FAIL sha={head}"
+            if last != wanted_last:
+                reasons.append(f"proof-summary.txt last line was {last!r}, wanted {wanted_last!r}")
+        if reasons:
+            FAILS.append(f"{name}: {'; '.join(reasons)}")
+    finally:
+        shutil.rmtree(repo, ignore_errors=True)
+
+
+def test_git_subdir_outdir_in_repo():
+    name = "run and check pass from a subdirectory with an in-repo out dir"
+    RAN.append(name)
+    brief_text = read_pass_brief().replace(
+        "test -f check/fixtures/proof/briefs/demo/pass.md",
+        "test -f ../check/fixtures/proof/briefs/demo/pass.md",
+    )
+    repo = make_repo(brief_text=brief_text, extra_files={"sub/keep": "ok\n"})
+    try:
+        head = git_head(repo)
+        sub = os.path.join(repo, "sub")
+        brief = f"../{BRIEFS}/pass.md"
+        proc, err = run_proof("run", brief, "out", cwd=sub)
+        if err:
+            FAILS.append(f"{name}: {err}")
+            return
+        reasons = []
+        if proc.returncode != 0:
+            reasons.append(f"run wanted exit 0, got {proc.returncode}")
+        summary_path = os.path.join(sub, "out", "proof-summary.txt")
+        if not os.path.isfile(summary_path):
+            reasons.append("missing proof-summary.txt")
+        else:
+            lines = read_lines(summary_path)
+            if f"sha={head}" not in lines:
+                reasons.append(f"proof-summary.txt missing sha={head}")
+            if "dirty=no" not in lines:
+                reasons.append("proof-summary.txt missing dirty=no")
+            non_empty = [line for line in lines if line.strip()]
+            last = non_empty[-1] if non_empty else ""
+            wanted_last = f"VERIFY: PASS sha={head}"
+            if last != wanted_last:
+                reasons.append(f"proof-summary.txt last line was {last!r}, wanted {wanted_last!r}")
+        proc, err = run_proof("check", brief, "out", cwd=sub)
+        if err:
+            FAILS.append(f"{name}: {err}")
+            return
+        if proc.returncode != 0:
+            reasons.append(f"check wanted exit 0, got {proc.returncode}")
+        if reasons:
+            FAILS.append(f"{name}: {'; '.join(reasons)}")
+    finally:
+        shutil.rmtree(repo, ignore_errors=True)
+
+
 test_run_pass()
 test_run_fail()
 test_run_slow()
@@ -546,6 +929,14 @@ test_check_tampered(
 test_check_empty_dir()
 test_check_no_pycache()
 test_proof_source()
+test_git_clean_ignored_and_outdir_in_repo()
+test_git_dirty_after_verify()
+test_git_check_missing_summary()
+test_git_check_dirty_clean_and_moved_head()
+test_git_check_summary_missing_sha_line()
+test_not_git_repo()
+test_git_head_moved_during_run()
+test_git_subdir_outdir_in_repo()
 
 if __name__ == "__main__":
     for f in FAILS:
