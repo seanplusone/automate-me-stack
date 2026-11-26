@@ -28,10 +28,10 @@ Fails when:
 - given a file path, no `briefs/WORKSTREAMS` file is found (starting at the path if it is a
   directory or its parent folder, at each directory look for `briefs/WORKSTREAMS`), a non-blank
   line in `briefs/WORKSTREAMS` (read as UTF-8 with an optional BOM, split on newlines only) has
-  leading or trailing whitespace (blank lines are ignored; padded lines fail with a message to
-  remove the spaces), Workstream is not listed in the nearest `briefs/WORKSTREAMS`, or the parent
-  folder name does not match Workstream (omitted when no path is given; path checks that cannot
-  run print SKIP, not PASS).
+  leading or trailing whitespace (blank lines are ignored; lines starting with `#` are comments
+  and are ignored; padded lines fail with a message to remove the spaces), Workstream is not
+  listed in the nearest `briefs/WORKSTREAMS`, or the parent folder name does not match Workstream
+  (omitted when no path is given; path checks that cannot run print SKIP, not PASS).
 Prints a PASS, FAIL, or SKIP line per check and exits 1 only on FAIL.
 """
 import os
@@ -57,6 +57,7 @@ TAG = re.compile(r"^(" + "|".join(map(re.escape, TAGS)) + r"):", re.I)
 RULE_ID = re.compile(r"^\[([A-Za-z][A-Za-z0-9_-]*)\]\s+\S")
 VERIFY_ID = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*):\s*(.*)$")
 BACKTICK_CMD = re.compile(r"^\s*`\s*[^`\s][^`]*`")
+BACKTICK_SPAN = re.compile(r"`\s*[^`\s][^`]*`")
 
 
 def canon(label):
@@ -202,19 +203,24 @@ def check(text, path=None):
     verify_items = [] if is_none(verify) else verify
     rule_id_set = set(rule_ids)
     verify_ids, no_cmd, bad_verify_id = [], [], []
+    def no_cmd_detail(label, value):
+        if BACKTICK_SPAN.search(value):
+            return f"Verify: {label!r} has a backticked command, but not first; the command must come first"
+        return f"Verify: {label!r} has no backticked command; the command must come first"
+
     for v in verify_items:
         m = VERIFY_ID.match(v)
         if not m:
             bad_verify_id.append(f"Verify: {v!r} has no '<id>:' prefix")
             if rules and not BACKTICK_CMD.search(v):
-                no_cmd.append(f"Verify: {v!r} has no backticked command")
+                no_cmd.append(no_cmd_detail(v, v))
             continue
         vid, rest = m.group(1), m.group(2)
         verify_ids.append(vid)
         if vid not in rule_id_set:
             bad_verify_id.append(f"Verify: {vid!r} is not a Must-have id")
         if rules and not BACKTICK_CMD.search(rest):
-            no_cmd.append(f"Verify: {vid!r} has no backticked command")
+            no_cmd.append(no_cmd_detail(vid, rest))
 
     verify_id_set = set(verify_ids)
     add("every Must-have id has a Verify line",
@@ -247,7 +253,7 @@ def check(text, path=None):
                 allowed = set()
                 with open(ws_file, encoding="utf-8-sig", newline="") as f:
                     for line in [l[:-1] if l.endswith("\r") else l for l in f.read().split("\n")]:
-                        if not line.strip():
+                        if not line.strip() or line.startswith("#"):
                             continue
                         if line != line.strip():
                             ws_ws_fails.append(
