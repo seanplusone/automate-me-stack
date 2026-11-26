@@ -346,6 +346,12 @@ expect_workstreams_bytes(
     want_listed_fail=True,
 )
 expect_workstreams_bytes(
+    "WORKSTREAMS read: carriage return inside a line",
+    b"demo\rghost\n",
+    workstream="ghost",
+    want_listed_fail=True,
+)
+expect_workstreams_bytes(
     "WORKSTREAMS CRLF list with a blank line",
     b"other\r\n\r\ndemo\r\n",
 )
