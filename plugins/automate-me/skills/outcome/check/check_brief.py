@@ -245,7 +245,7 @@ def check(text, path=None):
             else:
                 ws_file_fails, ws_ws_fails, ws_listed_fails, ws_folder_fails = [], [], [], []
                 allowed = set()
-                with open(ws_file, encoding="utf-8-sig") as f:
+                with open(ws_file, encoding="utf-8-sig", newline="") as f:
                     for line in [l[:-1] if l.endswith("\r") else l for l in f.read().split("\n")]:
                         if not line.strip():
                             continue
