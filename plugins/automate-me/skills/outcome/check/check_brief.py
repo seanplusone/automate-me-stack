@@ -56,6 +56,7 @@ TAG = re.compile(r"^(" + "|".join(map(re.escape, TAGS)) + r"):", re.I)
 RULE_ID = re.compile(r"^\[([A-Za-z][A-Za-z0-9_-]*)\]\s+\S")
 VERIFY_ID = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*):\s*(.*)$")
 BACKTICK_CMD = re.compile(r"^\s*`\s*[^`\s][^`]*`")
+BACKTICK_SPAN = re.compile(r"`\s*[^`\s][^`]*`")
 
 
 def canon(label):
@@ -201,19 +202,24 @@ def check(text, path=None):
     verify_items = [] if is_none(verify) else verify
     rule_id_set = set(rule_ids)
     verify_ids, no_cmd, bad_verify_id = [], [], []
+    def no_cmd_detail(label, value):
+        if BACKTICK_SPAN.search(value):
+            return f"Verify: {label!r} has a backticked command, but not first; the command must come first"
+        return f"Verify: {label!r} has no backticked command; the command must come first"
+
     for v in verify_items:
         m = VERIFY_ID.match(v)
         if not m:
             bad_verify_id.append(f"Verify: {v!r} has no '<id>:' prefix")
             if rules and not BACKTICK_CMD.search(v):
-                no_cmd.append(f"Verify: {v!r} has no backticked command")
+                no_cmd.append(no_cmd_detail(v, v))
             continue
         vid, rest = m.group(1), m.group(2)
         verify_ids.append(vid)
         if vid not in rule_id_set:
             bad_verify_id.append(f"Verify: {vid!r} is not a Must-have id")
         if rules and not BACKTICK_CMD.search(rest):
-            no_cmd.append(f"Verify: {vid!r} has no backticked command")
+            no_cmd.append(no_cmd_detail(vid, rest))
 
     verify_id_set = set(verify_ids)
     add("every Must-have id has a Verify line",
