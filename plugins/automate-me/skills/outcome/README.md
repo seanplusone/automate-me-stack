@@ -24,7 +24,7 @@ Status: new. Four synthetic scored cases. The `run-*` briefs were written by han
 
 The check cannot run the command or know that it passes.
 
-`check/proof.py` runs each Verify command and checks the saved proof files. Its `run` subcommand checks the brief with `check_brief.py` first. If that fails, it prints the failing checks, writes nothing, and exits 2. Otherwise it writes `<out dir>/verify-<id>.txt` with `exit=<integer>` on line 1, `cmd: <command>` on line 2, and the combined output from line 3 on. A command that hits the timeout records `exit=124`. Its `check` subcommand checks that each Must-have id has a file with `exit=0` and the current command on line 2.
+`check/proof.py` runs each Verify command and checks the saved proof files. Both `run` and `check` validate the brief with `check_brief.py` first. If any check fails, they print the failing checks, touch no proof files, and exit 2. Otherwise `run` writes `<out-dir>/verify-<id>.txt` with `exit=<integer>` on line 1, `cmd: <command>` on line 2, and the combined output from line 3 on. Output that is not UTF-8 is saved with replacement characters. A timeout kills the command's whole process group and records `exit=124`. Its `check` subcommand checks that each Must-have id has a file with `exit=0` and the current command on line 2.
 
 `check/score_case.py` scores a brief against a case key: facts in the speaker's words, slot terms, gaps asked rather than guessed, guesses that must not appear, and Parking lot items.
 
