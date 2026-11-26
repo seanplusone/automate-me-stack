@@ -9,13 +9,15 @@ Each proof file is <out-dir>/verify-<id>.txt:
 - line 2: cmd: <command>
 - line 3 on: combined stdout and stderr
 
-`run` checks the brief with check_brief.py first. If any check fails, it prints
-the failing checks, writes nothing, and exits 2. Otherwise it runs each Verify
-command in Must-haves order and writes verify-<id>.txt. A command that exceeds
-the timeout (default 300 seconds) is recorded with exit=124. `run` exits 1 if
-any command exits nonzero, else 0.
+Both `run` and `check` validate the brief with check_brief.py first. If any
+check fails, they print the failing checks, touch no proof files, and exit 2.
 
-`check` runs nothing. It fails when:
+`run` executes each Verify command in Must-haves order and writes
+verify-<id>.txt. A command that exceeds the timeout (default 300 seconds) has
+its process group killed and is recorded with exit=124. `run` exits 1 if any
+command exits nonzero, else 0.
+
+`check` runs nothing. It fails with exit 1 when:
 - a Must-have id has no Verify command in the brief;
 - verify-<id>.txt is missing;
 - line 1 is not exit=<integer>;
@@ -30,6 +32,7 @@ command tests the right thing.
 import argparse
 import os
 import re
+import signal
 import subprocess
 import sys
 
@@ -69,8 +72,8 @@ def load_verify(text):
     return rule_ids, commands, verify_none
 
 
-def run_brief(brief_path, outdir, timeout):
-    with open(brief_path) as f:
+def load_valid_brief(brief_path):
+    with open(brief_path, encoding="utf-8") as f:
         text = f.read()
 
     failed_checks = [(name, fails) for name, fails in check(text, brief_path) if fails]
@@ -80,6 +83,13 @@ def run_brief(brief_path, outdir, timeout):
             print(f"FAIL {name}")
             for fail in fails:
                 print(f"  {fail}")
+        return None
+    return text
+
+
+def run_brief(brief_path, outdir, timeout):
+    text = load_valid_brief(brief_path)
+    if text is None:
         return 2
 
     rule_ids, commands, _ = load_verify(text)
@@ -88,28 +98,26 @@ def run_brief(brief_path, outdir, timeout):
 
     for mid in rule_ids:
         cmd = commands[mid]
+        proc = subprocess.Popen(
+            ["bash", "-c", cmd],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
         try:
-            proc = subprocess.run(
-                ["bash", "-c", cmd],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                timeout=timeout,
-                text=True,
-            )
+            raw, _ = proc.communicate(timeout=timeout)
             code = proc.returncode
-            output = proc.stdout or ""
-        except subprocess.TimeoutExpired as exc:
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            raw, _ = proc.communicate()
             code = 124
-            raw = exc.output
-            if raw is None:
-                output = ""
-            elif isinstance(raw, bytes):
-                output = raw.decode("utf-8", errors="replace")
-            else:
-                output = raw
 
+        output = (raw or b"").decode("utf-8", errors="replace")
         out_path = os.path.join(outdir, f"verify-{mid}.txt")
-        with open(out_path, "w") as f:
+        with open(out_path, "w", encoding="utf-8") as f:
             f.write(f"exit={code}\ncmd: {cmd}\n{output}")
         print(f"{mid} exit={code}")
         if code != 0:
@@ -119,8 +127,9 @@ def run_brief(brief_path, outdir, timeout):
 
 
 def check_brief_proof(brief_path, outdir):
-    with open(brief_path) as f:
-        text = f.read()
+    text = load_valid_brief(brief_path)
+    if text is None:
+        return 2
 
     rule_ids, commands, verify_none = load_verify(text)
     if verify_none and not rule_ids:
@@ -135,13 +144,14 @@ def check_brief_proof(brief_path, outdir):
             failing.append(mid)
             continue
 
+        expected = f"cmd: {commands[mid]}"
         path = os.path.join(outdir, f"verify-{mid}.txt")
         if not os.path.isfile(path):
-            print(f"FAIL {mid}: no file {path}")
+            print(f"FAIL {mid}: no file {path}; expected line 1 exit=0 and line 2 {expected}")
             failing.append(mid)
             continue
 
-        with open(path) as f:
+        with open(path, encoding="utf-8", errors="replace") as f:
             lines = f.read().splitlines()
 
         m = EXIT_LINE.match(lines[0]) if lines else None
@@ -153,14 +163,13 @@ def check_brief_proof(brief_path, outdir):
 
         code = int(m.group(1))
         if code != 0:
-            print(f"FAIL {mid}: {path} records exit {code}, expected exit=0")
+            print(f"FAIL {mid}: {path} line 1 records exit {code}, expected exit=0")
             failing.append(mid)
             continue
 
-        expected = f"cmd: {commands[mid]}"
         if len(lines) < 2 or lines[1] != expected:
             actual = repr(lines[1]) if len(lines) >= 2 else "missing"
-            print(f"FAIL {mid}: {path} line 2 is {actual}, expected `{expected}`")
+            print(f"FAIL {mid}: {path} line 2 is {actual}, expected {expected}")
             failing.append(mid)
             continue
 
