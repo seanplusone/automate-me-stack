@@ -13,9 +13,10 @@ Both `run` and `check` validate the brief with check_brief.py first. If any
 check fails, they print the failing checks, touch no proof files, and exit 2.
 
 `run` executes each Verify command in Must-haves order and writes
-verify-<id>.txt. A command that exceeds the timeout (default 300 seconds) has
-its process group killed and is recorded with exit=124. `run` exits 1 if any
-command exits nonzero, else 0.
+verify-<id>.txt. An existing verify-<id>.txt, including a symlink, is replaced
+with a new file and a link's target is left alone. A command that exceeds the
+timeout (default 300 seconds) has its process group killed and is recorded with
+exit=124. `run` exits 1 if any command exits nonzero, else 0.
 
 `check` runs nothing. It fails with exit 1 when:
 - a Must-have id has no Verify command in the brief;
@@ -35,13 +36,13 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from check_brief import RULE_ID, TAG, UNKNOWN_START, VERIFY_ID, check, is_none, parse
+from check_brief import BACKTICK_CMD, RULE_ID, TAG, UNKNOWN_START, VERIFY_ID, check, is_none, parse
 
 DEFAULT_TIMEOUT = 300
-CMD_TEXT = re.compile(r"^\s*`(\s*[^`\s][^`]*)`")
 EXIT_LINE = re.compile(r"^exit=(-?\d+)$")
 VERIFY_FILE = re.compile(r"^verify-(.+)\.txt$")
 
@@ -66,9 +67,9 @@ def load_verify(text):
         if not m:
             continue
         vid, rest = m.group(1), m.group(2)
-        cm = CMD_TEXT.match(rest)
+        cm = BACKTICK_CMD.match(rest)
         if cm:
-            commands[vid] = cm.group(1).strip()
+            commands[vid] = cm.group(0).strip().strip("`").strip()
     return rule_ids, commands, verify_none
 
 
@@ -117,8 +118,20 @@ def run_brief(brief_path, outdir, timeout):
 
         output = (raw or b"").decode("utf-8", errors="replace")
         out_path = os.path.join(outdir, f"verify-{mid}.txt")
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write(f"exit={code}\ncmd: {cmd}\n{output}")
+        fd, tmp = tempfile.mkstemp(dir=outdir, prefix=".verify-", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                fd = None
+                f.write(f"exit={code}\ncmd: {cmd}\n{output}")
+            os.replace(tmp, out_path)
+        except BaseException:
+            if fd is not None:
+                os.close(fd)
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
         print(f"{mid} exit={code}")
         if code != 0:
             any_failed = True
