@@ -2,6 +2,7 @@
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -16,7 +17,7 @@ FAILS = []
 RAN = []
 
 
-def run_proof(*args, timeout=None, env=None):
+def run_proof(*args, timeout=None, env=None, umask=None):
     if not os.path.isfile(PROOF):
         return None, f"missing {PROOF}"
     try:
@@ -27,6 +28,7 @@ def run_proof(*args, timeout=None, env=None):
             capture_output=True,
             text=True,
             timeout=timeout,
+            preexec_fn=(lambda: os.umask(umask)) if umask is not None else None,
         )
     except subprocess.TimeoutExpired:
         return None, f"timed out after {timeout}s"
@@ -244,6 +246,34 @@ def test_run_symlink():
             FAILS.append(f"{name}: {'; '.join(reasons)}")
     finally:
         shutil.rmtree(d, ignore_errors=True)
+
+
+def test_run_mode():
+    name = "run writes proof files with the umask's default mode"
+    RAN.append(name)
+    reasons = []
+    for umask, wanted in ((0o022, 0o644), (0o027, 0o640)):
+        d = tempfile.mkdtemp()
+        try:
+            out = os.path.join(d, "out")
+            proc, err = run_proof("run", f"{BRIEFS}/pass.md", out, umask=umask)
+            if err:
+                FAILS.append(f"{name}: {err}")
+                return
+            if proc.returncode != 0:
+                reasons.append(f"umask {umask:03o}: wanted exit 0, got {proc.returncode}")
+                continue
+            path = os.path.join(out, "verify-m1.txt")
+            if not os.path.isfile(path):
+                reasons.append(f"umask {umask:03o}: missing verify-m1.txt")
+                continue
+            mode = stat.S_IMODE(os.stat(path).st_mode)
+            if mode != wanted:
+                reasons.append(f"umask {umask:03o}: mode was {oct(mode)}, wanted {oct(wanted)}")
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+    if reasons:
+        FAILS.append(f"{name}: {'; '.join(reasons)}")
 
 
 def test_run_broken():
@@ -486,6 +516,7 @@ test_run_slow()
 test_run_child()
 test_run_binary()
 test_run_symlink()
+test_run_mode()
 test_run_broken()
 test_round_trip()
 test_check_extra_file()
