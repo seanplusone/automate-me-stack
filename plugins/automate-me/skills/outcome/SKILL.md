@@ -39,7 +39,7 @@ Check even if unsaid:
 | search/decide | timing, location or scope, hard cap versus target |
 | ui | palette, locked decisions, and the visual bar live in the named Design facts file |
 
-A ui brief also needs a Design facts path (`- Design facts: <path>`), resolved from the brief's folder, with an absolute path used as given.
+A ui brief also needs a Design facts path (`- Design facts: <path>`), resolved from the brief's folder, with an absolute path used as given. The Design facts existence check prints SKIP, not PASS, when no brief path is given.
 
 ## 1. Sort what was said
 
