@@ -23,6 +23,8 @@ MIN_STEPS, MAX_STEPS = 2, 6
 STEP_LABELS = {"measured", "inferred"}
 MAX_FINDINGS = 5
 MAX_NITS = 1
+MAX_ROUNDS = 2
+GATE = re.compile(r"^Gate: (blocks|follow-up) \| (\S.*)$")
 VERDICT = re.compile(r"^(approve|approve after .+|needs answer: .+|hold: .+|scope: .+)$")
 PR_HEAD = re.compile(r"^## (\S+/\S+#\d+) \| (.+)$")
 FINDING_HEAD = re.compile(r"^### (.+?) \| (\S+:\d+|PR) \| (https://\S+)(?: \| reply \d+)?$")
@@ -47,8 +49,8 @@ def comment_words(comment):
 
 
 def read(path):
-    """The whole drafts file: title, summary, PR sections with their findings, and the Refuter line."""
-    doc = {"title": "", "summary": [], "prs": [], "refuter": "", "totals": False}
+    """The whole drafts file: title, summary, PR sections with their findings, and the Totals fields."""
+    doc = {"title": "", "summary": [], "prs": [], "refuter": "", "totals": False, "round": None}
     prs, finding = [], None
     for raw in open(path):
         line = raw.rstrip("\n")
@@ -63,6 +65,10 @@ def read(path):
             doc["refuter"] = line
             doc["totals"] = bool(re.match(r"^Refuter: checked \d+, reworded \d+, dropped \d+\.$", line))
             continue
+        if line.startswith("Round:"):
+            m = re.fullmatch(r"Round: ([0-9]+)", line)
+            doc["round"] = int(m.group(1)) if m else line
+            continue
         m = PR_HEAD.match(line)
         if m:
             prs.append({"pr": m.group(1), "verdict": m.group(2), "about": "", "changes": "", "body": "", "findings": []})
@@ -70,7 +76,7 @@ def read(path):
             continue
         if line.startswith("### ") and prs and prs[-1]:
             m = FINDING_HEAD.match(line)
-            finding = {"head": line, "match": m, "comment": [], "evidence": [], "sites": [], "plain": [], "steps": [], "bad_steps": []}
+            finding = {"head": line, "match": m, "comment": [], "evidence": [], "sites": [], "plain": [], "steps": [], "bad_steps": [], "gate": None}
             prs[-1]["findings"].append(finding)
             continue
         if not prs:
@@ -96,6 +102,12 @@ def read(path):
             finding["evidence"].append(line[len("Evidence:"):].strip())
         elif line.startswith("Plain:"):
             finding["plain"].append(line[len("Plain:"):].strip())
+        elif line.startswith("Gate:"):
+            m = GATE.match(line)
+            if m:
+                finding["gate"] = m.groups()
+            else:
+                finding["bad_gate"] = line
         elif line.startswith("Step:"):
             label, sep, text = line[len("Step:"):].strip().partition(" | ")
             if sep and label in STEP_LABELS and text.strip():
@@ -129,7 +141,8 @@ def is_generated(classes, pr, anchor):
 
 
 def check_drafts(path):
-    prs, totals = parse(path)
+    doc = read(path)
+    prs = doc["prs"]
     classes = read_classes(path)
     fails = []
     if not prs:
@@ -180,6 +193,15 @@ def check_drafts(path):
                     fails.append(f"{where} plain is {len(pl.split())} words, max {MAX_PLAIN_WORDS}")
             first = comment not in seen
             seen.add(comment)
+            gate = f["gate"]
+            if "bad_gate" in f or (first and gate is None):
+                fails.append(f"{where} expected 'Gate: blocks | <Done item or stop rule it breaks>' or 'Gate: follow-up | <one line>'")
+            if gate:
+                kind, _ = gate
+                if kind == "follow-up" and tag == "blocking":
+                    fails.append(f"{where} Gate follow-up cannot be tagged blocking")
+                elif kind == "blocks" and tag != "blocking":
+                    fails.append(f"{where} Gate blocks requires the blocking tag")
             for bad in f["bad_steps"]:
                 fails.append(f"{where} Step line must be 'Step: measured | <text>' or 'Step: inferred | <text>': {bad[:60]}")
             for _, text in f["steps"]:
@@ -214,8 +236,15 @@ def check_drafts(path):
         nits = len({c for c, t in sites.items() if t == "nit"})
         if nits > MAX_NITS:
             fails.append(f"{name} has {nits} nit comments, fold them into one")
-    if not totals:
+    if not doc["totals"]:
         fails.append("missing '## Totals' with 'Refuter: checked <n>, reworded <n>, dropped <n>.'")
+    round_number = doc["round"]
+    if round_number is None:
+        fails.append("missing 'Round: <n>' under Totals")
+    elif not isinstance(round_number, int) or round_number < 1:
+        fails.append("Round must be 'Round: 1' or 'Round: 2' under Totals")
+    elif round_number > MAX_ROUNDS:
+        fails.append(f"round {round_number} exceeds the limit; there is no round 3, stop and ask the human")
     report(f"drafts: {path}", fails)
     return fails
 

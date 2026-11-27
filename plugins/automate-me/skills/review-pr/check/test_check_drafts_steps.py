@@ -19,9 +19,15 @@ def drafts(*findings):
     """Each finding is (tag, line, steps) where steps are raw 'Step:' lines; the comment text is shared per tag."""
     verdict = "hold: drops the guard" if any(t == "blocking" for t, _, _ in findings) else "approve after the guard"
     lines = ["# PR review: t", "", "Risk.", "", f"## o/r#1 | {verdict}", "About: Adds uploads.", ""]
+    seen = set()
     for tag, line, steps in findings:
-        lines += [f"### {tag} | a.py:{line} | {URL}{line}", FIX if tag != "nit" else "Rename this variable.", *steps, ""]
-    lines += ["Body: Approving; the comments are inline.", "", "## Totals", "Refuter: checked 1, reworded 0, dropped 0."]
+        comment = FIX if tag != "nit" else "Rename this variable."
+        lines += [f"### {tag} | a.py:{line} | {URL}{line}", comment, *steps]
+        if comment not in seen:
+            lines.append("Gate: blocks | Done requires the size guard." if tag == "blocking" else "Gate: follow-up | Tidy this code.")
+            seen.add(comment)
+        lines.append("")
+    lines += ["Body: Approving; the comments are inline.", "", "## Totals", "Refuter: checked 1, reworded 0, dropped 0.", "Round: 1"]
     return "\n".join(lines) + "\n"
 
 

@@ -9,6 +9,16 @@ The orchestrator. It runs the playbook and reports back. The output is a short p
 
 A good review is a few findings that are all true, that the author does not already know, each on the line it concerns. Every extra or wrong comment spends the author's trust on the real ones.
 
+## Review loop
+
+Answer one question. "Does this meet the brief's Done, and does it break a stop rule?" Never ask "what's left?" With no brief, use the acceptance criteria from playbook step 1 as Done. A stop rule is one the brief or the repo names.
+
+Each finding gets a Gate. Use `blocks` when it breaks Done or a stop rule. Tag it `blocking` and fix it in the same PR with no new brief. Use `follow-up` for everything else. Put each follow-up on the follow-up list using its Gate line. Follow-ups do not block the merge.
+
+In round 2, re-check only the fixes for `blocks` findings. Write `Round: 2` in the drafts file. There is no round 3. If anything still blocks after round 2, stop and ask the human.
+
+Use the `correct` skill to turn a finding that keeps coming back across PRs into a check.
+
 ## Run
 
 1. Open `playbooks/review-a-pr.md`. Copy its steps into the todolist word for word. With no todolist tool, keep the list in your notes and mark each step as you go.
@@ -30,6 +40,7 @@ Changes: <the line check/classify.py printed, after the colon>
 
 ### <tag> | <path>:<line> | <link to the line>[ | reply <comment id>]
 <The comment, word for word as it would be posted.>
+Gate: blocks | <Done item or stop rule it breaks>
 Plain: <what the finding means and why it matters, for the user, never posted>
 Evidence: <one line: what was read or measured>
 Step: measured | <trigger, first step of the flow>
@@ -42,11 +53,14 @@ Body: <one line for the PR description, if any>
 
 ## Totals
 Refuter: checked <n>, reworded <n>, dropped <n>.
+Round: <1 or 2>
 ```
 
 Rules for the file:
 
-- **Tags.** `blocking`, `should fix`, `question`, `nit`.
+- **Tags.** `blocking` for `blocks`. Use `should fix`, `question` or `nit` for `follow-up`.
+- **Gate.** The check requires `Gate: blocks | <Done item or stop rule it breaks>` or `Gate: follow-up | <one line>` on the first copy. It rejects malformed lines and mismatched tags on any copy.
+- **Round.** The check requires `Round: 1` or `Round: 2`. Put it under Totals.
 - **Reply.** A finding that sharpens another reviewer's thread ends its heading with `| reply <their comment id>`. It is posted inside their thread, never as a new one.
 - **Verdict.** `approve`, `approve after <one thing>`, `needs answer: <the question>`, `hold: <reason>`, or `scope: <what was checked>` for a linked PR read only where it meets the main one. Judge each linked PR on its own code: a wrong one gets `hold:` and a right one gets `approve`. Merge order between linked PRs goes in the review body ("merge after <link>") and never changes the verdict. Use `needs answer:` when the verdict depends on an answer only the author or product owner can give, such as `needs answer: should a read-only admin open events?`. It is not an approval and not a defect. A question that a code change answers stays a `question` finding. Use `approve after` only when the author has one thing left to do. Approve when nothing is serious and the work is in good faith. Judge "serious" by blast radius, not by how much you found. Only a `blocking` finding holds a PR, and a `blocking` finding always does. The check enforces both. Start a `hold:` reason with a verb about the PR ("conflicts with ...", "drops ..."); the page reads it as "Held because it <reason>". A PR that would carry an unapproved or DNM PR into its base is `blocking`, even when it currently cannot merge.
 - **Comment.** At most 50 words. A plain fact, then a direct ask. The ask is usually a question, and can be a plain statement of what needs changing.
