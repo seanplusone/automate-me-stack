@@ -40,15 +40,35 @@ GOOD = """# Brief: t
 """
 
 
-def failed(text):
-    return {name for name, fails in check(text) if fails}
+def failed(text, path=None):
+    return {name for name, fails in check(text, path) if fails}
 
 
-def expect(name, text, want):
+def expect(name, text, want, path=None):
     RAN.append(name)
-    got = failed(text)
+    got = failed(text, path)
     if got != want:
         FAILS.append(f"{name}: wanted {sorted(want)}, got {sorted(got)}")
+
+
+def statuses(text, path=None):
+    out = {}
+    for name, fails in check(text, path):
+        if fails is None:
+            out[name] = "SKIP"
+        elif fails == []:
+            out[name] = "PASS"
+        else:
+            out[name] = "FAIL"
+    return out
+
+
+def expect_statuses(name, text, want, path=None):
+    RAN.append(name)
+    got = statuses(text, path)
+    got_subset = {k: got.get(k) for k in want}
+    if got_subset != want:
+        FAILS.append(f"{name}: wanted {want!r}, got {got_subset!r}")
 
 
 def swap(old, new, text=GOOD):
@@ -69,6 +89,8 @@ WS_FILE = "a briefs/WORKSTREAMS file exists"
 WS_SPACE = "WORKSTREAMS lines have no leading or trailing whitespace"
 WS_LISTED = "Workstream is in the nearest WORKSTREAMS"
 WS_FOLDER = "Workstream matches the parent folder"
+DESIGN_FACTS = "Kind ui has a Design facts path"
+DESIGN_FACTS_EXISTS = "Design facts path exists"
 
 expect("good brief passes", GOOD, set())
 expect("Workstream is required", swap("- Workstream: demo\n", ""), {PRESENT})
@@ -420,6 +442,131 @@ expect_workstreams_bytes(
     folder="demo",
     want_listed_fail=True,
 )
+
+
+def ui_brief(kind="ui", design_facts=None):
+    block = f"- Kind: {kind}\n"
+    if design_facts is not None:
+        block += f"- Design facts:{design_facts}\n"
+    return swap("- Kind: search/decide\n", block)
+
+
+expect("Kind ui without Design facts fails", ui_brief(), {DESIGN_FACTS})
+expect("padded uppercase Kind UI without Design facts fails", ui_brief(kind="  UI "), {DESIGN_FACTS})
+expect("Kind ui with blank Design facts fails", ui_brief(design_facts=""), {EMPTY, DESIGN_FACTS})
+expect("Kind ui with spaces-only Design facts fails", ui_brief(design_facts="   "), {EMPTY, DESIGN_FACTS})
+expect_statuses(
+    "Kind ui with nonexistent Design facts skips existence without path",
+    ui_brief(design_facts=" no/such/file.md"),
+    {DESIGN_FACTS: "PASS", DESIGN_FACTS_EXISTS: "SKIP"},
+)
+expect_statuses(
+    "padded uppercase Kind UI with Design facts skips existence without path",
+    ui_brief(kind="  UI ", design_facts=" no/such/file.md"),
+    {DESIGN_FACTS: "PASS", DESIGN_FACTS_EXISTS: "SKIP"},
+)
+expect_statuses(
+    "Kind ui without Design facts skips existence without path",
+    ui_brief(),
+    {DESIGN_FACTS: "FAIL", DESIGN_FACTS_EXISTS: "SKIP"},
+)
+expect_statuses(
+    "padded uppercase Kind UI without Design facts skips existence without path",
+    ui_brief(kind="  UI "),
+    {DESIGN_FACTS: "FAIL", DESIGN_FACTS_EXISTS: "SKIP"},
+)
+expect_statuses(
+    "Kind ui with blank Design facts skips existence without path",
+    ui_brief(design_facts=""),
+    {DESIGN_FACTS: "FAIL", DESIGN_FACTS_EXISTS: "SKIP"},
+)
+expect_statuses(
+    "Kind ui with spaces-only Design facts skips existence without path",
+    ui_brief(design_facts="   "),
+    {DESIGN_FACTS: "FAIL", DESIGN_FACTS_EXISTS: "SKIP"},
+)
+
+
+def expect_design_facts_paths():
+    orig_cwd = os.getcwd()
+    with tempfile.TemporaryDirectory() as root:
+        demo_dir = os.path.join(root, "briefs", "demo")
+        os.makedirs(demo_dir)
+        with open(os.path.join(root, "briefs", "WORKSTREAMS"), "w") as f:
+            f.write("demo\n")
+        brief_path = os.path.join(demo_dir, "brief.md")
+        with open(brief_path, "w") as f:
+            f.write(ui_brief(design_facts=" df.md"))
+        next_to_brief = os.path.join(demo_dir, "df.md")
+        with open(next_to_brief, "w") as f:
+            f.write("")
+
+        expect("Design facts file next to brief passes", ui_brief(design_facts=" df.md"), set(), path=brief_path)
+        expect_statuses(
+            "Design facts file next to brief passes presence and existence",
+            ui_brief(design_facts=" df.md"),
+            {DESIGN_FACTS: "PASS", DESIGN_FACTS_EXISTS: "PASS"},
+            path=brief_path,
+        )
+        expect("Design facts folder next to brief passes", ui_brief(design_facts=" ."), set(), path=brief_path)
+        expect_statuses(
+            "Design facts folder next to brief passes presence and existence",
+            ui_brief(design_facts=" ."),
+            {DESIGN_FACTS: "PASS", DESIGN_FACTS_EXISTS: "PASS"},
+            path=brief_path,
+        )
+
+        os.remove(next_to_brief)
+        expect("missing Design facts file fails with path", ui_brief(design_facts=" df.md"), {DESIGN_FACTS_EXISTS}, path=brief_path)
+        expect_statuses(
+            "missing Design facts file passes presence and fails existence",
+            ui_brief(design_facts=" df.md"),
+            {DESIGN_FACTS: "PASS", DESIGN_FACTS_EXISTS: "FAIL"},
+            path=brief_path,
+        )
+
+        at_root = os.path.join(root, "df.md")
+        with open(at_root, "w") as f:
+            f.write("")
+        try:
+            os.chdir(root)
+            expect("Design facts only in cwd fails", ui_brief(design_facts=" df.md"), {DESIGN_FACTS_EXISTS}, path=brief_path)
+            expect_statuses(
+                "Design facts only in cwd passes presence and fails existence",
+                ui_brief(design_facts=" df.md"),
+                {DESIGN_FACTS: "PASS", DESIGN_FACTS_EXISTS: "FAIL"},
+                path=brief_path,
+            )
+            expect("absolute Design facts path passes", ui_brief(design_facts=f" {at_root}"), set(), path=brief_path)
+            expect_statuses(
+                "absolute Design facts path passes presence and existence",
+                ui_brief(design_facts=f" {at_root}"),
+                {DESIGN_FACTS: "PASS", DESIGN_FACTS_EXISTS: "PASS"},
+                path=brief_path,
+            )
+        finally:
+            os.chdir(orig_cwd)
+
+        for label, kind_line in (("no Kind", ""), ("Kind design", "- Kind: design\n"), ("Kind build", "- Kind: build\n")):
+            base = swap("- Kind: search/decide\n", kind_line)
+            stray = swap("- Kind: search/decide\n", kind_line + "- Design facts: no/such/file.md\n")
+            expect(f"{label} without Design facts passes", base, set(), path=brief_path)
+            expect(f"{label} with stray Design facts passes", stray, set(), path=brief_path)
+            expect_statuses(
+                f"{label} without Design facts omits ui checks",
+                base,
+                {DESIGN_FACTS: None, DESIGN_FACTS_EXISTS: None},
+                path=brief_path,
+            )
+            expect_statuses(
+                f"{label} with stray Design facts omits ui checks",
+                stray,
+                {DESIGN_FACTS: None, DESIGN_FACTS_EXISTS: None},
+                path=brief_path,
+            )
+
+
+expect_design_facts_paths()
 
 if __name__ == "__main__":
     for f in FAILS:

@@ -60,7 +60,7 @@ Known gaps after blind 2, left as they are because a fix would need another blin
 # Brief: <title>
 
 - Workstream: <name>
-- Kind: build | review | design | learn | search/decide
+- Kind: build | review | design | learn | search/decide | ui
 - Plan first: yes: <plan> | none needed
 - Goal: <value>
 - Decision: <value, or unknown: <question>?>
@@ -129,6 +129,7 @@ outcome/
     prd-review-ramble/              review: a PRD path said with "I think", questions to look up, a tangent
     learn-ramble/                   learn: indexes for a slow query; output is an explanation and a check
                                     each of the last three: input.md, key.md, runs/*/briefs/*/brief.md, runs/score.md
+    settings-page/                  ui: a cramped settings page with a Design facts file
 ```
 
 ## Run the checks

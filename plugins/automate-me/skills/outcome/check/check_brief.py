@@ -25,6 +25,8 @@ Fails when:
 - a Must-have id has no Verify line, or a Verify line names no id or an unknown id;
 - a Verify line has no backticked command, or the command is not first in the value;
 - an id is used more than once among Must-haves or among Verify lines;
+- Kind is `ui` and `Design facts` is missing or empty, or the named path does not exist
+  (absolute paths are used as given; SKIP when no brief path is given);
 - given a file path, no `briefs/WORKSTREAMS` file is found (starting at the path if it is a
   directory or its parent folder, at each directory look for `briefs/WORKSTREAMS`), a non-blank
   line in `briefs/WORKSTREAMS` (read as UTF-8 with an optional BOM, split on newlines only) has
@@ -40,7 +42,7 @@ import sys
 
 REQUIRED = ["Workstream", "Plan first", "Goal", "Decision", "Context", "Must-haves", "Taste", "Output", "Verify",
             "If stuck", "Skills", "Parking lot", "Unknowns"]
-OPTIONAL = ["Kind"]
+OPTIONAL = ["Kind", "Design facts"]
 LABELS = REQUIRED + OPTIONAL
 SLOT = re.compile(r"^- (" + "|".join(map(re.escape, LABELS)) + r")(?:\s*\([^)]*\))?:(.*)$", re.I)
 SUB = re.compile(r"^\s+[-*]\s+(.*)$")
@@ -235,6 +237,23 @@ def check(text, path=None):
             seen[i] = seen.get(i, 0) + 1
         dup_ids += [f"{label}: id {i!r} appears {n} times" for i, n in seen.items() if n > 1]
     add("no id used twice", dup_ids)
+
+    kind_items = slots.get("Kind", [])
+    if kind_items and kind_items[0].strip().lower() == "ui":
+        df_items = slots.get("Design facts", [])
+        df_path = df_items[0].strip() if df_items else ""
+        df_present_fails = [] if df_path else [
+            "Kind is ui but Design facts is missing or empty; add `- Design facts: <path>`"
+        ]
+        if not df_path or path is None:
+            df_exists_fails = None
+        else:
+            target = df_path if os.path.isabs(df_path) else os.path.join(os.path.dirname(os.path.abspath(path)), df_path)
+            df_exists_fails = [] if os.path.exists(target) else [
+                f"Design facts path {df_path!r} does not exist (checked {target})"
+            ]
+        add("Kind ui has a Design facts path", df_present_fails)
+        add("Design facts path exists", df_exists_fails)
 
     if path is not None:
         ws_items = slots.get("Workstream", [])
