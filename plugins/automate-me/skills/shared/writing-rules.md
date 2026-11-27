@@ -108,6 +108,11 @@ On a page that lists findings, comments or claims for review, each item opens wi
 **W12. Feedback, not answers.** [script, in review-prd's open-questions check]
 A question for a PM carries no proposed answer and no engineering argument. The engineer says what is unclear. The PM decides.
 
+**W26. PR body shape.** [script, in `shared/pr_prose.py`]
+Unfenced PR body prose is at most 150 words. Fenced code blocks do not count. A `Tests first:` line is allowed only as a single line. A multi-line `Tests first:` narration fails. A `Reviewers:` section fails.
+- Bad: a body that walks through each commit under Tests first, or that ends with a Reviewers heading.
+- Good: the problem, what changed, and the proof, with any Tests first note on one line.
+
 ## Questions for a PM
 
 These apply to every numbered question in a PM question list. `review-prd/check/check.py pm-list` checks the `[script]` ones.

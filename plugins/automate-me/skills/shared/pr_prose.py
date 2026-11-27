@@ -19,6 +19,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from check_writing import check_writing  # noqa: E402
 
 COMMENT_START = ("//", "#", "*", "/*", "{{--", "<!--", "--")
+MAX_UNFENCED_BODY = 150
+FENCE = re.compile(r"```.*?```", re.S)
+TESTS_FIRST = re.compile(r"^\s*Tests first:", re.I)
+REVIEWERS = re.compile(r"^\s*Reviewers:", re.I)
 COMMENT_TRIM = re.compile(r"^(/\*\*?|\*+|//+|#+|\{\{--|<!--|--)\s?|\s*(\*/|--\}\}|-->)\s*$")
 TRAILERS = ("co-authored-by:", "signed-off-by:", "fixes: http")
 
@@ -79,6 +83,29 @@ def check(items):
     return hits
 
 
+def check_body_shape(path):
+    """Checks W26: unfenced PR body shape.
+
+    Unfenced prose is at most MAX_UNFENCED_BODY words. Fenced blocks do not count.
+    A Tests first line is allowed only as a single line. A Reviewers section fails.
+    """
+    text = open(path).read()
+    unfenced = FENCE.sub("", text)
+    fails = []
+    words = len(unfenced.split())
+    if words > MAX_UNFENCED_BODY:
+        fails.append(
+            f"W26 unfenced body is {words} words, cap is {MAX_UNFENCED_BODY}"
+        )
+    lines = unfenced.splitlines()
+    for i, line in enumerate(lines):
+        if TESTS_FIRST.match(line) and i + 1 < len(lines) and lines[i + 1].strip():
+            fails.append("W26 multi-line Tests first narration")
+        if REVIEWERS.match(line):
+            fails.append("W26 Reviewers: section")
+    return fails
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("base")
@@ -88,6 +115,8 @@ if __name__ == "__main__":
     a = p.parse_args()
     items = collect(a.base, a.head, a.body, a.message)
     hits = check(items)
+    if a.body:
+        hits.extend(f"body {a.body} {m}" for m in check_body_shape(a.body))
     print(f"{'FAIL' if hits else 'PASS'} prose: {len(items)} lines checked")
     for h in hits:
         print(f"  {h}")

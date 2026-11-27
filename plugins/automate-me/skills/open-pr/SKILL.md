@@ -46,6 +46,8 @@ python3 "$SKILL_DIR"/../shared/pr_prose.py <base> HEAD --body <body-file>       
 
 It checks every comment and markdown line the change adds, the commit messages and the body, against the `[script]` rules in `../shared/writing-rules.md`. Fix each hit where it lives: a code comment in its source file, then stage it again; a message or body line in its draft. Rewording a commit that already exists rewrites history, so ask first.
 
+It also applies W26 to the body file. Unfenced prose is at most 150 words. Fenced blocks do not count. A Tests first line may be only one line. A Reviewers section fails.
+
 Then read the same lines against the `[judgment]` rules in `../shared/writing-rules.md`, and against the repo's own comment rules when it has them (such as a `CLAUDE.md` or `.claude/rules/` file). The script checks none of those.
 
 ## 5. Confirm once
