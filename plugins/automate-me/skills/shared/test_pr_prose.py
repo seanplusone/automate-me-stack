@@ -5,7 +5,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from pr_prose import check, collect  # noqa: E402
+from pr_prose import check, check_body_shape, collect  # noqa: E402
 
 FAILS = []
 
@@ -57,9 +57,77 @@ expect("body hit", any(h.startswith(f"body {body}:3 W6") for h in hits), hits)
 
 expect("clean text passes", check([("x:1", "The path is wrong at line 99.")]) == [], "hit on clean text")
 
+
+def write_body(text):
+    path = os.path.join(tempfile.mkdtemp(), "body.md")
+    open(path, "w").write(text)
+    return path
+
+
+def shape(text):
+    return check_body_shape(write_body(text))
+
+
+GOOD = (
+    "A ui brief must name a Design facts file. The checker fails when that line "
+    "is missing or the file does not exist.\n\n"
+    "proof.py check ends with VERIFY: PASS.\n\n"
+    "```\n" + ("caught\n" * 200) + "```\n"
+)
+OVER = "word " * 151 + "\n"
+SHAPED_24 = (
+    "Kind: design already means system design. Briefs that change how something "
+    "looks had no kind, and no place to point at locked visual facts.\n\n"
+    "This PR adds Kind: ui. A ui brief must have a Design facts path line. "
+    "check_brief.py splits that into two checks. The presence check fails when "
+    "the line is missing or empty, and passes when the value is non-empty. The "
+    "existence check fails when the path does not exist. Paths resolve from the "
+    "brief folder. An absolute path is used as given. Only existence is checked. "
+    "When no brief path is given, the existence check reports SKIP, not PASS. "
+    "Missing or empty Design facts still fails the presence check without a path. "
+    "Non-ui briefs do not need the line. A stray Design facts line on a non-ui "
+    "brief is allowed and is not checked. When Kind is ui, SKILL.md now asks for "
+    "the design facts file path right away, before filling other slots. It may "
+    "offer to start that file in the project's own repo, never in this plugin. "
+    "Like the workstream question, this ask does not count toward the 3-question "
+    "cap. More filler words are added here so the unfenced count goes well over "
+    "the cap even after the proof fence is removed from the count. These words "
+    "name no extra rule. They only pad the body the way the old descriptions did "
+    "when they restated every check and then walked through each commit.\n\n"
+    "Tests first: 1021ce3 adds the original tests. b570d97 adds the first check.\n"
+    "ed55f86 adds the SKIP tests. 0ef19cb adds the SKIP fix. b4ded1b adds the "
+    "skill sentence. Full suite at b4ded1b: 25 test files, 0 failed.\n\n"
+    "Each Verify command in the brief gives m1 to m7 exit=0.\n\n"
+    "```\n"
+    "m1 existence reports PASS when no brief path is given: CAUGHT\n"
+    "m2 Design facts path resolves against the current directory: CAUGHT\n"
+    "```\n\n"
+    "Reviewers: use only the yes/no checklist. Flag a major only if an item is no.\n"
+)
+ONE_LINE_TF = (
+    "Short change and proof.\n\n"
+    "Tests first: abc1234 failed 8/12; head passes 12/12.\n"
+)
+MULTI_TF = (
+    "Short change and proof.\n\n"
+    "Tests first: abc1234 failed 8/12.\n"
+    "head passes 12/12.\n"
+)
+REVIEWERS = (
+    "Short change and proof.\n\n"
+    "Reviewers: use only the yes/no checklist.\n"
+)
+
+expect("good body passes", shape(GOOD) == [], shape(GOOD))
+expect("#24-shaped body fails", shape(SHAPED_24) != [], shape(SHAPED_24))
+expect("one-line Tests first passes", shape(ONE_LINE_TF) == [], shape(ONE_LINE_TF))
+expect("multi-line Tests first fails", shape(MULTI_TF) != [], shape(MULTI_TF))
+expect("body over the cap fails", shape(OVER) != [], shape(OVER))
+expect("Reviewers section fails", shape(REVIEWERS) != [], shape(REVIEWERS))
+
 if __name__ == "__main__":
     for f in FAILS:
         print(f"FAIL {f}")
-    total = 10
+    total = 16
     print(f"{total - len(FAILS)}/{total} passed")
     sys.exit(1 if FAILS else 0)
