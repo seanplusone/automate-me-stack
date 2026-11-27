@@ -36,6 +36,8 @@ def git(*args, cwd=None):
 def edit_reason(patch):
     in_hunk = False
     for line in patch.decode("utf-8", errors="replace").split("\n"):
+        if line.startswith("Binary files ") and line.endswith(" differ"):
+            return "changed a binary file"
         if line.startswith("@@ "):
             in_hunk = True
         if not in_hunk:
@@ -61,6 +63,8 @@ def test_edits(root, base):
             yield f"{path}: deleted"
         elif kind == "R":
             yield f"{path}: renamed"
+        elif kind == "T":
+            yield f"{path}: changed type"
         elif kind == "M":
             patch = git("--literal-pathspecs", *DIFF, "-U0", base, "--", path, cwd=root)
             reason = edit_reason(patch)
