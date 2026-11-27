@@ -21,8 +21,8 @@ from check_writing import check_writing  # noqa: E402
 COMMENT_START = ("//", "#", "*", "/*", "{{--", "<!--", "--")
 MAX_UNFENCED_BODY = 150
 FENCE = re.compile(r"```.*?```", re.S)
-TESTS_FIRST = re.compile(r"^\s*Tests first:", re.I)
-REVIEWERS = re.compile(r"^\s*Reviewers:", re.I)
+TESTS_FIRST = re.compile(r"^Tests first[*_]*\s*(?::|$)", re.I)
+REVIEWERS = re.compile(r"^Reviewers[*_]*\s*(?::|$)", re.I)
 COMMENT_TRIM = re.compile(r"^(/\*\*?|\*+|//+|#+|\{\{--|<!--|--)\s?|\s*(\*/|--\}\}|-->)\s*$")
 TRAILERS = ("co-authored-by:", "signed-off-by:", "fixes: http")
 
@@ -99,6 +99,7 @@ def check_body_shape(path):
         )
     lines = unfenced.splitlines()
     for i, line in enumerate(lines):
+        line = re.sub(r"^[\s#*_]+", "", line)
         if TESTS_FIRST.match(line) and i + 1 < len(lines) and lines[i + 1].strip():
             fails.append("W26 multi-line Tests first narration")
         if REVIEWERS.match(line):
