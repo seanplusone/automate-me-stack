@@ -127,11 +127,33 @@ def test_generic_paths():
         check(repo, "non-test edit only", base, 0)
 
 
+def test_binary_and_type_change():
+    blob = "tests/fixtures/blob.bin"
+    with tempfile.TemporaryDirectory() as directory:
+        repo = Path(directory)
+        init(repo, BASE_FILES)
+        file = repo / blob
+        file.parent.mkdir(parents=True)
+        file.write_bytes(b"\x00\x01FAKE\x00")
+        base = commit(repo, "add binary fixture")
+        file.write_bytes(b"\x00\x02FAKE\x00")
+        check(repo, "binary fixture edit", base, 2, blob)
+
+    with tempfile.TemporaryDirectory() as directory:
+        repo = Path(directory)
+        base = init(repo, {**BASE_FILES, "tests/helper.py": "x = 1\n"})
+        file = repo / TEST
+        file.unlink()
+        file.symlink_to("helper.py")
+        check(repo, "test file replaced by symlink", base, 2, TEST)
+
+
 if __name__ == "__main__":
     test_assertion_and_stop()
     test_other_stops()
     test_allowed_and_invalid_base()
     test_generic_paths()
+    test_binary_and_type_change()
     for failure in FAILS:
         print(f"FAIL {failure}")
     print(f"{len(FAILS)} failed" if FAILS else "done")
