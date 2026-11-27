@@ -11,6 +11,7 @@ The labels are fixed (see REQUIRED and OPTIONAL). Questions go in a block headed
 Fails when:
 - a required slot is missing, or any slot label appears more than once;
 - a slot has no value and no items;
+- Signed-off is present but has no SHA-256 hash in its value;
 - Plan first does not start with `yes` or `none needed`;
 - an `investigate:` or `out of scope:` item sits outside Must-haves, or a `how:` item outside Skills;
 - a slot that holds `unknown:` also offers a default;
@@ -42,7 +43,7 @@ import sys
 
 REQUIRED = ["Workstream", "Plan first", "Goal", "Decision", "Context", "Must-haves", "Taste", "Output", "Verify",
             "If stuck", "Skills", "Parking lot", "Unknowns"]
-OPTIONAL = ["Kind", "Design facts"]
+OPTIONAL = ["Kind", "Design facts", "Signed-off"]
 LABELS = REQUIRED + OPTIONAL
 SLOT = re.compile(r"^- (" + "|".join(map(re.escape, LABELS)) + r")(?:\s*\([^)]*\))?:(.*)$", re.I)
 SUB = re.compile(r"^\s+[-*]\s+(.*)$")
@@ -60,6 +61,7 @@ RULE_ID = re.compile(r"^\[([A-Za-z][A-Za-z0-9_-]*)\]\s+\S")
 VERIFY_ID = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*):\s*(.*)$")
 BACKTICK_CMD = re.compile(r"^\s*`\s*[^`\s][^`]*`")
 BACKTICK_SPAN = re.compile(r"`\s*[^`\s][^`]*`")
+SIGNOFF_HASH = re.compile(r"\bsha256=([0-9a-f]{64})\b")
 
 
 def canon(label):
@@ -148,6 +150,12 @@ def check(text, path=None):
     add("every required slot present", missing_slots)
     add("no slot repeated", [f"slot {s} appears {n} times" for s, n in counts.items() if n > 1])
     add("no empty slot", [f"slot {s} is empty" for s, items in slots.items() if not items])
+
+    if "Signed-off" in slots:
+        signed_off = slots["Signed-off"]
+        add("Signed-off has a SHA-256 hash",
+            [] if signed_off and SIGNOFF_HASH.search(signed_off[0]) else
+            ["Signed-off needs sha256= followed by 64 lowercase hex characters"])
 
     bad_unknown = [f"{s}: {i!r} is not 'unknown: <question>?'" for s, items in slots.items() for i in items
                    if UNKNOWN_START.match(i) and not UNKNOWN_OK.match(i)]

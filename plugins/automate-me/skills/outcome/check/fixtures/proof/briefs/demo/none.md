@@ -16,3 +16,4 @@
 - Skills: none.
 - Parking lot: none.
 - Unknowns: none.
+- Signed-off: Pat, 2026-11-27, via fixture, sha256=5881e6fa189112da0585dfcb93d89e8d71dfd6bf5bbfea715d247c6811240602

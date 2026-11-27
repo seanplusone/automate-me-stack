@@ -12,6 +12,8 @@ Each proof file is <out-dir>/verify-<id>.txt:
 
 Both `run` and `check` validate the brief with check_brief.py first. If any
 check fails, they print the failing checks, touch no proof files, and exit 2.
+Both require a sign-off matching the current Done before resolving git or
+writing proof files. A missing or stale sign-off exits 2 with STOP.
 Both also resolve git from the current working directory; if it is not inside
 a git repo, they print an error naming git, write no proof files, and exit 2.
 
@@ -67,6 +69,7 @@ import tempfile
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from check_brief import BACKTICK_CMD, RULE_ID, TAG, UNKNOWN_START, VERIFY_ID, check, is_none, parse
+from check_signoff import STOP_SIGNOFF, signoff_problem, stop as stop_signoff
 from secret_scan import git_path, stop
 
 DEFAULT_TIMEOUT = 300
@@ -243,6 +246,11 @@ def load_valid_brief(brief_path):
             print(f"FAIL {name}")
             for fail in fails:
                 print(f"  {fail}")
+        return None
+    problem = signoff_problem(text)
+    if problem:
+        print(problem)
+        stop_signoff(STOP_SIGNOFF)
         return None
     return text
 
