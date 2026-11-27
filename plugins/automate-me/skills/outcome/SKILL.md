@@ -72,6 +72,8 @@ Use the slots defined in [brief-check](../brief-check/SKILL.md), Step 1. Read th
 
 Ask for the workstream first, before filling other slots. The workstream question comes before the read-back and does not count toward its 3-question cap. From the current folder, look for `briefs/WORKSTREAMS` in that folder and in each parent, and offer the names in the first list you find. Lines starting with `#` are comments and are not offered as names. If no list is found, ask the user before creating `briefs/WORKSTREAMS`, and never create that file on your own. Then write the brief yourself to `<that-briefs-folder>/<workstream>/<feature>.md`, beside the list, one line per slot. Do not leave the path for the caller to invent. Use the labels exactly as the template shows them. A note in brackets after a label, as in `- Taste (flag, don't filter):`, is allowed. Workstream is required, and every other slot except Kind is required.
 
+Once Kind is ui, ask for the design facts file path right away, before filling other slots. If none exists, offer to start one in the project's own repo, never in this plugin. Like the workstream question, this ask does not count toward the 3-question cap.
+
 ```
 # Brief: <short title>
 
