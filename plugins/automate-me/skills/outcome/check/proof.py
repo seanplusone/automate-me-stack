@@ -3,6 +3,7 @@
 Usage:
   python3 check/proof.py run [--timeout <seconds>] <brief.md> <out-dir>
   python3 check/proof.py check <brief.md> <out-dir>
+  python3 check/proof.py --reset
 
 Each proof file is <out-dir>/verify-<id>.txt:
 - line 1: exit=<integer>
@@ -29,6 +30,8 @@ with `sha=<starting sha>`, `dirty=yes|no`, and a last non-empty line
 `VERIFY: PASS sha=<starting sha>` or `VERIFY: FAIL sha=<starting sha>`. `run`
 exits 0 only when every command exits 0, HEAD is unchanged, and the tree is
 clean; otherwise it writes FAIL and exits 1.
+Every completed run writes a seal in the git dir with the starting HEAD and
+SHA-256 digests of the proof files.
 
 `check` runs nothing. It fails with exit 1 when:
 - a Must-have id has no Verify command in the brief;
@@ -42,10 +45,18 @@ clean; otherwise it writes FAIL and exits 1.
 Extra verify-*.txt files for ids not in the brief are noted and do not fail the
 check. A brief whose Verify is none with no rule ids prints a note and passes.
 
+`check` compares otherwise passing proof for rule ids against the seal. A
+missing or mismatched seal sets a STOP in the git dir and exits 2. Later
+checks exit 2 until a human runs `proof.py --reset`. The check cannot catch
+an edit to the seal itself inside the git dir. A rerun of proof.py is honest
+proof.
+
 `check` proves the command ran and passed at that time; it does not prove the
 command tests the right thing.
 """
 import argparse
+import hashlib
+import json
 import os
 import re
 import signal
@@ -56,11 +67,45 @@ import tempfile
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from check_brief import BACKTICK_CMD, RULE_ID, TAG, UNKNOWN_START, VERIFY_ID, check, is_none, parse
+from secret_scan import git_path, stop
 
 DEFAULT_TIMEOUT = 300
 EXIT_LINE = re.compile(r"^exit=(-?\d+)$")
 VERIFY_FILE = re.compile(r"^verify-(.+)\.txt$")
 SUMMARY_FILE = "proof-summary.txt"
+STOP_FILE = "automate-me-proof-stop"
+STOP_REASON = "A proof was not written by proof.py."
+
+
+def seal_path(outdir):
+    key = hashlib.sha256(os.fsencode(os.path.realpath(outdir))).hexdigest()
+    return git_path("--git-path", f"automate-me-proof-seals/{key}.json")
+
+
+def seal_problems(outdir, rule_ids, head_sha):
+    path = seal_path(outdir)
+    try:
+        seal = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return [f"Missing proof seal: {path}"]
+    except (OSError, ValueError):
+        return [f"Unreadable proof seal: {path}"]
+    if not isinstance(seal, dict) or not isinstance(seal.get("files"), dict):
+        return [f"Invalid proof seal: {path}"]
+
+    problems = []
+    if seal.get("head") != head_sha:
+        problems.append(f"Proof seal HEAD does not match {head_sha}")
+    for name in [*(f"verify-{mid}.txt" for mid in rule_ids), SUMMARY_FILE]:
+        try:
+            with open(os.path.join(outdir, name), "rb") as f:
+                digest = hashlib.sha256(f.read()).hexdigest()
+        except OSError:
+            problems.append(f"Cannot read sealed proof file: {name}")
+            continue
+        if seal["files"].get(name) != digest:
+            problems.append(f"Proof seal digest does not match {name}")
+    return problems
 
 
 def run_git(*args, cwd=None):
@@ -222,6 +267,7 @@ def run_brief(brief_path, outdir, timeout):
     os.makedirs(outdir, exist_ok=True)
     mode = default_file_mode()
     any_failed = False
+    files = {}
 
     for mid in rule_ids:
         cmd = commands[mid]
@@ -243,7 +289,10 @@ def run_brief(brief_path, outdir, timeout):
             code = 124
 
         output = (raw or b"").decode("utf-8", errors="replace")
-        write_atomic(outdir, f"verify-{mid}.txt", f"exit={code}\ncmd: {cmd}\n{output}", mode)
+        name = f"verify-{mid}.txt"
+        content = f"exit={code}\ncmd: {cmd}\n{output}"
+        write_atomic(outdir, name, content, mode)
+        files[name] = hashlib.sha256(content.encode("utf-8")).hexdigest()
         print(f"{mid} exit={code}")
         if code != 0:
             any_failed = True
@@ -255,6 +304,10 @@ def run_brief(brief_path, outdir, timeout):
     dirty_str = "yes" if dirty else "no"
     summary = f"sha={start_sha}\ndirty={dirty_str}\nVERIFY: {verdict} sha={start_sha}\n"
     write_atomic(outdir, SUMMARY_FILE, summary, mode, prefix=".proof-summary-")
+    files[SUMMARY_FILE] = hashlib.sha256(summary.encode("utf-8")).hexdigest()
+    path = seal_path(outdir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_atomic(path.parent, path.name, json.dumps({"head": start_sha, "files": files}), mode)
 
     return 0 if passed else 1
 
@@ -268,6 +321,10 @@ def check_brief_proof(brief_path, outdir):
     if git_state is None:
         return 2
     repo_root, head_sha = git_state
+    state = git_path("--git-path", STOP_FILE)
+    if state.exists():
+        print("\n".join(state.read_text(encoding="utf-8").splitlines()[1:]))
+        return stop(STOP_REASON)
 
     rule_ids, commands, verify_none = load_verify(text)
     if verify_none and not rule_ids:
@@ -352,6 +409,13 @@ def check_brief_proof(brief_path, outdir):
     if failing:
         print(f"FAIL proof: {brief_path} (failing: {', '.join(failing)})")
         return 1
+    if rule_ids:
+        problems = seal_problems(outdir, rule_ids, head_sha)
+        if problems:
+            reasons = "\n".join(problems)
+            write_atomic(state.parent, state.name, f"stop\n{reasons}\n", default_file_mode())
+            print(reasons)
+            return stop(STOP_REASON)
     print(f"PASS proof: {brief_path}")
     return 0
 
@@ -375,6 +439,12 @@ def build_parser():
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv == ["--reset"]:
+        if resolve_git() is None:
+            return 2
+        git_path("--git-path", STOP_FILE).unlink(missing_ok=True)
+        return 0
     args = build_parser().parse_args(argv)
     if args.command == "run":
         return run_brief(args.brief, args.outdir, args.timeout)
