@@ -22,8 +22,9 @@ def drafts(path, changes=CHANGES):
     lines = ["# PR review: t", "", "Risk.", "", "## o/r#1 | approve after the guard", "About: Adds uploads."]
     if changes:
         lines.append(f"Changes: {changes}")
-    lines += ["", f"### question | {path}:3 | {URL}3", "The upload skips the size guard. Can it call the guard first?", "",
-              "Body: Approving; the comments are inline.", "", "## Totals", "Refuter: checked 1, reworded 0, dropped 0."]
+    lines += ["", f"### question | {path}:3 | {URL}3", "The upload skips the size guard. Can it call the guard first?",
+              "Gate: follow-up | Add a size test.", "",
+              "Body: Approving; the comments are inline.", "", "## Totals", "Refuter: checked 1, reworded 0, dropped 0.", "Round: 1"]
     return "\n".join(lines) + "\n"
 
 

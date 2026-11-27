@@ -24,8 +24,9 @@ def drafts(verdict, *findings):
     lines = ["# PR review: t", "", "Risk.", "", f"## o/r#1 | {verdict}", "About: Adds events.", ""]
     for tag, line in findings:
         lines += [f"### {tag} | a.py:{line} | https://github.com/o/r/pull/1/files#diff-aR{line}",
-                  "The guard is skipped here. Can it call the guard first?", ""]
-    lines += ["Body: Waiting on the answer.", "", "## Totals", "Refuter: checked 1, reworded 0, dropped 0."]
+                  "The guard is skipped here. Can it call the guard first?",
+                  "Gate: blocks | Done requires the guard." if tag == "blocking" else "Gate: follow-up | Add a guard test.", ""]
+    lines += ["Body: Waiting on the answer.", "", "## Totals", "Refuter: checked 1, reworded 0, dropped 0.", "Round: 1"]
     path = os.path.join(tempfile.mkdtemp(), "drafts.md")
     open(path, "w").write("\n".join(lines) + "\n")
     return path
