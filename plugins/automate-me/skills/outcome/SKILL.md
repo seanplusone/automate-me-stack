@@ -26,6 +26,7 @@ Name the kind in the brief's `Kind` slot. It changes what Output and Verify look
 | design | "think through how the sync job should scale" | options with tradeoffs, each claim tied to the code or a run |
 | learn | "help me understand how indexes work" | an explanation plus a short check of understanding, every source cited |
 | search/decide | "find me a 3 bed apartment under budget" | a ranked list with fields, every claim backed by a listing or a photo |
+| ui | "clean up the cramped settings page" | a rendered screen or diff, checked against the named Design facts file |
 
 Check even if unsaid:
 
@@ -36,6 +37,9 @@ Check even if unsaid:
 | design | load, hard constraints such as cost or stack, who decides |
 | learn | version, data size, where an example may run |
 | search/decide | timing, location or scope, hard cap versus target |
+| ui | palette, locked decisions, and the visual bar live in the named Design facts file |
+
+A ui brief also needs a Design facts path (`- Design facts: <path>`), resolved from the brief's folder, with an absolute path used as given.
 
 ## 1. Sort what was said
 
@@ -72,7 +76,7 @@ Ask for the workstream first, before filling other slots. The workstream questio
 # Brief: <short title>
 
 - Workstream: <name>
-- Kind: build | review | design | learn | search/decide
+- Kind: build | review | design | learn | search/decide | ui
 - Plan first: yes: <what the plan shows first> | none needed
 - Goal: <what to do>
 - Decision: <what the user will decide with the result>
