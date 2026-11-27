@@ -25,11 +25,8 @@ Fails when:
 - a Must-have id has no Verify line, or a Verify line names no id or an unknown id;
 - a Verify line has no backticked command, or the command is not first in the value;
 - an id is used more than once among Must-haves or among Verify lines;
-- Kind is `ui` and `Design facts` is missing or empty, or (when a file path is given) its
-  path does not exist (relative paths resolve from the brief's folder, absolute paths are
-  used as given, and only existence is checked; when no brief path is given, the existence
-  check prints SKIP, not PASS; non-ui briefs do not require Design facts and any stray
-  Design facts line on them is ignored);
+- Kind is `ui` and `Design facts` is missing or empty, or the named path does not exist
+  (absolute paths are used as given; SKIP when no brief path is given);
 - given a file path, no `briefs/WORKSTREAMS` file is found (starting at the path if it is a
   directory or its parent folder, at each directory look for `briefs/WORKSTREAMS`), a non-blank
   line in `briefs/WORKSTREAMS` (read as UTF-8 with an optional BOM, split on newlines only) has
