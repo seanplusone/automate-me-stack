@@ -1,0 +1,7 @@
+[models.globex-pro]
+vendor = "globex"
+family = "globex"
+
+[roles.build]
+default = "globex-pro"
+effort = "low"

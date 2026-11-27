@@ -1,0 +1,43 @@
+[models.acme-large]
+vendor = "acme"
+family = "acme"
+
+[models.acme-mid]
+vendor = "acme"
+family = "acme"
+
+[models.acme-mini]
+vendor = "acme"
+family = "acme"
+light = true
+
+[roles.helper]
+default = "acme-mini"
+effort = "low"
+edits = false
+
+[roles.plan]
+default = "acme-mini"
+effort = "high"
+
+[roles.build]
+default = "acme-large"
+effort = "high"
+options = ["acme-mid"]
+escalate = "Use build-hard after a repeated failure."
+
+[roles.build-hard]
+default = "acme-large"
+effort = "xhigh"
+
+[roles.build-scoped]
+default = "acme-mid"
+effort = "medium"
+
+[roles.review-main]
+default = "acme-large"
+effort = "high"
+
+[roles.review-second]
+default = "acme-mid"
+effort = "medium"
