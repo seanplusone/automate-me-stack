@@ -26,6 +26,8 @@ The check cannot run the command or know that it passes.
 
 `check/proof.py` runs each Verify command and checks the saved proof files. Both `run` and `check` validate the brief with `check_brief.py` first. If any check fails, they print the failing checks, touch no proof files, and exit 2. Both also require the current directory to be inside a git repo, or they exit 2 without writing proof files. Otherwise `run` writes `<out-dir>/verify-<id>.txt` with `exit=<integer>` on line 1, `cmd: <command>` on line 2, and the combined output from line 3 on. Output that is not UTF-8 is saved with replacement characters. A timeout kills the command's whole process group and records `exit=124`. After running all commands, `run` writes `<out-dir>/proof-summary.txt` with the starting HEAD sha, `dirty=yes|no`, and a final `VERIFY: PASS` or `VERIFY: FAIL` line. Paths in the out dir and gitignored files do not count as dirty. Its `check` subcommand checks that each Must-have id has a file with `exit=0` and the current command on line 2. It also requires `proof-summary.txt` to pass for a clean tree at the current HEAD.
 
+`check/secret_scan.py` runs gitleaks on staged changes or a commit range and redacts the findings. Exit 0 means clean. Exit 1 allows one cleanup and rerun. Exit 2 means stop and report to the human. The script keeps scan state in the git dir. Use `--install` to add the pre-commit hook. A human can clear the scan state with `--reset`.
+
 `check/score_case.py` scores a brief against a case key: facts in the speaker's words, slot terms, gaps asked rather than guessed, guesses that must not appear, and Parking lot items.
 
 Neither script checks the flow in `SKILL.md`. These parts are instructions only, checked by a person reading the transcript:
@@ -113,9 +115,11 @@ outcome/
       proof/                        briefs for test_proof.py
     proof.py                        runs Verify commands and checks saved proof files
     score_case.py                   scores a brief against a case key
+    secret_scan.py                  scans git changes for secrets with gitleaks
     test_check_brief.py             python3 check/test_check_brief.py
     test_proof.py                   python3 check/test_proof.py
     test_score_case.py              python3 check/test_score_case.py
+    test_secret_scan.py             python3 check/test_secret_scan.py
   cases/
     apartment-search/               search/decide: a rent split, a stretch budget, photos over descriptions
       input.md                      the ramble, the only thing the skill is given
@@ -140,6 +144,7 @@ From `outcome/`:
 python3 check/test_check_brief.py
 python3 check/test_proof.py
 python3 check/test_score_case.py
+python3 check/test_secret_scan.py
 for c in cases/*/; do
   for b in "$c"runs/*/briefs/*/brief.md; do
     python3 check/check_brief.py "$b" | tail -1

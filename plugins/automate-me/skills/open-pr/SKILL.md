@@ -71,6 +71,8 @@ Draft all of it, then show it in one message and wait for a yes or edits:
 
 ## 6. Commit, push, open the draft
 
+Before the commit, run `python3 "$SKILL_DIR"/../outcome/check/secret_scan.py` and rerun after one cleanup if it exits 1. On exit 2 (STOP), stop and report to the human.
+
 PRs live on the org repo. Use `base_remote` from the profile when it is set. Otherwise: in a fork checkout `upstream` is the org and `origin` is the fork, so push to `upstream`; with no `upstream` remote, push to `origin`.
 
 ```bash
