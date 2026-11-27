@@ -125,9 +125,20 @@ expect("multi-line Tests first fails", shape(MULTI_TF) != [], shape(MULTI_TF))
 expect("body over the cap fails", shape(OVER) != [], shape(OVER))
 expect("Reviewers section fails", shape(REVIEWERS) != [], shape(REVIEWERS))
 
+for heading in ("## Reviewers", "### Reviewers:", "**Reviewers:**", "**Reviewers**"):
+    hits = shape(f"Short change and proof.\n\n{heading}\nUse the checklist.\n")
+    expect(f"{heading} fails", hits == ["W26 Reviewers: section"], hits)
+
+hits = shape("Short change and proof.\n\nPlease tell the reviewers about this change.\n")
+expect("mid-line reviewers mention passes", hits == [], hits)
+hits = shape("Short change and proof.\n\n## Tests first\nabc1234 failed 8/12.\nhead passes 12/12.\n")
+expect("multi-line Tests first heading fails", hits == ["W26 multi-line Tests first narration"], hits)
+hits = shape("Short change and proof.\n\n## Tests first: abc1234 failed 8/12; head passes 12/12.\n")
+expect("one-line Tests first heading passes", hits == [], hits)
+
 if __name__ == "__main__":
     for f in FAILS:
         print(f"FAIL {f}")
-    total = 16
+    total = 23
     print(f"{total - len(FAILS)}/{total} passed")
     sys.exit(1 if FAILS else 0)
