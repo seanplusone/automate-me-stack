@@ -28,6 +28,8 @@ The check cannot run the command or know that it passes.
 
 `check/check_signoff.py` checks that the brief carries a sign-off for the current Done. Use `hash <brief.md>` to print the SHA-256 of the parsed Must-haves. Verify commands stay outside the hash. Run the check before starting a build. Both proof modes also require it. A missing or stale sign-off exits 2 with STOP. The line is plain text, so the check cannot tell who typed it.
 
+`check/check_roles.py` checks the role map and the builder and reviewer chosen for a handoff. It starts with `references/default-role-map.toml`, then reads the user map in `~/.automate-me/role-map.toml` and the project map in `.automate-me/role-map.toml` at the git root. Set `AUTOMATE_ME_ROLE_MAP` or `AUTOMATE_ME_PROJECT_ROLE_MAP` to change those paths. The project wins over user, and user wins over default, per role. With `--default`, `--user` or `--project`, it reads only the layers you pass.
+
 `check/check_test_edits.py` compares the tests-first commit with the working tree. It checks files named `test_*.py`, `*_test.*`, `*.test.*`, or `*.spec.*` and files under `tests` or `__tests__` folders. A fix triggers exit 2 for test file deletion, renaming, type changes, binary edits, nonblank line changes or removals, or an added skip marker. You can add new tests. The script saves the stop and its reasons in the git dir. A human can clear it with `--reset`.
 
 `check/secret_scan.py` runs gitleaks on staged changes or a commit range and redacts the findings. Exit 0 means clean. Exit 1 allows one cleanup and rerun. Exit 2 means stop and report to the human. The script keeps scan state in the git dir. Use `--install` to add the pre-commit hook. A human can clear the scan state with `--reset`.
@@ -115,19 +117,24 @@ outcome/
   SKILL.md                          sort, fill, mark unknowns, read back, hand off
   check/
     check_brief.py                  the shape check
+    check_roles.py                  checks role maps and handoffs
     check_signoff.py                checks sign-off for the current Done
     check_test_edits.py             stops when a fix edits an existing test
     fixtures/                       synthetic briefs, one defect each, used by the test
+      roles/                        maps for test_check_roles.py
       proof/                        briefs for test_proof.py
     proof.py                        runs Verify commands and checks saved proof files
     score_case.py                   scores a brief against a case key
     secret_scan.py                  scans git changes for secrets with gitleaks
     test_check_brief.py             python3 check/test_check_brief.py
+    test_check_roles.py             python3 check/test_check_roles.py
     test_check_signoff.py           python3 check/test_check_signoff.py
     test_check_test_edits.py        python3 check/test_check_test_edits.py
     test_proof.py                   python3 check/test_proof.py
     test_score_case.py              python3 check/test_score_case.py
     test_secret_scan.py             python3 check/test_secret_scan.py
+  references/
+    default-role-map.toml           shipped role map
   cases/
     apartment-search/               search/decide: a rent split, a stretch budget, photos over descriptions
       input.md                      the ramble, the only thing the skill is given
@@ -150,6 +157,7 @@ From `outcome/`:
 
 ```
 python3 check/test_check_brief.py
+python3 check/test_check_roles.py
 python3 check/test_check_signoff.py
 python3 check/test_check_test_edits.py
 python3 check/test_proof.py
