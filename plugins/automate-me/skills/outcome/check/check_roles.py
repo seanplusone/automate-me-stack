@@ -4,7 +4,7 @@ Usage:
   python3 check/check_roles.py [map] [--builder MODEL_OR_VENDOR --reviewer MODEL_OR_VENDOR]
   python3 check/check_roles.py [--default PATH] [--user PATH] [--project PATH]
 
-Roles: helper, plan, build, build-hard, build-scoped, review-main, review-second.
+Roles: build, build-hard, review, helper. Any other role name stops.
 Layers: references/default-role-map.toml beside the skill's check directory,
 ~/.automate-me/role-map.toml (AUTOMATE_ME_ROLE_MAP), and .automate-me/role-map.toml
 at the git root (AUTOMATE_ME_PROJECT_ROLE_MAP). Project wins over user, and
@@ -12,8 +12,8 @@ user wins over default, per role. A positional map is checked on its own.
 With any layer flag, only the layers given on the command line are read.
 
 Each TOML or JSON map can define models and roles. Every merged role needs a
-default model and effort. Helper is read-only. Plan, build-hard, and both
-review roles cannot use light models as defaults or options. A reviewer must
+default model and effort. Helper is read-only. build-hard and review
+cannot use light models as defaults or options. A reviewer must
 differ from the builder in vendor and family. A map whose role models come
 from one vendor warns instead.
 """
@@ -29,9 +29,8 @@ sys.dont_write_bytecode = True
 
 DEFAULT = Path(__file__).resolve().parents[1] / "references/default-role-map.toml"
 ROLE_MAP = ".automate-me/role-map.toml"
-ROLES = ("helper", "plan", "build", "build-hard", "build-scoped",
-         "review-main", "review-second")
-NO_LIGHT = {"plan", "build-hard", "review-main", "review-second"}
+ROLES = ("build", "build-hard", "review", "helper")
+NO_LIGHT = {"build-hard", "review"}
 
 
 def stop(reason):
@@ -151,6 +150,9 @@ def main():
                     or not name(spec.get("family"))
                     or not isinstance(spec.get("light", False), bool)):
                 raise ValueError(f"model {model!r} needs a vendor, family, and a boolean light flag if set")
+        unknown = sorted(set(roles) - set(ROLES))
+        if unknown:
+            raise ValueError(f"unknown role {', '.join(unknown)}; the roles are {', '.join(ROLES)}")
         for role in ROLES:
             if role not in roles:
                 raise ValueError(f"{role} is missing")

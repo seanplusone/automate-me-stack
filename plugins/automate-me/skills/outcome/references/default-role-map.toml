@@ -32,42 +32,27 @@ vendor = "openai"
 family = "gpt"
 tool = "codex"
 
+[roles.build]
+default = "neon"
+effort = "high"
+options = ["sonnet", "hydrogen"]
+escalate = "Use hydrogen at high for small scoped edits. After a failure, hand off to build-hard."
+
+[roles.build-hard]
+default = "opus"
+effort = "medium"
+options = ["neon", "sonnet"]
+escalate = "Raise effort to high only if medium fails."
+
+[roles.review]
+default = "opus"
+effort = "medium"
+options = ["sol"]
+escalate = "The first option runs the second review, on sol at high. Raise effort to high when the change is risky or the gate is borderline."
+
 [roles.helper]
 default = "haiku"
 effort = "medium"
 options = ["hydrogen"]
 edits = false
 escalate = "Raise effort to high only if summaries are thin."
-
-[roles.plan]
-default = "neon"
-effort = "high"
-options = ["opus"]
-
-[roles.build]
-default = "neon"
-effort = "high"
-options = ["opus"]
-escalate = "After a failure, hand off to build-hard."
-
-[roles.build-hard]
-default = "opus"
-effort = "medium"
-escalate = "Raise effort to high only if medium fails."
-
-[roles.build-scoped]
-default = "hydrogen"
-effort = "high"
-options = ["sonnet"]
-escalate = "Use Sonnet at medium, then high."
-
-[roles.review-main]
-default = "opus"
-effort = "medium"
-options = ["sol"]
-escalate = "Raise effort to high when the change is risky or the gate is borderline."
-
-[roles.review-second]
-default = "sol"
-effort = "high"
-options = ["opus"]
