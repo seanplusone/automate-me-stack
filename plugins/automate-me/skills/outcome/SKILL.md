@@ -155,7 +155,22 @@ After the yes:
 6. After the tests-first commit, run `python3 "$SKILL_DIR"/check/check_test_edits.py <tests-first sha>` before each fix commit and before `proof.py`. New tests are fine. On exit 2 (STOP), stop and report to the human. Never edit the test back to get past the stop.
 7. After the build, run `python3 "$SKILL_DIR"/check/proof.py run <brief.md> <out dir>` from the folder the Verify commands assume. It saves each command's exit code, the command, and its output as `<out dir>/verify-<id>.txt`. It also writes `<out dir>/proof-summary.txt` with the starting HEAD sha, whether the git tree is dirty, and a PASS or FAIL line. Paths under the out dir and gitignored files do not count as dirty. Keep the out dir with the PR evidence. The work is not done until `python3 "$SKILL_DIR"/check/proof.py check <brief.md> <out dir>` passes on a clean tree at that HEAD. It does not prove the command tests the right thing. The PR review still reads each command. `proof.py run` writes a seal in the git dir, so rerun it whenever you need fresh proof and never edit proof files. If hand-edited proof, proof with a stale sha edited to match HEAD, or copied proof would otherwise pass, `check` reports STOP with exit 2 until a human runs `proof.py --reset`. The seal cannot prevent forgery by an agent that edits the seal inside the git dir.
 
-For parallel work, brief each subagent with one part of the brief and the same Verify and If stuck lines. A second agent that did not do the work checks it before the results come back.
+For parallel work, brief each subagent with one part of the brief and the same Verify and If stuck lines. A different worker in the `review` role checks the work before the results come back.
+
+### Roles at a handoff
+
+Skills dispatch by role, never by a model name. Choose the model and effort only at a handoff, never mid-turn. Scripts run the mechanical checks.
+
+- `build` plans and builds, including small scoped edits.
+- `build-hard` takes over after a failed build.
+- `review` does the first review. Its first option is the second reviewer.
+- `helper` reads, summarizes, and leaves files alone.
+
+The shipped map is `plugins/automate-me/skills/outcome/references/default-role-map.toml`. The user map is `~/.automate-me/role-map.toml`. Set `AUTOMATE_ME_ROLE_MAP` to change its path. The project map is `.automate-me/role-map.toml` at the git root. Set `AUTOMATE_ME_PROJECT_ROLE_MAP` to change its path. The project wins over user, and user wins over default, per role.
+
+Before each handoff, run `python3 "$SKILL_DIR"/check/check_roles.py --builder <builder> --reviewer <reviewer>`. Pass the chosen models or vendors. The check prints the layer each role came from. It prints STOP if a role is missing or unknown, lacks a default or effort, or gives helper permission to edit. It also stops if build-hard or review lists a light model. If the builder and reviewer share a vendor or family, it prints STOP on a map with multiple vendors and WARN on a map with one vendor.
+
+The default map follows the Nov 2026 model routing research. See the [Antigravity model guide](https://antigravity.google/docs/models/).
 
 ## Iterate
 

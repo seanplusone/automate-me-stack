@@ -1,0 +1,58 @@
+# Public default role map. A user or project map can override it per role.
+# The defaults follow the Nov 2026 model routing research.
+# https://claude.dev/blog/which-claude-model-should-you-build-with/
+# https://antigravity.google/docs/models/
+# https://code.claude.com/docs/en/sub-agents
+# https://openchamber.dev/blog/model-routing-coding-agents/
+
+[models.haiku]
+vendor = "anthropic"
+family = "claude"
+light = true
+
+[models.sonnet]
+vendor = "anthropic"
+family = "claude"
+
+[models.opus]
+vendor = "anthropic"
+family = "claude"
+
+[models.neon]
+vendor = "google"
+family = "gemini"
+
+[models.hydrogen]
+vendor = "google"
+family = "gemini"
+light = true
+
+[models.sol]
+vendor = "openai"
+family = "gpt"
+tool = "codex"
+
+[roles.build]
+default = "neon"
+effort = "high"
+options = ["sonnet", "hydrogen"]
+escalate = "Use hydrogen at high for small scoped edits. After a failure, hand off to build-hard."
+
+[roles.build-hard]
+default = "opus"
+effort = "medium"
+options = ["neon", "sonnet"]
+escalate = "Raise effort to high only if medium fails."
+
+[roles.review]
+default = "opus"
+effort = "medium"
+options = ["sol"]
+escalate = "The first option runs the second review, on sol at high. Raise effort to high when the change is risky or the gate is borderline."
+
+[roles.helper]
+default = "haiku"
+effort = "medium"
+options = ["hydrogen"]
+edits = false
+escalate = "Raise effort to high only if summaries are thin."

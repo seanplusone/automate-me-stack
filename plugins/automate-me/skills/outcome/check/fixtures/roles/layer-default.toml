@@ -1,0 +1,36 @@
+[models.globex-pro]
+vendor = "globex"
+family = "globex"
+
+[models.acme-large]
+vendor = "acme"
+family = "acme"
+
+[models.acme-mid]
+vendor = "acme"
+family = "acme"
+
+[models.acme-mini]
+vendor = "acme"
+family = "acme"
+light = true
+
+[roles.helper]
+default = "acme-mini"
+effort = "low"
+edits = false
+
+[roles.build]
+default = "acme-large"
+effort = "high"
+options = ["acme-mid", "globex-pro"]
+escalate = "Use build-hard after a repeated failure."
+
+[roles.build-hard]
+default = "acme-large"
+effort = "xhigh"
+
+[roles.review]
+default = "acme-large"
+effort = "high"
+options = ["globex-pro"]

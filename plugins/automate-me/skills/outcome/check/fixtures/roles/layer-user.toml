@@ -1,0 +1,11 @@
+[models.acme-mid]
+vendor = "acme"
+family = "acme"
+
+[roles.build]
+default = "acme-mid"
+effort = "medium"
+
+[roles.review]
+default = "acme-mid"
+effort = "medium"
