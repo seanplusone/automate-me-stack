@@ -6,6 +6,6 @@ family = "acme"
 default = "acme-mid"
 effort = "medium"
 
-[roles.plan]
+[roles.review]
 default = "acme-mid"
 effort = "medium"

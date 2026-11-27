@@ -56,22 +56,19 @@ def test_example_map(repo):
     expect_roles(
         output,
         "helper=map default=acme-mini effort=low",
-        "plan=map default=acme-large effort=high",
         "build=map default=acme-large effort=high",
         "build-hard=map default=acme-large effort=xhigh",
-        "build-scoped=map default=acme-mid effort=medium",
-        "review-main=map default=acme-large effort=high",
-        "review-second=map default=acme-mid effort=medium",
+        "review=map default=acme-large effort=high",
     )
 
 
 def test_missing_role_or_default(repo):
     expect(repo, FIXTURES / "empty-role.toml", code=2)
     content, removed = re.subn(
-        r"(?m)^\[roles\.build-scoped\]\n[^\[]*", "", EXAMPLE.read_text(),
+        r"(?m)^\[roles\.build-hard\]\n[^\[]*", "", EXAMPLE.read_text(),
     )
     if removed != 1:
-        raise AssertionError("wanted one build-scoped table to remove from example-map.toml")
+        raise AssertionError("wanted one build-hard table to remove from example-map.toml")
     missing = repo / "missing-role.toml"
     missing.write_text(content)
     expect(repo, missing, code=2)
@@ -85,12 +82,12 @@ def test_reviewer_diversity(repo):
 
 
 def test_light_model(repo):
-    expect(repo, FIXTURES / "light-on-plan.toml", code=2)
+    expect(repo, FIXTURES / "light-on-review.toml", code=2)
     content = EXAMPLE.read_text()
-    section = '[roles.review-second]\ndefault = "acme-mid"\n'
+    section = '[roles.build-hard]\ndefault = "acme-large"\n'
     if content.count(section) != 1:
-        raise AssertionError("wanted one review-second default in example-map.toml")
-    light_option = repo / "light-review-option.toml"
+        raise AssertionError("wanted one build-hard default in example-map.toml")
+    light_option = repo / "light-build-hard-option.toml"
     light_option.write_text(content.replace(section, section + 'options = ["acme-mini"]\n'))
     expect(repo, light_option, code=2)
 
@@ -105,7 +102,7 @@ def test_layer_precedence(repo):
     expect_roles(
         output,
         "build=project default=globex-pro effort=low",
-        "plan=user default=acme-mid effort=medium",
+        "review=user default=acme-mid effort=medium",
         "helper=default default=acme-mini effort=low",
     )
     output = expect(repo, "--default", DEFAULT, "--user", USER)
@@ -133,7 +130,7 @@ def test_env_lookup(repo):
     expect_roles(
         output,
         "build=project default=globex-pro effort=low",
-        "plan=user default=acme-mid effort=medium",
+        "review=user default=acme-mid effort=medium",
     )
 
     del env["AUTOMATE_ME_ROLE_MAP"]
@@ -142,8 +139,17 @@ def test_env_lookup(repo):
     expect_roles(
         output,
         "build=project default=acme-mid effort=medium",
-        "plan=project default=acme-mid effort=medium",
+        "review=project default=acme-mid effort=medium",
     )
+
+
+def test_unknown_role(repo):
+    old = repo / "old-role-name.toml"
+    old.write_text(EXAMPLE.read_text() + '\n[roles.plan]\ndefault = "acme-large"\neffort = "high"\n')
+    expect(repo, old, code=2)
+    bad = repo / "bad-extra-role.toml"
+    bad.write_text(EXAMPLE.read_text() + '\n[roles.review-second]\neffort = "high"\n')
+    expect(repo, bad, "--builder", "acme", "--reviewer", "acme", code=2)
 
 
 def test_broken_toml(repo):
@@ -168,7 +174,7 @@ if __name__ == "__main__":
     cases = (
         test_example_map, test_missing_role_or_default, test_reviewer_diversity,
         test_light_model, test_helper_edits, test_layer_precedence, test_env_lookup,
-        test_broken_toml, test_synthetic_fixtures,
+        test_unknown_role, test_broken_toml, test_synthetic_fixtures,
     )
     for case in cases:
         try:

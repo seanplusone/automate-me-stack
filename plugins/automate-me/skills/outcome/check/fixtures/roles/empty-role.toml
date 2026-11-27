@@ -16,10 +16,6 @@ default = "acme-mini"
 effort = "low"
 edits = false
 
-[roles.plan]
-default = "acme-large"
-effort = "high"
-
 [roles.build]
 default = "acme-large"
 effort = "high"
@@ -30,13 +26,6 @@ escalate = "Use build-hard after a repeated failure."
 default = "acme-large"
 effort = "xhigh"
 
-[roles.build-scoped]
-effort = "medium"
-
-[roles.review-main]
-default = "acme-large"
+[roles.review]
 effort = "high"
-
-[roles.review-second]
-default = "acme-mid"
-effort = "medium"
+options = ["acme-mid"]
